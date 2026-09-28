@@ -111,13 +111,21 @@ struct Params {
     stroke_cells_y: f32,
     bloom_cells_x: f32,
     bloom_cells_y: f32,
-    ceiling_ref: f32,
+    ceiling_knee: f32,
     accent_min_depth: f32,
     edge_rel: f32,
     edge_threshold: f32,
     edge_feather: f32,
     paper_tint: f32,
-    _pad3: f32,
+    smear: f32,
+    vc_fine: f32,
+    vc_mid: f32,
+    vc_coarse: f32,
+    vc_chroma: f32,
+    vc_r_fine: f32,
+    vc_r_mid: f32,
+    vc_r_coarse: f32,
+    vc_range: f32,
 }
 
 #[repr(C)]
@@ -166,6 +174,9 @@ impl Drop for SlotGuard<'_> {
     }
 }
 
+/// Palette LUT cache key: mood key and the bits of the treatment's lift, shadow and hue scales.
+type LutKey = (String, [u32; 3]);
+
 pub struct Stylize {
     gpu: Gpu,
     layout: wgpu::BindGroupLayout,
@@ -174,7 +185,7 @@ pub struct Stylize {
     external_lut: Option<Arc<wgpu::Buffer>>,
     external_lut_size: i32,
     /// Generated palette LUTs by (mood, lift scale bits, shadow scale bits).
-    luts: Mutex<HashMap<(String, u32, u32), Arc<wgpu::Buffer>>>,
+    luts: Mutex<HashMap<LutKey, Arc<wgpu::Buffer>>>,
     /// Styles derived for non-base moods, by mood key.
     moods: Mutex<HashMap<String, Arc<Style>>>,
     slots: Slots,
@@ -199,6 +210,10 @@ fn is_neutral(s: &Style) -> bool {
         && !s.palette.enabled
         && s.temperature.chroma <= 0.0
         && s.strokes.strength <= 0.0
+        && s.strokes.smear <= 0.0
+        && s.value_contrast.fine <= 0.0
+        && s.value_contrast.mid <= 0.0
+        && s.value_contrast.coarse <= 0.0
         && w.edge_darkening <= 0.0
         && w.bleed <= 0.0
         && w.granulation <= 0.0
@@ -368,14 +383,12 @@ impl Stylize {
         };
         let mut luts = self.luts.lock().unwrap();
         let buf = luts
-            .entry((key, tr.floor_scale.to_bits(), tr.shadow_tint.to_bits()))
+            .entry((
+                key,
+                [tr.floor_scale, tr.shadow_tint, tr.hue].map(f32::to_bits),
+            ))
             .or_insert_with(|| {
-                let lut = Mapping {
-                    palette: &style.palette,
-                    lift_scale: tr.floor_scale,
-                    shadow_scale: tr.shadow_tint,
-                }
-                .bake();
+                let lut = Mapping::new(&style.palette, tr).bake();
                 Arc::new(lut_buffer(&self.gpu, &lut))
             })
             .clone();
@@ -473,6 +486,7 @@ impl Stage for Stylize {
         let tensor_sigma = (k.tensor_sigma * f).clamp(0.5, 16.0);
         let wc = &style.watercolor;
         let st = &style.strokes;
+        let vc = &style.value_contrast;
         let stroke_width = (st.width * f * tr.stroke_scale).max(0.75);
         let stroke_len = (st.length * f * tr.stroke_scale).max(1.0);
         let edge_step = (wc.edge_width * f).max(1.0);
@@ -512,6 +526,15 @@ impl Stage for Stylize {
             gran_cells_y: cells(h, gran_px),
             gran_valley: wc.granulation_valley.clamp(0.0, 1.0),
             gran_radius: (gran_px * 0.75).max(1.0),
+            smear: st.smear * tr.strokes,
+            vc_fine: vc.fine * tr.value_contrast,
+            vc_mid: vc.mid * tr.value_contrast,
+            vc_coarse: vc.coarse * tr.value_contrast,
+            vc_chroma: vc.chroma,
+            vc_r_fine: (vc.radius_fine * f).max(1.0),
+            vc_r_mid: (vc.radius_mid * f).max(2.0),
+            vc_r_coarse: (vc.radius_coarse * f).max(4.0),
+            vc_range: vc.range,
             paper: wc.paper_grain * tr.paper,
             paper_tint: wc.paper_tint * tr.paper,
             paper_cells_x: cells(w, paper_px),
@@ -522,13 +545,7 @@ impl Stage for Stylize {
             paper_b: wc.paper_color[2],
             floor_margin: wc.floor_margin,
             ceiling,
-            // Relit textures are scaled down so the palette's top lands on the ceiling
-            // (keeps value structure instead of flattening highlights).
-            ceiling_ref: if lut.is_some() && style.lut.is_none() {
-                style.palette.l_ceiling
-            } else {
-                1.0
-            },
+            ceiling_knee: tr.ceiling_knee,
             accent_fraction,
             accent_softness: pal.accent_softness,
             accent_min_depth: pal.accent_min_depth,
@@ -559,6 +576,7 @@ impl Stage for Stylize {
             bleed_radius,
             accent_radius,
             (gran_px * 0.75).max(1.0),
+            params.vc_r_coarse,
         ]
         .into_iter()
         .fold(0.0f32, f32::max);
@@ -829,7 +847,7 @@ impl Stylize {
         let mut enc = device.create_command_encoder(&Default::default());
         dispatch(&mut enc, &p.delight, 0, 0, 0, 1, 0, h);
         let kuwahara_on = params.kuw_radius >= 0.5;
-        let tensor_on = kuwahara_on || params.stroke_strength > 0.0;
+        let tensor_on = kuwahara_on || params.stroke_strength > 0.0 || params.smear > 0.0;
         if tensor_on {
             dispatch(&mut enc, &p.tensor, 1, 1, 1, 2, 0, h);
             dispatch(&mut enc, &p.blur_h, 2, 2, 2, 3, 0, h);

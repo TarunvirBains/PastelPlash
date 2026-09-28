@@ -21,8 +21,10 @@ struct Params {
     accent_depth: f32, temp_strength: f32, temp_warm_hue: f32, temp_cool_hue: f32,
     temp_sens: f32, stroke_strength: f32, stroke_chroma: f32, stroke_len: f32,
     stroke_step: f32, stroke_cells_x: f32, stroke_cells_y: f32, bloom_cells_x: f32,
-    bloom_cells_y: f32, ceiling_ref: f32, accent_min_depth: f32, edge_rel: f32,
-    edge_threshold: f32, edge_feather: f32, paper_tint: f32, _pad3: f32,
+    bloom_cells_y: f32, ceiling_knee: f32, accent_min_depth: f32, edge_rel: f32,
+    edge_threshold: f32, edge_feather: f32, paper_tint: f32, smear: f32,
+    vc_fine: f32, vc_mid: f32, vc_coarse: f32, vc_chroma: f32,
+    vc_r_fine: f32, vc_r_mid: f32, vc_r_coarse: f32, vc_range: f32,
 };
 
 struct Band { y0: i32, y1: i32, _a: i32, _b: i32 };
@@ -539,6 +541,55 @@ fn accent_threshold() {
     atomicStore(&hist[257], bitcast<u32>(hi));
 }
 
+// Edge-aware local mean of the painted lightness around `p` (center plus two rings at r and
+// r/2): samples across a strong lightness step get little weight, so structural edges survive
+// value compression.
+fn local_mean_a(p: vec2<i32>, r: f32, l0: f32) -> f32 {
+    var sum = l0;
+    var wsum = 1.0;
+    let sigma = max(P.vc_range, 1e-3);
+    for (var ring = 0; ring < 2; ring++) {
+        let rr = select(r, r * 0.5, ring == 1);
+        for (var k = 0; k < 8; k++) {
+            let ang = (f32(k) + 0.5 * f32(ring)) * 0.78539816;
+            let q = loadA(p + vec2<i32>(round(vec2<f32>(cos(ang), sin(ang)) * rr)));
+            if (q.a <= 0.0) { continue; }
+            let l = lightness(q);
+            let d = (l - l0) / sigma;
+            let w = exp(-d * d);
+            sum += w * l;
+            wsum += w;
+        }
+    }
+    return sum / wsum;
+}
+
+// Brushstrokes from the texture itself: the de-lit source color (texB) averaged along the flow
+// (line-integral convolution), so detail comes back as streaks that follow form. Never across
+// an edge: the path follows the edge tangent.
+fn smear_color(p: vec2<i32>) -> vec3<f32> {
+    let start = vec2<f32>(p) + 0.5;
+    let steps = i32(clamp(ceil(P.stroke_len / P.stroke_step), 1.0, 32.0));
+    var sum = textureLoad(texB, p, 0).rgb;
+    var wsum = 1.0;
+    for (var side = 0; side < 2; side++) {
+        var q = start;
+        var d = flow(q);
+        if (side == 1) { d = -d; }
+        for (var i = 1; i <= steps; i++) {
+            var nd = flow(q);
+            if (dot(nd, d) < 0.0) { nd = -nd; }
+            d = nd;
+            q += d * P.stroke_step;
+            let s = loadB(vec2<i32>(floor(q)));
+            let w = (1.0 - f32(i) / f32(steps + 1)) * s.a;
+            sum += w * s.rgb;
+            wsum += w;
+        }
+    }
+    return sum / wsum;
+}
+
 fn soft_min(x: f32, cap: f32, knee: f32) -> f32 {
     if (x <= cap - knee) { return x; }
     return cap - knee + knee * tanh((x - (cap - knee)) / knee);
@@ -548,9 +599,29 @@ fn soft_min(x: f32, cap: f32, knee: f32) -> f32 {
 fn finish(@builtin(global_invocation_id) gid: vec3<u32>) {
     let p = pixel(gid);
     if (outside(p)) { return; }
-    let c = textureLoad(texA, p, 0);
+    var c = textureLoad(texA, p, 0);
     let gp = gpos(p);
     let tint_safe = P.tint_safe != 0;
+
+    // Brushstrokes smeared from the texture's own color along the form.
+    if (P.smear > 0.0) {
+        let flow_weight = smoothstep(0.1, 0.5, orientation(loadC(p).xyz).z);
+        c = vec4<f32>(mix(c.rgb, smear_color(p), P.smear * flow_weight), c.a);
+    }
+
+    // Local value-contrast compression: detail moves from light/dark into color.
+    if (P.vc_fine > 0.0 || P.vc_mid > 0.0 || P.vc_coarse > 0.0) {
+        var v = srgb_to_oklab(c.rgb);
+        let m_f = local_mean_a(p, P.vc_r_fine, v.x);
+        let m_m = local_mean_a(p, P.vc_r_mid, v.x);
+        let m_c = local_mean_a(p, P.vc_r_coarse, v.x);
+        let l_new = v.x - P.vc_fine * (v.x - m_f) - P.vc_mid * (m_f - m_m)
+            - P.vc_coarse * (m_m - m_c);
+        let removed = abs(l_new - v.x);
+        v = vec3<f32>(l_new, v.yz * (1.0 + P.vc_chroma * removed));
+        c = vec4<f32>(linear_to_srgb(clamp(oklab_to_linear(v), vec3<f32>(0.0), vec3<f32>(1.0))), c.a);
+    }
+
     let src = srgb_to_oklab(c.rgb);
     var lab = src;
     var floor_l = 0.0;
@@ -654,8 +725,10 @@ fn finish(@builtin(global_invocation_id) gid: vec3<u32>) {
 
     // Keep watercolor darkening from undercutting the palette floor.
     lab.x = max(lab.x, floor_l - P.floor_margin);
+    // Relit categories: compress only the top `ceiling_knee` below the ceiling (mid and light
+    // values keep their lightness; the renderer's lit multiplier gets headroom).
     if (P.ceiling < 1.0) {
-        lab.x = soft_min(lab.x * min(P.ceiling / max(P.ceiling_ref, 1e-3), 1.0), P.ceiling, 0.04);
+        lab.x = soft_min(lab.x, P.ceiling, max(P.ceiling_knee, 1e-3));
     }
     lab.x = clamp(lab.x, 0.0, 1.0);
 

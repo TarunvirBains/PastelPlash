@@ -89,6 +89,9 @@ struct PaletteReportArgs {
     /// Reference palette (TOML), e.g. reference/ss-lit.toml.
     #[arg(long, value_name = "FILE")]
     reference: PathBuf,
+    /// Folder of the source PNGs (same relative paths): also report each file's mean-color ΔE.
+    #[arg(long, value_name = "DIR")]
+    source: Option<PathBuf>,
 }
 
 #[derive(Args)]
@@ -182,9 +185,13 @@ fn main() -> ExitCode {
         Command::O2r(args) => o2r(args).map(|()| ExitCode::SUCCESS),
         Command::PaletteReport(args) => pastelplash::report::Reference::load(&args.reference)
             .and_then(|r| pastelplash::report::report(&args.input, &r))
-            .map(|text| {
+            .and_then(|text| {
                 print!("{text}");
-                ExitCode::SUCCESS
+                if let Some(src) = &args.source {
+                    let (lines, worst) = pastelplash::report::identity(src, &args.input)?;
+                    print!("identity (mean color vs source):\n{lines}  worst ΔE {worst:.3}\n");
+                }
+                Ok(ExitCode::SUCCESS)
             }),
         Command::DevSheet(args) => {
             pastelplash::compare::sheet(&args.input, &args.output, args.thumb, args.cols)
@@ -256,12 +263,7 @@ fn bake_lut(args: BakeLutArgs) -> anyhow::Result<()> {
     let config = Config::load(Some(&args.style), args.target.as_deref(), None)?;
     let tr = config.target.treatment(args.category);
     let style = config.style.for_mood(&args.mood)?;
-    let lut = pastelplash::palette::Mapping {
-        palette: &style.palette,
-        lift_scale: tr.floor_scale,
-        shadow_scale: tr.shadow_tint,
-    }
-    .bake();
+    let lut = pastelplash::palette::Mapping::new(&style.palette, &tr).bake();
     let title = format!("{} ({:?}, {})", config.style.name, args.category, args.mood);
     lut.save(&args.output, &title)?;
     println!("wrote {}^3 LUT to {}", lut.size, args.output.display());

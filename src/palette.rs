@@ -164,6 +164,20 @@ pub struct Mapping<'a> {
     pub lift_scale: f32,
     /// Scales the shadow tint (target `shadow_tint`).
     pub shadow_scale: f32,
+    /// Scales hue shifts, pulls and harmonization (target `hue`).
+    pub hue_scale: f32,
+}
+
+impl<'a> Mapping<'a> {
+    /// The mapping for a palette under a category's treatment.
+    pub fn new(palette: &'a Palette, tr: &crate::config::Treatment) -> Self {
+        Self {
+            palette,
+            lift_scale: tr.floor_scale,
+            shadow_scale: tr.shadow_tint,
+            hue_scale: tr.hue,
+        }
+    }
 }
 
 impl Mapping<'_> {
@@ -235,8 +249,9 @@ impl Mapping<'_> {
 
         // 2. Hue groups.
         let (g, weighted) = self.groups(h);
-        let mut h2 = h + (g.shift * s).clamp(-120.0, 120.0);
-        let pull_scale = if s <= 1.0 { s } else { 1.0 + 2.0 * (s - 1.0) };
+        let hue_scale = self.hue_scale.max(0.0);
+        let mut h2 = h + (g.shift * s * hue_scale).clamp(-120.0, 120.0);
+        let pull_scale = hue_scale * if s <= 1.0 { s } else { 1.0 + 2.0 * (s - 1.0) };
         let mut pull = 0.0;
         let norm: f32 = weighted.iter().map(|(w, _)| w).sum::<f32>().max(1.0);
         for (w, grp) in &weighted {
@@ -261,7 +276,7 @@ impl Mapping<'_> {
         let l3 = compress(l2, lo, floor, ceiling, p.floor_knee);
 
         // 3. Pigment harmonization.
-        let harmonize = (p.harmonize * s).min(1.0);
+        let harmonize = (p.harmonize * s * hue_scale).min(1.0);
         if harmonize > 0.0 && !p.pigments.is_empty() {
             h2 += harmonize * pigment_pull(&p.pigments, p.pigment_spread, h2);
         }
@@ -327,7 +342,21 @@ impl Mapping<'_> {
             .min(l + (global_floor - l) * self.lift_scale)
             .min(ceiling);
         let ll = ll.clamp(lowest, ceiling);
-        let cc = cc.min(vivid_cap);
+        let mut cc = cc.min(vivid_cap);
+        let mut hh = hh;
+        // Darks are colored, never black or mud: below `dark_below`, chroma reaches at least
+        // `dark_chroma` — along the source's own hue when it is clearly colored, along the shadow
+        // tint's hue when it is (near-)neutral, rotating between them along the shortest arc so
+        // no mix ever passes through gray.
+        if p.dark_chroma > 0.0 {
+            let dark = 1.0 - smoothstep(p.dark_below - 0.08, p.dark_below, ll);
+            let want = p.dark_chroma * dark * s.min(1.0);
+            if cc < want {
+                let own = smoothstep(0.02, 0.04, c);
+                hh = p.shadow_tint.hue + own * hue_diff(p.shadow_tint.hue, hh);
+                cc = want;
+            }
+        }
         let [r, g, b] = color::oklch_to_srgb_gamut([ll, cc, hh]);
         let floor = (l + (floor - l) * self.lift_scale).min(ll);
         [r, g, b, floor]
@@ -346,9 +375,8 @@ mod tests {
     use crate::config::Style;
 
     fn skyward() -> Palette {
-        let style: Style =
-            toml::from_str(include_str!("../styles/skyward-watercolor.toml")).unwrap();
-        style.palette
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("styles/pastel.toml");
+        Style::load(&path).unwrap().palette
     }
 
     fn mapping(p: &Palette) -> Mapping<'_> {
@@ -356,6 +384,7 @@ mod tests {
             palette: p,
             lift_scale: 1.0,
             shadow_scale: 1.0,
+            hue_scale: 1.0,
         }
     }
 

@@ -67,6 +67,7 @@ pub struct Style {
     pub palette: Palette,
     pub temperature: Temperature,
     pub strokes: Strokes,
+    pub value_contrast: ValueContrast,
     pub watercolor: Watercolor,
     /// Named moods: partial overrides of this style (see `src/mood.rs`). The style itself is
     /// the `pastel` mood.
@@ -119,6 +120,9 @@ pub struct Strokes {
     pub width: f32,
     /// Stroke half-length in reference texels.
     pub length: f32,
+    /// 0..1: how far the painted wash is pulled toward the source color averaged along the
+    /// flow, bringing detail back as streaks that follow form (not across edges).
+    pub smear: f32,
 }
 
 impl Default for Strokes {
@@ -128,6 +132,46 @@ impl Default for Strokes {
             chroma: 0.15,
             width: 2.0,
             length: 10.0,
+            smear: 0.0,
+        }
+    }
+}
+
+/// Local value-contrast compression: each texel's lightness is pulled toward edge-aware local
+/// means at three scales, so a surface sits in a narrower lightness range (as in Skyward Sword)
+/// and detail moves from light/dark into hue and brushwork. Scaled per category by the target's
+/// `value_contrast`.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ValueContrast {
+    /// 0..1 compression of deviations from the fine-scale mean (grime, pores, grain).
+    pub fine: f32,
+    /// 0..1 compression of fine-vs-mid means (small shapes).
+    pub mid: f32,
+    /// 0..1 compression of mid-vs-coarse means (large shapes; keep low so blocks vs. mortar stay
+    /// readable).
+    pub coarse: f32,
+    /// Chroma gain per unit of lightness removed, so detail migrates into color.
+    pub chroma: f32,
+    /// Radii of the three scales in reference texels.
+    pub radius_fine: f32,
+    pub radius_mid: f32,
+    pub radius_coarse: f32,
+    /// Lightness difference (OKLab L) beyond which a neighbor counts as across an edge.
+    pub range: f32,
+}
+
+impl Default for ValueContrast {
+    fn default() -> Self {
+        Self {
+            fine: 0.0,
+            mid: 0.0,
+            coarse: 0.0,
+            chroma: 0.0,
+            radius_fine: 3.0,
+            radius_mid: 12.0,
+            radius_coarse: 40.0,
+            range: 0.12,
         }
     }
 }
@@ -323,6 +367,10 @@ pub struct Palette {
     /// Extra chroma per unit of lightness lift (`C *= 1 + chroma_lift · ΔL`), so lifted colors
     /// stay clean instead of chalky.
     pub chroma_lift: f32,
+    /// Chroma floor for darks that have any hue (no brown or olive mud): deep colored shadows
+    /// along the source's own hue. Fades in below `dark_below` (output OKLCH L).
+    pub dark_chroma: f32,
+    pub dark_below: f32,
     /// Chroma below which a color takes the neutral path (feathered over ±50%).
     pub neutral_c: f32,
     pub neutral_tint: Tint,
@@ -382,6 +430,8 @@ impl Default for Palette {
             chroma_scale: 1.0,
             chroma_cap: 0.4,
             chroma_lift: 0.0,
+            dark_chroma: 0.0,
+            dark_below: 0.45,
             neutral_c: 0.02,
             neutral_tint: Tint::default(),
             shadow_tint: Tint::default(),
@@ -499,6 +549,12 @@ pub struct Treatment {
     pub delight: f32,
     /// Maximum OKLCH lightness, for textures the renderer brightens further.
     pub lightness_ceiling: Option<f32>,
+    /// Width (OKLab L) of the soft knee below the ceiling; only values within it are
+    /// compressed.
+    pub ceiling_knee: f32,
+    /// Multiplies the palette's hue shifts, pulls and harmonization (e.g. < 1 to keep actors'
+    /// own skin, hair and leather hues).
+    pub hue: f32,
     /// Force tint-safe (lightness-only palette) on or off; unset = detect from chroma.
     pub tint_safe: Option<bool>,
     /// Scales the palette's lightness lift (e.g. < 1 for lava or dark dungeon areas).
@@ -517,6 +573,8 @@ pub struct Treatment {
     pub shadow_tint: f32,
     /// Multiplies the paper tooth and paper tint.
     pub paper: f32,
+    /// Multiplies the style's value-contrast compression.
+    pub value_contrast: f32,
 }
 
 impl Default for Treatment {
@@ -524,6 +582,8 @@ impl Default for Treatment {
         Self {
             delight: 0.0,
             lightness_ceiling: None,
+            ceiling_knee: 0.15,
+            hue: 1.0,
             tint_safe: None,
             floor_scale: 1.0,
             radius_scale: 1.0,
@@ -533,6 +593,7 @@ impl Default for Treatment {
             stroke_scale: 1.0,
             shadow_tint: 1.0,
             paper: 1.0,
+            value_contrast: 1.0,
         }
     }
 }
