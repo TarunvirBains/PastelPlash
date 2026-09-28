@@ -131,7 +131,7 @@ Verified by inspecting `OoT_Reloaded_v11.0.0_4K.o2r` (23.4 GB, 11,527 entries):
 ## Phases
 
 0. **Setup** ✅ — repo, Windows cross-build, `wgpu` DX12 compute smoke test on the RTX 5090.
-1. **Generic core** — CLI, folder walker (`-r`, `--copy-other`, `--follow-links`), PNG I/O for all variants,
+1. **Generic core** ✅ — CLI, folder walker (`-r`, `--copy-other`, `--follow-links`), PNG I/O for all variants,
    config loading, output mirroring.
 2. **Palette** — sample SS screenshots, analyze source pack, design OKLCH mapping, bake LUT, swatch comparison page.
 3. **Filter prototype** — GPU pipeline on ~8 representative textures (grass, stone, wood, dirt, a house, Link's
