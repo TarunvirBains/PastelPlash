@@ -46,8 +46,8 @@ There are three kinds of change, and each has its own place:
 | `pastel` (opt-in) | Light and dreamy: every hue lifted toward SS's pastel lightness, at SS's chroma — never gray. Moves furthest from the source, so it has its own identity bound. |
 
 A **mood** is a named partial override of a style (`[moods.<name>]` in the style file), assigned
-to files by the pack map (`[[moods]]` rules with a glob and a strength 0–1). The base look is the
-`pastel` mood name for historical reasons — i.e. "no mood". Moods are checked by the same rules.
+to files by the pack map (`[[moods]]` rules with a glob and a strength 0–1). The style as written
+is the `base` mood. Moods are checked by the same rules.
 
 ## The rules
 

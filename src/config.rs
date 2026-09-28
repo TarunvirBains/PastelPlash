@@ -70,7 +70,7 @@ pub struct Style {
     pub value_contrast: ValueContrast,
     pub watercolor: Watercolor,
     /// Named moods: partial overrides of this style (see `src/mood.rs`). The style itself is
-    /// the `pastel` mood.
+    /// the `base` mood.
     pub moods: BTreeMap<String, toml::Table>,
     /// The file's TOML, kept to derive moods from.
     #[serde(skip)]
@@ -815,7 +815,7 @@ impl Style {
         Ok(style)
     }
 
-    /// The style for a mood: the base itself for `pastel`, otherwise the base blended toward
+    /// The style for a mood: the base itself for `base`, otherwise the base blended toward
     /// the mood's overrides by its strength. A mood's `dark_greens` setting is applied last.
     pub fn for_mood(&self, mood: &Mood) -> Result<Style> {
         let mut style = if mood.name == crate::mood::BASE || mood.strength <= 0.0 {
@@ -824,7 +824,7 @@ impl Style {
             let over = self.moods.get(&mood.name).with_context(|| {
                 let known: Vec<&str> = self.moods.keys().map(String::as_str).collect();
                 format!(
-                    "style {:?} has no mood {:?} (it has: pastel{}{})",
+                    "style {:?} has no mood {:?} (it has: base{}{})",
                     self.name,
                     mood.name,
                     if known.is_empty() { "" } else { ", " },

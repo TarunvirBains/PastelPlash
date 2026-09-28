@@ -117,7 +117,7 @@ struct BakeLutArgs {
     #[arg(long, value_name = "CATEGORY", default_value = "world")]
     category: Category,
     /// Mood to bake (NAME or NAME:STRENGTH).
-    #[arg(long, value_name = "MOOD", default_value = "pastel")]
+    #[arg(long, value_name = "MOOD", default_value = "base")]
     mood: Mood,
     /// Output `.cube` file.
     output: PathBuf,

@@ -8,7 +8,7 @@
 //! l_floor = 0.36
 //! ```
 //!
-//! The base style is the `pastel` mood. A mood at strength `s` is the base with every overridden
+//! The style as written is the `base` mood. A mood at strength `s` is the base with every overridden
 //! value blended toward the mood's value: numbers (and number arrays of equal length, such as
 //! tone curves) are interpolated, tables and arrays of tables are blended entry by entry, and
 //! anything else switches at `s = 0.5`. Blending in parameter space keeps a partial mood a valid
@@ -21,7 +21,7 @@ use serde::Deserialize;
 use toml::{Table, Value};
 
 /// The base mood: the style as written.
-pub const BASE: &str = "pastel";
+pub const BASE: &str = "base";
 
 /// Which mood a texture gets, and how strongly.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -183,7 +183,7 @@ mod tests {
     fn moods_parse_from_cli_strings() {
         let m: Mood = "nocturne:0.6".parse().unwrap();
         assert_eq!((m.name.as_str(), m.strength), ("nocturne", 0.6));
-        assert_eq!("pastel".parse::<Mood>().unwrap(), Mood::default());
+        assert_eq!("base".parse::<Mood>().unwrap(), Mood::default());
         assert!("nocturne:2".parse::<Mood>().is_err());
         assert!(Mood::default().is_base());
         assert_eq!(m.key(), "nocturne:0.60");
