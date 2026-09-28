@@ -32,6 +32,8 @@ delight = 0.0
 warm_cool = 0.5
 shadow_tint = 1.0
 accent = 1.0
+abstraction = 0.0      # a finished painting: keep every painted object
+value_contrast = 0.6   # gentle compression and strokes
 
 [categories.skybox]
 delight = 0.0
