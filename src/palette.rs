@@ -274,7 +274,11 @@ impl Mapping<'_> {
             }
         }
         // Chroma boosts are never extrapolated past the configured look (pastel means softer).
-        let c1 = c * if scale > 1.0 { scale.powf(s.min(1.0)) } else { scale.powf(s) };
+        let c1 = c * if scale > 1.0 {
+            scale.powf(s.min(1.0))
+        } else {
+            scale.powf(s)
+        };
         let c2 = lerp(c1, soft_cap(c1, cap), s.min(1.0));
         let chromatic = color::oklch_to_oklab([l3, c2, h2]);
 
