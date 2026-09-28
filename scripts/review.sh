@@ -42,7 +42,8 @@ for style in $STYLES; do
     start=$(date +%s.%N)
     "$EXE" o2r "$(winpath "$PACK")" "$(winpath "$OUT/tmp/$style.o2r")" \
         --style "$(winpath "$REPO/styles/$style.toml")" --target "$(winpath "$TARGET")" \
-        --pack "$(winpath "$PACK_MAP")" "${include[@]}" | grep -vE '^  |entries selected'
+        --pack "$(winpath "$PACK_MAP")" "${include[@]}" \
+        | if [[ -n "${VERBOSE:-}" ]]; then cat; else grep -vE '^  |entries selected'; fi
     "$EXE" o2r-export "$(winpath "$OUT/tmp/$style.o2r")" "$(winpath "$OUT/out/$style")" >/dev/null
     "$EXE" dev-compare "$(winpath "$OUT/src")" "$(winpath "$OUT/out/$style")" \
         "$(winpath "$OUT/compare/$style")" >/dev/null
