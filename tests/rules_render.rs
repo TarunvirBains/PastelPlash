@@ -148,12 +148,12 @@ fn rule_adaptive_contrast_targets_high_contrast_textures() {
     let ground = mid_foliage(256, 4);
     for path in styles() {
         let config = load(&path, &default_target());
-        if config.style.value_contrast.adaptive <= 0.0 {
+        if config.style.contrast.strength <= 0.0 {
             continue;
         }
         let n = name(&path);
         let mut off = config.clone();
-        off.style.value_contrast.adaptive = 0.0;
+        off.style.contrast.strength = 0.0;
         let Some(on_t) = render(&path, &config, Category::World, &trunk) else {
             return;
         };

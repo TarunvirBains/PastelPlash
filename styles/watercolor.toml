@@ -158,13 +158,14 @@ radius_fine = 3.0
 radius_mid = 12.0
 radius_coarse = 40.0
 range = 0.12
-# Adaptive: high-contrast textures (bark, cliffs) get extra mid-scale compression toward
-# target_std; textures already at or below it (the ground) are left as they are.
-adaptive = 1.0
-target_std = 0.06       # ~the ground's spread (0.066, barely affected); bark (0.10–0.19) adapts
-adaptive_coarse = 0.5
-max_mid = 0.85
-adaptive_range = 3.0    # bark grooves are texture, not structure
+
+# Busy, high-contrast textures (bark, Link's house walls: spread 0.09–0.19) are compressed toward
+# Skyward Sword's measured bark spread (25x25 median L std of Faron Woods trunks: 0.020, range
+# 0.004–0.033) at every scale incl. the grooves. Ground and grass (≤ 0.066) are below the trigger.
+[contrast]
+strength = 0.6             # 1.0 = all the way to the target; 0.6 keeps painted bark from going flat
+target_spread = 0.03
+trigger_spread = 0.08
 
 [watercolor]
 edge_darkening = 0.05
