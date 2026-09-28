@@ -28,17 +28,22 @@ but the tool itself is pack-agnostic.
 ## CLI
 
 ```
-pastelplash <input> <output> [options]
+pastelplash process <input> <output> [options]
 
   -r, --recursive     walk subfolders (default: only PNGs directly in <input>); output mirrors the tree
   --copy-other        copy non-PNG files through, so the output is a complete drop-in pack
-  --follow-links      follow symlinks when walking (off by default to avoid loops)
+  --follow-links      follow symlinks when walking (off by default; loops are detected and skipped)
   --style <file>      style config (e.g. styles/skyward-watercolor.toml)
   --target <file>     target renderer profile (e.g. targets/soh-celshade.toml)
   --pack <file>       pack map (e.g. packs/oot-reloaded.toml)
+  -j, --jobs <n>      worker threads (default: all cores)
+
+pastelplash gpu-info  print the DX12 adapter and run a compute self-test
 ```
 
-Walking rules: `.png` matched case-insensitively; an output folder nested inside the input is skipped.
+Walking rules: `.png` matched case-insensitively; an output folder nested inside the input is skipped; files are
+processed in sorted order. Per-file errors are reported and processing continues; the exit code is nonzero if any
+file failed. Non-color maps are copied through unchanged rather than dropped.
 
 ## Configuration layers
 
