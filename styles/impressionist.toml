@@ -78,8 +78,8 @@ hue_center = 63.2
 hue_pull = 0.15
 l_offset = -0.06
 l_floor = 0.6
-c_scale = 1.2
-c_cap = 0.132
+c_scale = 0.9            # SS measures 1.2; softened toward tan/sand
+c_cap = 0.10
 
 [[palette.groups]]
 name = "yellow_olive"
