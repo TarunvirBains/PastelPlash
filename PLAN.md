@@ -77,7 +77,8 @@ transparency becomes an alpha channel. Ancillary chunks (`gAMA`, `sRGB`, `iCCP`,
 1. Load (alpha-aware); pad with wrap-around when the texture tiles.
 2. **De-light** — remove baked shading/AO; strength from target + category.
 3. **Anisotropic Kuwahara** (GPU) — structure-tensor-guided, edge-preserving painterly smoothing.
-4. **Palette LUT** — 3D `.cube` built in OKLCH (see below).
+4. **Palette LUT** — 3D `.cube` built in OKLCH (see below). **Tint-safe:** textures the engine colours at runtime
+   (stored grayscale, e.g. Link's tunic, HUD hearts) get lightness adjustments only — never an added hue.
 5. **Watercolor finish** — edge darkening, pigment granulation, paper grain (texel-space, tileable).
 6. **Lightness ceiling** for relit categories (prevents clipping under the cel shader).
 7. Restore alpha, encode.
@@ -103,6 +104,30 @@ Verified from source (`libultraship` `src/fast/shaders/*/default.shader.*`, `soh
 - No outlines, rim light, specular, grading or post-process. `HighlightBands` is a debug view — keep it off.
 - `ShadowIntensity` is a tuning lever for SS-style light shadows; calibrate alongside the textures.
 
+## Source notes: OoT Reloaded v11 (4K `.o2r`)
+
+Verified by inspecting `OoT_Reloaded_v11.0.0_4K.o2r` (23.4 GB, 11,527 entries):
+
+- Zip archive, every entry **stored uncompressed**, no manifest. All entries under `alt/`.
+- Entries are libultraship **OTEX** resources, not PNGs. Little-endian header: `0x04` type `"XETO"`, `0x08` version 1,
+  `0x40` original N64 format (1 = RGBA32, 2 = RGBA16, 5–9 = grayscale / grayscale-alpha variants), `0x44` width,
+  `0x48` height, `0x4C` flags (= 1, load-as-raw), `0x50`/`0x54` two f32 scale factors, `0x58` data size, then raw
+  **RGBA8888** pixels from `0x5C` (size = w × h × 4). ⇒ PastelPlash can read and write `.o2r` natively; `retro`
+  (a Flutter GUI with no CLI) is not needed.
+- Path taxonomy (maps directly to categories):
+  - `alt/objects/object_*/` — actors (`object_link_boy/gLinkAdultTunicTex`)
+  - `alt/scenes/{shared,mq,nonmq}/<scene>/` — world (`shared/spot04_scene/…` = Kokiri Forest). `mq` and `nonmq` are
+    byte-identical duplicates for 12 dungeons ⇒ content-hash cache processes them once.
+  - `alt/textures/vr_*_static/` — skyboxes (up to 8192×2048)
+  - `alt/textures/parameter_static/`, `icon_item_*_static/`, `nes_font_static/`, `kanji/`, `font/` — UI/fonts
+  - `*Eyes*Tex`, `*Mouth*Tex` inside object folders — eyes/mouths (skip)
+  - Toon-excluded actors → `world`: `object_wood02/`, `object_spotNN_*/`, doors (`gameplay_field_keep/gFieldDoor*`,
+    `object_bdoor/`, `object_door_gerudo/`, `object_haka_door/`, `object_jya_door/`), Deku Tree (`object_spot04_objects/`)
+- Grayscale-origin textures (N64 format 5–9) are tinted in-engine ⇒ flag as tint-safe from the header.
+- Sizes: mostly 256–1024 px; ~50% have partial alpha (almost all of `textures/`, about ⅓ of scenes/objects).
+- **No license** is stated anywhere (no LICENSE file; many third-party sources credited). Publishing the tool is fine;
+  redistributing a restyled pack needs the author's permission. Users can run PastelPlash on their own copy.
+
 ## Phases
 
 0. **Setup** ✅ — repo, Windows cross-build, `wgpu` DX12 compute smoke test on the RTX 5090.
@@ -114,12 +139,12 @@ Verified from source (`libultraship` `src/fast/shaders/*/default.shader.*`, `soh
 4. **Classification** — three config layers + fallback chain; `oot-reloaded.toml` pack map.
 5. **In-game calibration** — small test pack (Kokiri Forest + Link) in the cel-shade build; day/night/interior/
    dungeon; tune textures with `ShadowIntensity` / `HighlightIntensity`.
-6. **Full build + adapters** — `.o2r` extract/pack adapter via `retro`; content-hash cache so reruns only redo
-   what changed.
-7. **Release** — check OoT Reloaded's license; README with recommended cel-shade settings; publish `.o2r`.
+6. **Full build + adapters** — native `.o2r` adapter (OTEX ↔ PNG, streaming zip read/write); content-hash cache
+   so reruns only redo what changed.
+7. **Release** — publish the tool; README with recommended cel-shade settings. A restyled pack is released only
+   with the source pack author's permission.
 
 ## Open items
 
 - *Skyward Sword* reference screenshots (5–10: Faron Woods, Skyloft, a dungeon, an interior).
-- OoT Reloaded license terms for redistributing a derived pack.
-- How OoT Reloaded stores textures inside its `.o2r` and whether paths separate actors from world.
+- Permission from OoT Reloaded's author before distributing any restyled pack.
