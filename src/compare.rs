@@ -115,6 +115,49 @@ pub fn detailed_region(image: &Image, size: u32) -> (u32, u32) {
         .map_or((0, 0), |(_, x, y)| (x, y))
 }
 
+/// Writes a contact sheet of every PNG under `dir` (recursively, in sorted order): `cols`
+/// columns of `thumb`-sized tiles on gray, and prints the index of each tile.
+pub fn sheet(dir: &Path, out: &Path, thumb: u32, cols: u32) -> Result<()> {
+    let walk_opts = crate::walk::WalkOptions {
+        recursive: true,
+        follow_links: false,
+        exclude: None,
+    };
+    let names: Vec<_> = crate::walk::walk(dir, &walk_opts)?
+        .entries
+        .into_iter()
+        .filter(|e| e.is_png)
+        .map(|e| e.rel)
+        .collect();
+    anyhow::ensure!(!names.is_empty(), "no PNGs under {}", dir.display());
+    let rows = (names.len() as u32).div_ceil(cols);
+    let (w, h) = (cols * thumb, rows * thumb);
+    let mut pixels = vec![[0.5, 0.5, 0.5, 1.0]; (w * h) as usize];
+    for (i, name) in names.iter().enumerate() {
+        let img = downsize(&png_io::read(&dir.join(name))?, thumb);
+        let (ox, oy) = ((i as u32 % cols) * thumb, (i as u32 / cols) * thumb);
+        for y in 0..img.height.min(thumb) {
+            for x in 0..img.width.min(thumb) {
+                let p = img.pixels[(y * img.width + x) as usize];
+                let dst = &mut pixels[((oy + y) * w + ox + x) as usize];
+                for c in 0..3 {
+                    dst[c] = p[c] * p[3] + dst[c] * (1.0 - p[3]);
+                }
+            }
+        }
+        println!("{i:3} {}", name.display());
+    }
+    let sheet = Image {
+        width: w,
+        height: h,
+        pixels,
+        source: RGBA8,
+        source_scale: None,
+        tint_safe: None,
+    };
+    png_io::write(&sheet, out)
+}
+
 pub fn run(before: &Path, after: &Path, out: &Path, max_side: u32, crop_size: u32) -> Result<()> {
     fs::create_dir_all(out).with_context(|| format!("creating {}", out.display()))?;
     // Recursive, so exported pack trees work; nested files are named `<folder>__<file>`.

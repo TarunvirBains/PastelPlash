@@ -33,6 +33,21 @@ enum Command {
     /// Write downsized before/after images and 1:1 crops for visual comparison.
     #[command(hide = true)]
     DevCompare(DevCompareArgs),
+    /// Write a contact sheet of every PNG under a folder.
+    #[command(hide = true)]
+    DevSheet(DevSheetArgs),
+}
+
+#[derive(Args)]
+struct DevSheetArgs {
+    /// Folder of PNGs (searched recursively).
+    input: PathBuf,
+    /// Output PNG.
+    output: PathBuf,
+    #[arg(long, default_value_t = 160)]
+    thumb: u32,
+    #[arg(long, default_value_t = 8)]
+    cols: u32,
 }
 
 #[derive(Args)]
@@ -154,6 +169,10 @@ fn main() -> ExitCode {
         Command::GpuInfo => pastelplash::gpu::info().map(|()| ExitCode::SUCCESS),
         Command::BakeLut(args) => bake_lut(args).map(|()| ExitCode::SUCCESS),
         Command::O2r(args) => o2r(args).map(|()| ExitCode::SUCCESS),
+        Command::DevSheet(args) => {
+            pastelplash::compare::sheet(&args.input, &args.output, args.thumb, args.cols)
+                .map(|()| ExitCode::SUCCESS)
+        }
         Command::O2rExport(args) => {
             pastelplash::o2r::export(&args.input, &args.output, &args.include).map(|n| {
                 println!("exported {n} textures to {}", args.output.display());
