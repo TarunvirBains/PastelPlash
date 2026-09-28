@@ -89,7 +89,10 @@ pub fn run(opts: &Options, config: &Config, pipeline: &Pipeline) -> Result<Summa
             } else if config.pack.is_non_color_map(&entry.rel) {
                 Action::PassThrough
             } else {
-                match opts.category.unwrap_or(config.pack.default_category) {
+                match opts
+                    .category
+                    .unwrap_or_else(|| config.pack.classify(&entry.rel))
+                {
                     // UI is copied through until it gets its own treatment.
                     Category::Skip | Category::Ui => Action::PassThrough,
                     category => Action::Process(category),

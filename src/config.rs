@@ -535,6 +535,15 @@ impl Default for Pack {
 }
 
 impl Pack {
+    /// Category by the first matching rule, else [`Pack::default_category`].
+    pub fn classify(&self, path: &Path) -> Category {
+        let p = path.to_string_lossy().replace('\\', "/");
+        self.rules
+            .iter()
+            .find(|r| glob_match(&r.glob, &p))
+            .map_or(self.default_category, |r| r.category)
+    }
+
     /// True if the file stem ends in one of [`Pack::non_color_suffixes`].
     pub fn is_non_color_map(&self, path: &Path) -> bool {
         let Some(stem) = path.file_stem() else {
@@ -545,6 +554,26 @@ impl Pack {
             .iter()
             .any(|s| stem.ends_with(&s.to_lowercase()))
     }
+}
+
+/// Case-sensitive glob over `/`-separated paths: `*` and `?` stay within a segment, `**`
+/// crosses segments.
+pub fn glob_match(pattern: &str, path: &str) -> bool {
+    fn go(p: &[u8], s: &[u8]) -> bool {
+        match p {
+            [] => s.is_empty(),
+            [b'*', b'*', rest @ ..] => {
+                let rest = rest.strip_prefix(b"/").unwrap_or(rest);
+                (0..=s.len()).any(|i| go(rest, &s[i..]))
+            }
+            [b'*', rest @ ..] => (0..=s.len())
+                .take_while(|&i| i == 0 || s[i - 1] != b'/')
+                .any(|i| go(rest, &s[i..])),
+            [b'?', rest @ ..] => !s.is_empty() && s[0] != b'/' && go(rest, &s[1..]),
+            [c, rest @ ..] => !s.is_empty() && s[0] == *c && go(rest, &s[1..]),
+        }
+    }
+    go(pattern.as_bytes(), path.as_bytes())
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -804,6 +833,53 @@ mod tests {
         assert!(target.validate().is_err());
         assert!(Style::default().validate().is_ok());
         assert!(Target::default().validate().is_ok());
+    }
+
+    #[test]
+    fn globs() {
+        assert!(glob_match(
+            "alt/scenes/**",
+            "alt/scenes/shared/spot04_scene/x"
+        ));
+        assert!(glob_match(
+            "alt/objects/object_link_boy/*",
+            "alt/objects/object_link_boy/gTex"
+        ));
+        assert!(!glob_match(
+            "alt/objects/object_link_boy/*",
+            "alt/objects/object_link_boy/a/b"
+        ));
+        assert!(glob_match(
+            "alt/**/*Eyes*",
+            "alt/objects/object_link_boy/gLinkAdultEyesOpenTex"
+        ));
+        assert!(glob_match(
+            "**/spot04_scene/**",
+            "alt/scenes/nonmq/spot04_scene/t"
+        ));
+        assert!(!glob_match(
+            "alt/textures/vr_*/**",
+            "alt/textures/parameter_static/x"
+        ));
+    }
+
+    #[test]
+    fn pack_rules_classify_first_match_wins() {
+        let pack: Pack = toml::from_str(
+            "default_category = 'world'\n\
+             [[rules]]\nglob = '**/*Eyes*'\ncategory = 'skip'\n\
+             [[rules]]\nglob = 'alt/objects/**'\ncategory = 'actor'",
+        )
+        .unwrap();
+        assert_eq!(
+            pack.classify(Path::new("alt/objects/o/gEyesTex")),
+            Category::Skip
+        );
+        assert_eq!(
+            pack.classify(Path::new("alt/objects/o/gBodyTex")),
+            Category::Actor
+        );
+        assert_eq!(pack.classify(Path::new("alt/scenes/s/t")), Category::World);
     }
 
     #[test]
