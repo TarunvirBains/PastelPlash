@@ -2,6 +2,9 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand};
+use pastelplash::config::Config;
+use pastelplash::pipeline::Pipeline;
+use pastelplash::process;
 
 #[derive(Parser)]
 #[command(
@@ -46,7 +49,7 @@ struct ProcessArgs {
     /// Pack map (TOML).
     #[arg(long, value_name = "FILE")]
     pack: Option<PathBuf>,
-    /// Worker threads (default: all cores).
+    /// Worker threads (default or 0: all cores).
     #[arg(short, long, value_name = "N")]
     jobs: Option<usize>,
 }
@@ -63,6 +66,41 @@ fn main() -> ExitCode {
     })
 }
 
-fn process(_args: ProcessArgs) -> anyhow::Result<ExitCode> {
-    anyhow::bail!("process is not implemented yet")
+fn process(args: ProcessArgs) -> anyhow::Result<ExitCode> {
+    let config = Config::load(
+        args.style.as_deref(),
+        args.target.as_deref(),
+        args.pack.as_deref(),
+    )?;
+    let pipeline = Pipeline::from_config(&config)?;
+    let opts = process::Options {
+        input: args.input,
+        output: args.output,
+        recursive: args.recursive,
+        follow_links: args.follow_links,
+        copy_other: args.copy_other,
+        jobs: args.jobs,
+    };
+    let s = process::run(&opts, &config, &pipeline)?;
+
+    println!(
+        "{} processed, {} copied, {} skipped, {} failed in {:.2?}",
+        s.processed, s.copied, s.skipped, s.failed, s.elapsed
+    );
+    if s.links_ignored > 0 {
+        println!(
+            "{} symlinks not followed{}",
+            s.links_ignored,
+            if opts.follow_links {
+                " (loops)"
+            } else {
+                " (use --follow-links)"
+            }
+        );
+    }
+    Ok(if s.failed == 0 {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    })
 }
