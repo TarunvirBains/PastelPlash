@@ -25,7 +25,9 @@ struct Params {
     edge_threshold: f32, edge_feather: f32, paper_tint: f32, smear: f32,
     vc_fine: f32, vc_mid: f32, vc_coarse: f32, vc_chroma: f32,
     vc_r_fine: f32, vc_r_mid: f32, vc_r_coarse: f32, vc_range: f32,
-    amp: f32, _pad3: f32, _pad4: f32, _pad5: f32,
+    amp: f32, busy: f32, kuw_radius_coarse: f32, edge_coarse_step: f32,
+    edge_soften: f32, highlight_calm: f32, highlight_radius: f32, chroma_retain: f32,
+    mean_l: f32, mean_a: f32, mean_b: f32, _pad6: f32,
 };
 
 struct Band { y0: i32, y1: i32, _a: i32, _b: i32 };
@@ -283,7 +285,11 @@ fn kuwahara(@builtin(global_invocation_id) gid: vec3<u32>) {
     let p = pixel(gid);
     if (outside(p)) { return; }
     let center = textureLoad(texA, p, 0);
-    if (P.kuw_radius < 0.5 || P.kuw_strength <= 0.0) {
+    // band._a == 1: the large-scale abstraction pass (busy, photographic textures only).
+    let coarse = band._a == 1;
+    let radius = select(P.kuw_radius, P.kuw_radius_coarse, coarse);
+    let strength = select(P.kuw_strength, P.busy, coarse);
+    if (radius < 0.5 || strength <= 0.0) {
         textureStore(outTex, p, center);
         return;
     }
@@ -291,7 +297,6 @@ fn kuwahara(@builtin(global_invocation_id) gid: vec3<u32>) {
     let phi = -atan2(o.y, o.x);
     let aniso = o.z;
     let alpha = P.kuw_alpha;
-    let radius = P.kuw_radius;
     let a = radius * clamp((alpha + aniso) / alpha, 0.1, 2.0);
     let b = radius * clamp(alpha / (alpha + aniso), 0.1, 2.0);
     let cp = cos(phi);
@@ -354,7 +359,7 @@ fn kuwahara(@builtin(global_invocation_id) gid: vec3<u32>) {
         let painted = acc.rgb / acc.w;
         // Fully transparent texels take the painted neighborhood color (fewer dark fringes
         // under bilinear filtering); others blend by strength.
-        let t = select(P.kuw_strength, 1.0, center.a <= 0.0);
+        let t = select(strength, 1.0, center.a <= 0.0);
         rgb = mix(center.rgb, painted, t);
     }
     textureStore(outTex, p, vec4<f32>(rgb, center.a));
@@ -571,7 +576,7 @@ fn local_mean_a(p: vec2<i32>, r: f32, l0: f32) -> f32 {
 fn smear_color(p: vec2<i32>) -> vec3<f32> {
     let start = vec2<f32>(p) + 0.5;
     let steps = i32(clamp(ceil(P.stroke_len / P.stroke_step), 1.0, 32.0));
-    var sum = textureLoad(texB, p, 0).rgb;
+    var sum = mix(textureLoad(texB, p, 0).rgb, textureLoad(texA, p, 0).rgb, P.busy);
     var wsum = 1.0;
     for (var side = 0; side < 2; side++) {
         var q = start;
@@ -582,7 +587,9 @@ fn smear_color(p: vec2<i32>) -> vec3<f32> {
             if (dot(nd, d) < 0.0) { nd = -nd; }
             d = nd;
             q += d * P.stroke_step;
-            let s = loadB(vec2<i32>(floor(q)));
+            // Busy textures: strokes describe the abstracted wash (texA), not the photo (texB).
+            let qi = vec2<i32>(floor(q));
+            let s = mix(loadB(qi), loadA(qi), P.busy);
             let w = (1.0 - f32(i) / f32(steps + 1)) * s.a;
             sum += w * s.rgb;
             wsum += w;
@@ -621,6 +628,33 @@ fn finish(@builtin(global_invocation_id) gid: vec3<u32>) {
         let removed = abs(l_new - v.x);
         v = vec3<f32>(l_new, v.yz * (1.0 + P.vc_chroma * removed));
         c = vec4<f32>(linear_to_srgb(clamp(oklab_to_linear(v), vec3<f32>(0.0), vec3<f32>(1.0))), c.a);
+    }
+
+    // Busy textures: bright grayish highlight patches (photographic glare) calm into the local
+    // surface color.
+    if (P.busy > 0.0 && P.highlight_calm > 0.0) {
+        let v = srgb_to_oklab(c.rgb);
+        var m = vec3<f32>(0.0);
+        var n = 0.0;
+        for (var k = 0; k < 8; k++) {
+            let ang = f32(k) * 0.78539816;
+            let q = loadA(p + vec2<i32>(round(vec2<f32>(cos(ang), sin(ang)) * P.highlight_radius)));
+            if (q.a > 0.0) { m += srgb_to_oklab(q.rgb); n += 1.0; }
+        }
+        if (n > 0.0) {
+            m /= n;
+            // Against the neighborhood (small glints) and against the texture's own mean color
+            // (large glare patches the neighborhood ring sits inside of).
+            let g = vec3<f32>(P.mean_l, P.mean_a, P.mean_b);
+            let t_ring = smoothstep(0.03, 0.10, v.x - m.x)
+                * smoothstep(0.0, 0.03, length(m.yz) - length(v.yz));
+            let t_glob = smoothstep(0.08, 0.2, v.x - g.x)
+                * smoothstep(0.0, 0.03, length(g.yz) - length(v.yz));
+            let calm_to = select(m, vec3<f32>(mix(v.x, g.x, 0.6), g.yz), t_glob > t_ring);
+            let t = P.busy * P.highlight_calm * max(t_ring, t_glob);
+            let w = mix(v, calm_to, t);
+            c = vec4<f32>(linear_to_srgb(clamp(oklab_to_linear(w), vec3<f32>(0.0), vec3<f32>(1.0))), c.a);
+        }
     }
 
     let src = srgb_to_oklab(c.rgb);
@@ -694,7 +728,16 @@ fn finish(@builtin(global_invocation_id) gid: vec3<u32>) {
         let ring = (l00 + l10 + l20 + l01 + l21 + l02 + l12 + l22) / 8.0;
         let side = smoothstep(-0.005, 0.02, ring - src.x);
         let th = max(P.edge_threshold, 1e-3);
-        let e = smoothstep(th, 2.0 * th, length(vec2<f32>(gx, gy)));
+        var e = smoothstep(th, 2.0 * th, length(vec2<f32>(gx, gy)));
+        // Busy textures: only boundaries of large regions (a step that also shows at a much
+        // coarser scale) get a wet edge, and a subtler one. Shape-based textures keep theirs.
+        if (P.busy > 0.0) {
+            let t = max(1, i32(round(P.edge_coarse_step)));
+            let cx = lightness(loadA(p + vec2<i32>(t, 0))) - lightness(loadA(p - vec2<i32>(t, 0)));
+            let cy = lightness(loadA(p + vec2<i32>(0, t))) - lightness(loadA(p - vec2<i32>(0, t)));
+            let ec = smoothstep(th, 2.0 * th, 0.5 * length(vec2<f32>(cx, cy)));
+            e = mix(e, min(e, ec) * (1.0 - P.edge_soften), P.busy);
+        }
         let depth = max(1.0 - lab.x, 0.0);
         let dl = -min(P.edge_dark, P.edge_rel * depth) * e * side + P.edge_feather * e * (1.0 - side);
         lab = vec3<f32>(lab.x + dl, lab.yz * (1.0 + 0.3 * e * side));
@@ -730,6 +773,14 @@ fn finish(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (P.amp < 1.0 && P.low_w > 0) {
         let pivot = pow(max(lowres_sample(gp), 0.0), 1.0 / 3.0);
         lab.x = lab.x - (1.0 - P.amp) * (src.x - pivot);
+    }
+
+    // Busy textures: keep each texel's own source chroma (no gray-and-warm averaging into mud).
+    if (P.busy > 0.0 && P.chroma_retain > 0.0 && !tint_safe) {
+        let sc = length(srgb_to_oklab(textureLoad(texB, p, 0).rgb).yz);
+        let lc = length(lab.yz);
+        let want = P.chroma_retain * P.busy * sc;
+        if (lc > 1e-4 && lc < want) { lab = vec3<f32>(lab.x, lab.yz * (want / lc)); }
     }
 
     // Keep watercolor darkening from undercutting the palette floor.

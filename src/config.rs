@@ -69,6 +69,8 @@ pub struct Style {
     pub strokes: Strokes,
     pub value_contrast: ValueContrast,
     pub contrast: Contrast,
+    pub abstraction: Abstraction,
+    pub marks: Marks,
     pub watercolor: Watercolor,
     /// Named moods: partial overrides of this style (see `src/mood.rs`). The style itself is
     /// the `base` mood.
@@ -192,6 +194,55 @@ pub struct Contrast {
     pub target_spread: f32,
     /// Only textures whose spread exceeds this (feathered ±15%) adapt.
     pub trigger_spread: f32,
+}
+
+/// Design-like abstraction for busy, photographic textures (the same trigger as [`Contrast`]):
+/// a large-radius Kuwahara pass first simplifies the texture into big shapes; brushstrokes then
+/// follow the coarse structure and paint the simplified wash instead of the photo; wet edges only
+/// outline large regions; bright grayish glare calms into the surface color; texels keep their
+/// source chroma. Shape-based textures below the trigger (vines, ground) are unaffected.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Abstraction {
+    /// 0..1 overall amount on fully busy textures; 0 disables.
+    pub strength: f32,
+    /// Radius of the large-scale Kuwahara pass, in reference texels.
+    pub radius: f32,
+    /// Structure-tensor smoothing multiplier (strokes follow the coarse structure).
+    pub flow_scale: f32,
+    /// Stroke length multiplier.
+    pub stroke_scale: f32,
+    /// Coarse step for large-region edges, as a multiple of the wet-edge width.
+    pub edge_scale: f32,
+    /// 0..1 reduction of the remaining wet edges.
+    pub edge_soften: f32,
+    /// 0..1 calming of bright grayish highlight patches, and their neighborhood radius
+    /// (reference texels).
+    pub highlight_calm: f32,
+    pub highlight_radius: f32,
+    /// 0..1: output chroma kept at least this share of the source texel's chroma.
+    pub chroma_retain: f32,
+    /// Lower bound for the abstraction radius as a fraction of the texture's size (highlight
+    /// radius: twice this), so low-resolution textures stretched over big surfaces still get
+    /// big shapes.
+    pub min_frac: f32,
+}
+
+impl Default for Abstraction {
+    fn default() -> Self {
+        Self {
+            min_frac: 0.03,
+            strength: 0.0,
+            radius: 20.0,
+            flow_scale: 3.0,
+            stroke_scale: 1.8,
+            edge_scale: 4.0,
+            edge_soften: 0.5,
+            highlight_calm: 0.8,
+            highlight_radius: 12.0,
+            chroma_retain: 0.9,
+        }
+    }
 }
 
 impl Default for Contrast {
@@ -698,6 +749,44 @@ pub struct Pack {
     pub source_scale: Option<f32>,
     /// Mood rules by path glob, first match wins; unmatched files get the base mood.
     pub moods: Vec<MoodRule>,
+    /// Paint-mark size rules by path glob, first match wins; unmatched files get scale 1.
+    pub marks: Vec<MarksRule>,
+}
+
+/// Scales the paint-mark size (the painting Kuwahara radius) of matching files, e.g. for
+/// textures that tile many times, whose texture-space marks shrink in world space.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MarksRule {
+    pub glob: String,
+    pub scale: f32,
+}
+
+/// Paint marks: the size of the soft dabs/blotches that fine color variation is simplified into.
+///
+/// Seamlessly tiling textures repeat many times across a surface, which shrinks their
+/// texture-space marks in world space, so they get `tiling_multiplier` × the size — but only as
+/// far as they are *speckled* (fine-scale lightness variation large relative to mid-scale, the
+/// signature of photographic grit), so shape-based art (vines, leaves) keeps its shapes.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Marks {
+    /// Mark radius in reference texels; replaces `kuwahara.radius` when set.
+    pub size: Option<f32>,
+    /// Mark-size multiplier for tiling, speckled textures (1 = off).
+    pub tiling_multiplier: f32,
+    /// Speckle ratio (fine / mid-scale L std) range over which the multiplier fades in.
+    pub speckle: [f32; 2],
+}
+
+impl Default for Marks {
+    fn default() -> Self {
+        Self {
+            size: None,
+            tiling_multiplier: 1.0,
+            speckle: [0.45, 0.6],
+        }
+    }
 }
 
 /// Assigns a mood (and optionally allows or denies dark greens) to matching files.
@@ -720,6 +809,7 @@ impl Default for Pack {
         Self {
             source_scale: None,
             moods: Vec::new(),
+            marks: Vec::new(),
             name: String::new(),
             rules: Vec::new(),
             list: None,
@@ -739,6 +829,15 @@ impl Pack {
             .iter()
             .find(|r| glob_match(&r.glob, &p))
             .map_or(self.default_category, |r| r.category)
+    }
+
+    /// Paint-mark scale by the first matching marks rule, else 1.
+    pub fn marks_scale_for(&self, path: &Path) -> f32 {
+        let p = path.to_string_lossy().replace('\\', "/");
+        self.marks
+            .iter()
+            .find(|r| glob_match(&r.glob, &p))
+            .map_or(1.0, |r| r.scale)
     }
 
     /// Mood by the first matching mood rule, else the base mood.

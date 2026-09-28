@@ -127,9 +127,17 @@ struct Params {
     vc_r_coarse: f32,
     vc_range: f32,
     amp: f32,
-    _pad3: f32,
-    _pad4: f32,
-    _pad5: f32,
+    busy: f32,
+    kuw_radius_coarse: f32,
+    edge_coarse_step: f32,
+    edge_soften: f32,
+    highlight_calm: f32,
+    highlight_radius: f32,
+    chroma_retain: f32,
+    mean_l: f32,
+    mean_a: f32,
+    mean_b: f32,
+    _pad6: f32,
 }
 
 #[repr(C)]
@@ -484,8 +492,21 @@ impl Stage for Stylize {
 
         // Parameters.
         let k = &style.kuwahara;
-        let radius = if k.radius > 0.0 && k.strength > 0.0 {
-            (k.radius * f * tr.radius_scale).clamp(k.min_radius, k.max_radius)
+        // Paint-mark size: the style's marks.size (or kuwahara.radius), per category and per
+        // pack-map rule (e.g. larger dabs on ground textures that tile many times).
+        let mark = style.marks.size.unwrap_or(k.radius);
+        let mut marks_scale = ctx.config.pack.marks_scale_for(ctx.rel);
+        let mut speckle = 0.0;
+        let mk = &style.marks;
+        if mk.tiling_multiplier != 1.0 && (wrap[0] || wrap[1]) {
+            let fine = analysis::local_l_std(image, (3.0 * f).max(1.0), wrap);
+            let mid = analysis::local_l_std(image, (12.0 * f).max(2.0), wrap);
+            speckle = fine / mid.max(1e-6);
+            let w = smoothstep(mk.speckle[0], mk.speckle[1], speckle);
+            marks_scale *= 1.0 + (mk.tiling_multiplier - 1.0) * w;
+        }
+        let radius = if mark > 0.0 && k.strength > 0.0 {
+            (mark * f * tr.radius_scale * marks_scale).clamp(k.min_radius, k.max_radius)
         } else {
             0.0
         };
@@ -498,13 +519,42 @@ impl Stage for Stylize {
         // spread; textures below the trigger (the ground) keep the base amounts.
         let ct = &style.contrast;
         let r_mid = (vc.radius_mid * f).max(2.0);
-        let (spread, adapt) = if contrast_on {
+        let ab = &style.abstraction;
+        let abstraction_on = ab.strength > 0.0 && tr.value_contrast > 0.0;
+        let (spread, gate) = if contrast_on || abstraction_on {
             let s = analysis::local_l_std(image, r_mid, wrap);
-            let gate = smoothstep(ct.trigger_spread * 0.85, ct.trigger_spread * 1.15, s);
-            let need = (1.0 - ct.target_spread / s.max(1e-6)).max(0.0);
-            (s, (ct.strength * need * gate).clamp(0.0, 1.0))
+            (
+                s,
+                smoothstep(ct.trigger_spread * 0.85, ct.trigger_spread * 1.15, s),
+            )
         } else {
             (0.0, 0.0)
+        };
+        let adapt = if contrast_on {
+            let need = (1.0 - ct.target_spread / spread.max(1e-6)).max(0.0);
+            (ct.strength * need * gate).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        // Busy weight for the design-like abstraction (photographic, high-contrast textures).
+        let busy = if abstraction_on {
+            (ab.strength * gate * tr.value_contrast.min(1.0)).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let mean_lab = if busy > 0.0 {
+            crate::report::mean_oklab(image)
+        } else {
+            [0.5, 0.0, 0.0]
+        };
+        let tensor_sigma =
+            (tensor_sigma * (1.0 + busy * (ab.flow_scale - 1.0).max(0.0))).clamp(0.5, 32.0);
+        let radius_coarse = if busy > 0.0 {
+            (ab.radius * f)
+                .max(ab.min_frac * gm)
+                .clamp(k.min_radius, k.max_radius)
+        } else {
+            0.0
         };
         // Fine grit is compressed harder; the rest of the goal is reached by scaling the whole
         // texture's light/dark amplitude around its mean (`amp`): every shape, groove and edge
@@ -515,7 +565,8 @@ impl Stage for Stylize {
         // adapt = strength · (1 − target/spread): at full strength, amp = target/spread.
         let amp = 1.0 - adapt;
         let stroke_width = (st.width * f * tr.stroke_scale).max(0.75);
-        let stroke_len = (st.length * f * tr.stroke_scale).max(1.0);
+        let stroke_len =
+            (st.length * f * tr.stroke_scale * (1.0 + busy * (ab.stroke_scale - 1.0))).max(1.0);
         let edge_step = (wc.edge_width * f).max(1.0);
         let bleed_radius = (wc.bleed_radius * f).clamp(1.0, 48.0);
         let gran_px = (wc.granulation_scale * f).max(0.75);
@@ -563,6 +614,18 @@ impl Stage for Stylize {
             vc_r_coarse: (vc.radius_coarse * f).max(4.0),
             vc_range: vc.range,
             amp: 1.0 - (1.0 - amp) * tr.value_contrast.min(1.0),
+            busy,
+            kuw_radius_coarse: radius_coarse,
+            edge_coarse_step: (wc.edge_width * f * ab.edge_scale).max(2.0),
+            edge_soften: ab.edge_soften,
+            highlight_calm: ab.highlight_calm,
+            highlight_radius: (ab.highlight_radius * f)
+                .max(2.0 * ab.min_frac * gm)
+                .max(2.0),
+            chroma_retain: ab.chroma_retain,
+            mean_l: mean_lab[0],
+            mean_a: mean_lab[1],
+            mean_b: mean_lab[2],
             paper: wc.paper_grain * tr.paper,
             paper_tint: wc.paper_tint * tr.paper,
             paper_cells_x: cells(w, paper_px),
@@ -608,7 +671,16 @@ impl Stage for Stylize {
         ]
         .into_iter()
         .fold(0.0f32, f32::max);
-        let halo = (2.0 * radius + 3.0 * tensor_sigma + reach + stroke_len + 6.0).ceil() as u32;
+        let halo = (2.0 * (radius + radius_coarse)
+            + 3.0 * tensor_sigma
+            + reach
+            + stroke_len
+            + (ab.highlight_radius * f)
+                .max(2.0 * ab.min_frac * gm)
+                .max(2.0)
+                * busy.ceil()
+            + 6.0)
+            .ceil() as u32;
         let job = Job {
             params,
             lowres: lowres.map_or_else(|| vec![0.0], |l| l.data),
@@ -631,7 +703,7 @@ impl Stage for Stylize {
         }
         println!(
             "  {}: {w}x{h} {:?} mood={} wrap={}{} seam={:.1}/{:.1} tint_safe={} (C99 {:.3}) \
-             scale={f:.2} r={radius:.1} spread={spread:.4} mid={vc_mid:.2}{} | analysis {} gpu {}",
+             scale={f:.2} r={radius:.1} spread={spread:.4} busy={busy:.2} speckle={speckle:.2} marks={marks_scale:.2}{} | analysis {} gpu {}",
             ctx.rel.display(),
             ctx.category,
             ctx.mood,
@@ -800,6 +872,8 @@ impl Stylize {
             mapped_at_creation: false,
         });
 
+        // Pass variant for the next dispatch (band._a in the shader; 1 = coarse Kuwahara).
+        let variant = std::cell::Cell::new(0i32);
         // Dispatches `pipeline` over rows y0..y1 (an empty range dispatches one workgroup).
         let dispatch = |encoder: &mut wgpu::CommandEncoder,
                         pipeline: &wgpu::ComputePipeline,
@@ -814,7 +888,7 @@ impl Stylize {
                 contents: bytemuck::bytes_of(&BandUniform {
                     y0: y0 as i32,
                     y1: y1 as i32,
-                    _pad: [0; 2],
+                    _pad: [variant.get(), 0],
                 }),
                 usage: wgpu::BufferUsages::UNIFORM,
             });
@@ -883,28 +957,39 @@ impl Stylize {
         }
         buffers.push(enc.finish());
 
-        // Kuwahara in row bands, one command buffer each.
-        let r = params.kuw_radius as f64;
-        let area = (3.0 * r + 1.0).powi(2).max(1.0);
-        let rows = ((KUWAHARA_BAND_BUDGET / (w as f64 * area)) as u32).clamp(8, h.max(8));
-        let rows = rows.div_ceil(8) * 8;
-        let mut y = 0;
-        while y < h {
-            let y1 = (y + rows).min(h);
-            let mut enc = device.create_command_encoder(&Default::default());
-            // With the tensor skipped, texB/texC only need to be valid bindings.
-            dispatch(
-                &mut enc,
-                &p.kuwahara,
-                1,
-                if tensor_on { 2 } else { 1 },
-                1,
-                3,
-                y,
-                y1,
-            );
-            buffers.push(enc.finish());
-            y = y1;
+        // Kuwahara in row bands, one command buffer each. Busy textures first get a large-scale
+        // abstraction pass (T1 → T4), which the regular pass then paints (T4 → T3).
+        let coarse = params.busy > 0.0 && params.kuw_radius_coarse >= 0.5 && tensor_on;
+        let passes: &[(i32, usize, f32)] = if coarse {
+            &[(1, 1, params.kuw_radius_coarse), (0, 4, params.kuw_radius)]
+        } else {
+            &[(0, 1, params.kuw_radius)]
+        };
+        for &(var, input, r) in passes {
+            let out = if var == 1 { 4 } else { 3 };
+            let area = (3.0 * r as f64 + 1.0).powi(2).max(1.0);
+            let rows = ((KUWAHARA_BAND_BUDGET / (w as f64 * area)) as u32).clamp(8, h.max(8));
+            let rows = rows.div_ceil(8) * 8;
+            let mut y = 0;
+            while y < h {
+                let y1 = (y + rows).min(h);
+                let mut enc = device.create_command_encoder(&Default::default());
+                variant.set(var);
+                // With the tensor skipped, texB/texC only need to be valid bindings.
+                dispatch(
+                    &mut enc,
+                    &p.kuwahara,
+                    input,
+                    if tensor_on { 2 } else { 1 },
+                    1,
+                    out,
+                    y,
+                    y1,
+                );
+                variant.set(0);
+                buffers.push(enc.finish());
+                y = y1;
+            }
         }
 
         let mut enc = device.create_command_encoder(&Default::default());
