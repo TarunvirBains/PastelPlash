@@ -1,16 +1,23 @@
 # Target profile: Ship of Harkinian cel-shading fork (9.2.3-celshade0.11). See PLAN.md "Target notes".
 #
 # Only actors are relit by the toon shader (texel.rgb *= mix(shadow, lit, ramp); lit can exceed 1),
-# so actors get full de-lighting, a lightness ceiling, and no baked temperature or shadow tint:
-# the shader decides lit/shadow at runtime. World geometry keeps vanilla vertex shading.
+# so actors keep their own (mid-light, clearly colored) values: little pastel lift, light
+# de-lighting, a lightness ceiling with headroom for the lit multiplier, and no baked temperature
+# or shadow tint (the shader decides lit/shadow at runtime). World geometry keeps vanilla vertex
+# shading.
 name = "soh-celshade"
 
 [categories.actor]
-delight = 0.5
-lightness_ceiling = 0.88
+delight = 0.2
+lightness_ceiling = 0.8
+ceiling_knee = 0.15     # only the top is compressed: skin and hair keep their lightness
+floor_scale = 0.25      # a quarter of the palette's lift
+hue = 0.3               # keep actors' own skin, hair and leather hues
 warm_cool = 0.0
 shadow_tint = 0.0
 accent = 0.5
+paper = 0.3
+value_contrast = 0.3    # the cel shader supplies actors' light and shadow; keep their painted form
 
 [categories.world]
 delight = 0.35
@@ -31,3 +38,4 @@ warm_cool = 0.5
 shadow_tint = 0.0
 accent = 0.0
 stroke_scale = 2.0
+value_contrast = 0.0

@@ -1,0 +1,175 @@
+# Default style: the source pack's rich color, painted. Hue families and chroma stay close to the
+# source, with gentle nudges toward Skyward Sword's hues (yellow-green foliage, warm golden
+# earth, turquoise water). Only crushed darks are lifted, into deep *colored* shadows; mid and
+# light values stay near the source. The painted look comes from the technique: flattened
+# washes that follow form, brushstrokes smeared along it, wet edges, granulation and paper.
+#
+# Sizes are in "reference texels": texels of a texture whose sqrt(width * height) equals
+# scale.reference_size; they scale with resolution so every texture gets a comparable painterly
+# scale.
+name = "watercolor"
+
+[scale]
+reference_size = 1024
+exponent = 1.0
+
+[tiling]
+threshold = 2.5
+
+[delight]
+strength = 1.0
+radius = 0.06
+min_gain = 0.6
+max_gain = 2.0
+
+[kuwahara]
+radius = 8.0
+strength = 1.0
+sharpness = 8.0
+hardness = 8.0
+anisotropy = 1.0
+zero_crossing = 0.58
+tensor_sigma = 2.0
+min_radius = 2.0
+max_radius = 32.0
+
+[palette]
+enabled = true
+strength = 1.0
+lut_size = 65
+# Near-identity above the darks: crushed blacks lift to deep shadows, highlights soften a touch.
+l_curve = [[0, 0.2], [0.104, 0.24], [0.184, 0.29], [0.329, 0.39], [0.453, 0.49], [0.622, 0.64], [0.915, 0.9], [1, 0.97]]
+l_floor = 0.2
+l_ceiling = 0.97
+floor_knee = 0.5
+chroma_scale = 1.0
+chroma_cap = 0.25       # above the source pack's 99th percentile: no global chroma reduction
+chroma_lift = 0.3
+dark_chroma = 0.05      # dull darks → deep colored shadows along their own hue (no mud)
+dark_below = 0.45
+neutral_c = 0.02
+neutral_tint = { hue = 105.0, chroma = 0.012, amount = 0.3 }
+# Crushed darks become deep cool colored shadows, never neutral black or brown mud.
+shadow_tint = { below_input_l = 0.22, hue = 262.0, chroma = 0.05, amount = 0.6 }
+hue_feather = 10
+pigments = [20.0, 58.0, 80.0, 100.0, 118.0, 135.0, 160.0, 195.0, 242.0, 280.0]
+harmonize = 0.05
+pigment_spread = 25.0
+tint_safe_chroma = 0.03
+vivid = 0.0
+vivid_threshold = 0.15
+vivid_max_chroma = 0.2
+accent_fraction = 0.01
+accent_radius = 16.0
+accent_min_l = 0.3
+accent_hue = 265.0
+accent_chroma = 0.04
+accent_softness = 0.6
+accent_min_depth = 0.1
+dark_greens = true
+green_hue = [110.0, 175.0]
+light_green_floor = 0.6
+
+# Gentle SS hue nudges (hue_center = SS lit median hue); chroma stays at the source's level,
+# with a floor (c_min ≈ 0.9 × SS lit median) so colored texels never go gray.
+[[palette.groups]]
+name = "red_pink"
+hue_range = [345, 40]
+hue_center = 11.5
+hue_pull = 0.2
+c_scale = 1.0
+c_min = 0.032
+
+[[palette.groups]]
+name = "orange_brown_earth"     # → warm golden
+hue_range = [40, 85]
+hue_center = 68.0
+hue_pull = 0.25
+c_scale = 1.05
+c_min = 0.07
+
+[[palette.groups]]
+name = "yellow_olive"
+hue_range = [85, 115]
+hue_center = 99.6
+hue_pull = 0.15
+c_scale = 1.0
+c_min = 0.053
+
+[[palette.groups]]
+name = "green_foliage"          # → SS yellow-green
+hue_range = [115, 170]
+hue_center = 133.0
+hue_pull = 0.3
+c_scale = 1.05
+c_min = 0.06
+
+[[palette.groups]]
+name = "cyan_teal"
+hue_range = [170, 215]
+hue_center = 198.3
+hue_pull = 0.2
+c_scale = 1.05
+c_min = 0.047
+
+[[palette.groups]]
+name = "blue_sky_water"         # → SS turquoise-azure
+hue_range = [215, 275]
+hue_center = 230.0
+hue_pull = 0.35
+c_scale = 1.0
+c_min = 0.066
+
+[[palette.groups]]
+name = "violet_magenta"
+hue_range = [275, 345]
+hue_center = 307.0
+hue_pull = 0.2
+c_scale = 1.0
+c_min = 0.04
+
+[temperature]
+chroma = 0.006          # × target warm_cool (0 for actors)
+warm_hue = 70.0
+cool_hue = 250.0
+sensitivity = 1.5
+
+[strokes]
+strength = 0.01
+chroma = 0.1
+width = 6.0
+length = 18.0
+smear = 0.35              # detail returns as streaks along the form
+
+# Skyward Sword surfaces sit in a narrow lightness range: SS frames show ~0.4x the local L std
+# of OoT Reloaded textures (7x7: 0.0078 vs 0.0193; 25x25: 0.0215 vs 0.0451). Compress fine
+# light/dark detail strongly, large shapes barely; detail moves into color.
+[value_contrast]
+fine = 0.5
+mid = 0.35
+coarse = 0.1
+chroma = 0.5
+radius_fine = 3.0
+radius_mid = 12.0
+radius_coarse = 40.0
+range = 0.12
+
+[watercolor]
+edge_darkening = 0.05
+edge_relative = 0.5
+edge_threshold = 0.04
+edge_feather = 0.015
+edge_width = 5.0
+bleed = 0.4
+bleed_radius = 6.0
+bleed_range = 0.06
+granulation = 0.025
+granulation_scale = 4.0
+granulation_valley = 0.5
+paper_grain = 0.012
+paper_tint = 0.1
+paper_scale = 4.0
+paper_highlight = 0.85
+paper_color = [0.98, 0.965, 0.93]
+floor_margin = 0.06
+seed = 0

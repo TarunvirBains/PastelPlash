@@ -1,12 +1,12 @@
-# Default style: pastel watercolor in the direction of Skyward Sword, pushed further toward pure
-# pastel. Palette = the SS-measured tables (see ss-baseline.toml) extrapolated with `strength`
-# (1.0 = SS; 1.5 = the analysis's "beyond-ss" set, which read washed out on the samples, so the
-# default sits at 1.35). Watercolor technique is measured from public-domain watercolors.
+# Pastel (optional): a light, dreamy take. Skyward Sword's lightness, hue and chroma targets
+# (reference/ss-lit.toml, the "lit" subset), pushed further toward pure pastel: every hue lifted
+# and softer in contrast, but never grayer — chroma stays at SS's levels. This moves furthest
+# from the source's look; the default `watercolor` keeps OoT's own colors.
 #
 # Sizes are in "reference texels": texels of a texture whose sqrt(width * height) equals
 # scale.reference_size; they scale with resolution so every texture gets a comparable painterly
 # scale.
-name = "skyward-watercolor"
+name = "pastel"
 
 [scale]
 reference_size = 1024
@@ -34,57 +34,64 @@ max_radius = 32.0
 
 [palette]
 enabled = true
-strength = 1.35
+strength = 1.35         # 1 = SS; beyond lightens (softer contrast), never grays
 lut_size = 65
 l_curve = [[0, 0.38], [0.104, 0.407], [0.184, 0.438], [0.329, 0.565], [0.453, 0.72], [0.622, 0.87], [0.915, 0.955], [1, 0.975]]
 l_floor = 0.55
-l_ceiling = 0.975
+l_ceiling = 0.92        # not too close to white: sRGB has little chroma there (blues bleach)
 chroma_scale = 1.0
-chroma_cap = 0.165
+chroma_cap = 0.165      # SS 99th-percentile chroma
+chroma_lift = 0.3       # lifted colors gain a little chroma so they stay clean, not chalky
+dark_chroma = 0.05
+dark_below = 0.45
 neutral_c = 0.02
-neutral_tint = { hue = 98.0, chroma = 0.014, amount = 0.5 }
-# SS measures warm-umber shadows; kept subtle and world-only (target shadow_tint).
+neutral_tint = { hue = 105.0, chroma = 0.014, amount = 0.5 }   # SS neutrals: faint warm cream
+# SS measures warm-umber shadows; subtle and world-only (target shadow_tint).
 shadow_tint = { below_input_l = 0.25, hue = 72.0, chroma = 0.03, amount = 0.4 }
 hue_feather = 10
-# Limited pigment set measured from public-domain watercolors (pastel-lifted hues).
 pigments = [20.0, 58.0, 80.0, 100.0, 118.0, 135.0, 160.0, 195.0, 242.0, 280.0]
-harmonize = 0.3
+harmonize = 0.1
 pigment_spread = 25.0
 tint_safe_chroma = 0.03
-# Occasional vivid color: very saturated sources keep a little more chroma (never more L).
 vivid = 0.4
 vivid_threshold = 0.15
 vivid_max_chroma = 0.17
-# Impressionist accent darks: the most crevice-like texels become cool violet, never black.
-accent_fraction = 0.02
+accent_fraction = 0.01
 accent_radius = 16.0
-accent_min_l = 0.58
+accent_min_l = 0.62
 accent_hue = 262.0
 accent_chroma = 0.04
 accent_softness = 0.6
 accent_min_depth = 0.1
+dark_greens = true
+green_hue = [110.0, 175.0]
+light_green_floor = 0.74
 
+# Hue groups: hue_shift/hue_center from SS vs. OoT Reloaded, c_cap = SS lit chroma p90,
+# c_min ≈ 0.9 × SS lit median chroma ("pastel is not gray"), pastel floors (no dark greens).
 [[palette.groups]]
 name = "red_pink"
 hue_range = [345, 40]
-hue_shift = -18.8
+hue_shift = -8.0
 hue_center = 11.5
-hue_pull = 0.15
-l_offset = -0.042
+hue_pull = 0.2
+l_offset = -0.04
 l_floor = 0.6
-c_scale = 0.4
+c_scale = 0.7
 c_cap = 0.104
+c_min = 0.032
 
 [[palette.groups]]
 name = "orange_brown_earth"
 hue_range = [40, 85]
 hue_shift = -5.0
-hue_center = 63.2
-hue_pull = 0.15
+hue_center = 68.0
+hue_pull = 0.2
 l_offset = -0.06
 l_floor = 0.6
-c_scale = 0.9            # SS measures 1.2; softened toward tan/sand
-c_cap = 0.10
+c_scale = 1.2
+c_cap = 0.132
+c_min = 0.07
 
 [[palette.groups]]
 name = "yellow_olive"
@@ -92,59 +99,64 @@ hue_range = [85, 115]
 hue_shift = 3.6
 hue_center = 99.6
 hue_pull = 0.15
-l_offset = 0.05
+l_offset = 0.0
 l_floor = 0.72
 c_scale = 0.94
 c_cap = 0.124
+c_min = 0.053
 
 [[palette.groups]]
 name = "green_foliage"
 hue_range = [115, 170]
-hue_shift = 10.3
-hue_center = 132.0
+hue_shift = 5.0
+hue_center = 133.0
 hue_pull = 0.3
 l_offset = 0.0
 l_floor = 0.72
-c_scale = 1.22
-c_cap = 0.1
+c_scale = 1.1
+c_cap = 0.117
+c_min = 0.06
 
 [[palette.groups]]
 name = "cyan_teal"
 hue_range = [170, 215]
 hue_shift = 5.0
 hue_center = 198.3
-hue_pull = 0.15
-l_offset = -0.034
+hue_pull = 0.2
+l_offset = -0.03
 l_floor = 0.70
-c_scale = 1.24
-c_cap = 0.08
+c_scale = 1.2
+c_cap = 0.09
+c_min = 0.047
 
 [[palette.groups]]
 name = "blue_sky_water"
 hue_range = [215, 275]
-hue_shift = -23.9
+hue_shift = -15.0
 hue_center = 230.0
-hue_pull = 0.4
-l_offset = 0.085
+hue_pull = 0.5
+l_offset = 0.05
 l_floor = 0.62
-c_scale = 0.84
+c_scale = 1.0
 c_cap = 0.105
+c_min = 0.066
 
 [[palette.groups]]
 name = "violet_magenta"
 hue_range = [275, 345]
-hue_shift = 26.8
+hue_shift = 8.0
 hue_center = 307.0
-hue_pull = 0.15
-l_offset = -0.06
+hue_pull = 0.3
+l_offset = -0.05
 l_floor = 0.6
 c_scale = 1.07
 c_cap = 0.075
+c_min = 0.04
 
 [temperature]
-chroma = 0.02           # × target warm_cool (0 for actors)
+chroma = 0.008
 warm_hue = 70.0
-cool_hue = 285.0
+cool_hue = 250.0
 sensitivity = 1.5
 
 [strokes]
@@ -152,12 +164,23 @@ strength = 0.015
 chroma = 0.15
 width = 8.0
 length = 22.0
+smear = 0.2
+
+[value_contrast]
+fine = 0.4
+mid = 0.25
+coarse = 0.05
+chroma = 0.3
+radius_fine = 3.0
+radius_mid = 12.0
+radius_coarse = 40.0
+range = 0.12
 
 [watercolor]
-edge_darkening = 0.05     # max rim dL (paintings: 0.051)
-edge_relative = 0.5       # rim dL = 0.5 x wash depth (paintings: 0.61)
+edge_darkening = 0.05
+edge_relative = 0.5
 edge_threshold = 0.04
-edge_feather = 0.015      # lighter side of rimmed edges lightens inward
+edge_feather = 0.015
 edge_width = 5.0
 bleed = 0.4
 bleed_radius = 6.0
@@ -166,6 +189,7 @@ granulation = 0.025
 granulation_scale = 4.0
 granulation_valley = 0.5
 paper_grain = 0.012
+paper_tint = 0.15
 paper_scale = 4.0
 paper_highlight = 0.85
 paper_color = [0.98, 0.965, 0.93]
