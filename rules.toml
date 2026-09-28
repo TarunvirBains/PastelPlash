@@ -1,0 +1,57 @@
+# PastelPlash style contract: the hard limits every style in `styles/` and every target in `targets/`
+# must stay within. The rule tests (tests/rules_*.rs) read these bounds; they never hard-code values.
+#
+# Tuning a style inside these bounds needs no test changes. Changing a bound here changes what
+# PastelPlash's style *is* — do it deliberately, in its own reviewed commit. See docs/RULES.md.
+
+# Numeric slack for checks on rendered output (OKLab units).
+[tolerance]
+lightness = 0.015
+chroma = 0.012
+# Fraction of texels allowed to miss a per-texel check (GPU float and LUT interpolation noise).
+outliers = 0.002
+
+[palette]
+# The palette may only push toward pastel (strength < 1 would lower the floors).
+min_strength = 1.0
+max_strength = 2.0
+# Every style's global floor and every hue group's floor.
+min_floor = 0.55
+# OKLCH hue band that counts as green, and the chroma above which a texel reads as green.
+green_hue = [110.0, 175.0]
+green_min_chroma = 0.04
+# The green group's floor.
+min_green_floor = 0.70
+max_ceiling = 0.99
+max_chroma_cap = 0.20
+# How far watercolor darkening may undercut the palette floor.
+max_floor_margin = 0.08
+
+[accents]
+max_fraction = 0.08
+# Accents are cool colored shadows: blue to violet, never green, brown or black.
+hue = [235.0, 300.0]
+min_l = 0.35
+max_chroma = 0.12
+
+[vivid]
+max_amount = 0.8
+max_chroma = 0.20
+
+[technique]
+max_kuwahara_radius = 32.0
+max_edge_darkening = 0.10
+max_granulation = 0.05
+max_paper_grain = 0.03
+max_stroke_strength = 0.06
+max_temperature_chroma = 0.05
+# Rendered "no blur" check: a hard step edge stays within this many texels (10%–90% width).
+max_edge_width = 4.0
+
+# Applies to every file in targets/.
+[target]
+# Relit (actor) textures: the renderer multiplies by a lit factor that can exceed 1.
+max_actor_ceiling = 0.95
+# The cel shader decides lit/shadow at runtime: no baked temperature or shadow tint on actors.
+max_actor_warm_cool = 0.0
+max_actor_shadow_tint = 0.0
