@@ -117,22 +117,28 @@ pub fn detailed_region(image: &Image, size: u32) -> (u32, u32) {
 
 pub fn run(before: &Path, after: &Path, out: &Path, max_side: u32, crop_size: u32) -> Result<()> {
     fs::create_dir_all(out).with_context(|| format!("creating {}", out.display()))?;
-    let mut names: Vec<_> = fs::read_dir(after)?
-        .filter_map(|e| e.ok())
-        .map(|e| e.file_name())
-        .filter(|n| crate::walk::is_png(Path::new(n)))
+    // Recursive, so exported pack trees work; nested files are named `<folder>__<file>`.
+    let walk_opts = crate::walk::WalkOptions {
+        recursive: true,
+        follow_links: false,
+        exclude: Some(out.to_path_buf()),
+    };
+    let names: Vec<_> = crate::walk::walk(after, &walk_opts)?
+        .entries
+        .into_iter()
+        .filter(|e| e.is_png)
+        .map(|e| e.rel)
         .collect();
-    names.sort();
     for name in names {
         let src = before.join(&name);
         if !src.exists() {
             continue;
         }
-        let stem = Path::new(&name)
-            .file_stem()
-            .unwrap()
-            .to_string_lossy()
-            .to_string();
+        let file = name.file_stem().unwrap().to_string_lossy();
+        let stem = match name.parent().and_then(Path::file_name) {
+            Some(dir) => format!("{}__{file}", dir.to_string_lossy()),
+            None => file.to_string(),
+        };
         let a = png_io::read(&src)?;
         let b = png_io::read(&after.join(&name))?;
         png_io::write(

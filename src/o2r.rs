@@ -250,6 +250,37 @@ pub fn run(opts: &Options, config: &Config, pipeline: &Pipeline) -> Result<()> {
     Ok(())
 }
 
+/// Exports matching textures as PNGs under `out_dir`, keeping their archive paths (plus
+/// `.png`), so pack-map rules still apply to them. The pack is only read. Returns the count.
+pub fn export(input: &Path, out_dir: &Path, include: &[String]) -> Result<usize> {
+    let archive = zip::ZipArchive::new(
+        File::open(input).with_context(|| format!("opening {}", input.display()))?,
+    )?;
+    let names: Vec<String> = archive
+        .file_names()
+        .filter(|n| include.is_empty() || include.iter().any(|g| glob_match(g, n)))
+        .map(String::from)
+        .collect();
+    drop(archive);
+    let count = AtomicUsize::new(0);
+    names.par_iter().try_for_each_init(
+        || zip::ZipArchive::new(File::open(input).unwrap()).unwrap(),
+        |archive, name| -> Result<()> {
+            let mut bytes = Vec::new();
+            archive.by_name(name)?.read_to_end(&mut bytes)?;
+            let Some((_, image)) = decode(&bytes) else {
+                return Ok(());
+            };
+            let dst = out_dir.join(format!("{name}.png"));
+            std::fs::create_dir_all(dst.parent().unwrap())?;
+            crate::png_io::write(&image, &dst)?;
+            count.fetch_add(1, Ordering::Relaxed);
+            Ok(())
+        },
+    )?;
+    Ok(count.into_inner())
+}
+
 /// Returns the bytes to write (and whether they were processed), or `None` to leave the entry
 /// out of a mod.
 fn handle(

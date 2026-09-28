@@ -26,6 +26,8 @@ enum Command {
     GpuInfo,
     /// Restyle the textures of a `.o2r` pack (Ship of Harkinian) into a new `.o2r` mod.
     O2r(O2rArgs),
+    /// Export textures from a `.o2r` pack as PNGs, keeping their archive paths.
+    O2rExport(O2rExportArgs),
     /// Bake a style's palette into a `.cube` 3D LUT.
     BakeLut(BakeLutArgs),
     /// Write downsized before/after images and 1:1 crops for visual comparison.
@@ -61,6 +63,17 @@ struct O2rArgs {
     /// Worker threads (default or 0: all cores).
     #[arg(short, long, value_name = "N")]
     jobs: Option<usize>,
+}
+
+#[derive(Args)]
+struct O2rExportArgs {
+    /// Source `.o2r` pack (only read).
+    input: PathBuf,
+    /// Output folder.
+    output: PathBuf,
+    /// Only entries matching this glob (repeatable).
+    #[arg(long, value_name = "GLOB")]
+    include: Vec<String>,
 }
 
 #[derive(Args)]
@@ -141,6 +154,12 @@ fn main() -> ExitCode {
         Command::GpuInfo => pastelplash::gpu::info().map(|()| ExitCode::SUCCESS),
         Command::BakeLut(args) => bake_lut(args).map(|()| ExitCode::SUCCESS),
         Command::O2r(args) => o2r(args).map(|()| ExitCode::SUCCESS),
+        Command::O2rExport(args) => {
+            pastelplash::o2r::export(&args.input, &args.output, &args.include).map(|n| {
+                println!("exported {n} textures to {}", args.output.display());
+                ExitCode::SUCCESS
+            })
+        }
         Command::DevCompare(args) => pastelplash::compare::run(
             &args.before,
             &args.after,
