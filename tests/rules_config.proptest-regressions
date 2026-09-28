@@ -5,3 +5,6 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc e8417a08efd454addceccfa552506587550afb2e7f00965cc406c3ea146887ab # shrinks to l = 0.18992235, c = 0.2041109, h = 113.840996
+cc 294dd28de2bc5dd4df918f02d1d2dac359d6e3b0b8b3f920f62af881cdefbed2 # shrinks to l = 0.6161852, c = 0.11898026, h = 236.41891
+cc ae128610407006f686fe6123903b06588717106b8c959898eb7632a73b3a9a5a # shrinks to r = 0.17421858, g = 0.16677646, b = 0.124861896
+cc 6d0a0f750c04301dc4a74aeb98d427142bd75a86e4e82df0f4bf767d05c67af3 # shrinks to r = 0.07262905, g = 0.06646574, b = 0.07604196

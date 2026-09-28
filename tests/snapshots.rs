@@ -69,7 +69,7 @@ fn delta_e(a: [f32; 4], b: [f32; 4]) -> f32 {
 
 #[test]
 fn snapshots_match_goldens() {
-    let style = repo().join("styles/skyward-watercolor.toml");
+    let style = repo().join("styles/watercolor.toml");
     let config = load(&style, &default_target());
     let bless = std::env::var_os("PASTELPLASH_BLESS").is_some();
     let dir = repo().join("tests/golden");

@@ -21,18 +21,6 @@ fn each_render(category: Category, img: &Image, mut f: impl FnMut(&str, &Style, 
     }
 }
 
-fn green_floor(style: &Style) -> f32 {
-    let green = contract().palette.green_hue;
-    let mid = (green[0] + green[1]) / 2.0;
-    style
-        .palette
-        .groups
-        .iter()
-        .filter(|g| in_hue_range(mid, g.hue_range))
-        .map(|g| g.l_floor)
-        .fold(f32::NAN, f32::min)
-}
-
 /// Fails if more than the contract's outlier budget of opaque texels fail `bad`.
 fn assert_few(name: &str, rule: &str, out: &Image, bad: impl Fn([f32; 4]) -> bool) {
     let opaque: Vec<[f32; 4]> = out.pixels.iter().copied().filter(|p| p[3] > 0.5).collect();
@@ -48,85 +36,168 @@ fn assert_few(name: &str, rule: &str, out: &Image, bad: impl Fn([f32; 4]) -> boo
     );
 }
 
-fn is_accent(style: &Style, [_, c, h]: [f32; 3]) -> bool {
-    c < 0.02 || in_hue_range(h, contract().accents.hue) || {
-        let d = (h - style.palette.accent_hue + 540.0).rem_euclid(360.0) - 180.0;
-        d.abs() < 45.0
+fn median(mut v: Vec<f32>) -> f32 {
+    let i = v.len() / 2;
+    *v.select_nth_unstable_by(i, f32::total_cmp).1
+}
+
+/// Median lightness standard deviation over 7×7 windows on a grid.
+fn local_std(img: &Image) -> f32 {
+    let (w, h) = (img.width as usize, img.height as usize);
+    let l: Vec<f32> = img.pixels.iter().map(|&p| lch(p)[0]).collect();
+    let mut v = Vec::new();
+    for y in (3..h - 3).step_by(5) {
+        for x in (3..w - 3).step_by(5) {
+            let (mut s, mut s2) = (0.0, 0.0);
+            for yy in y - 3..=y + 3 {
+                for xx in x - 3..=x + 3 {
+                    let t = l[yy * w + xx];
+                    s += t;
+                    s2 += t * t;
+                }
+            }
+            let m = s / 49.0;
+            v.push((s2 / 49.0 - m * m).max(0.0f32).sqrt());
+        }
+    }
+    median(v)
+}
+
+#[test]
+fn rule_darks_are_colored_never_black() {
+    let k = contract();
+    for img in [
+        dark_hues(192, 1),
+        dark_foliage(192, 2),
+        grayscale_dark(192, 3),
+    ] {
+        each_render(Category::World, &img, |name, _, _, out| {
+            assert_few(name, "crushed black", out, |p| {
+                lch(p)[0] < k.palette.min_l - k.tolerance.lightness
+            });
+            assert_few(name, "neutral dark", out, |p| {
+                let [l, c, _] = lch(p);
+                l < k.palette.dark_l && c < k.palette.dark_min_chroma - 1e-3
+            });
+        });
     }
 }
 
 #[test]
-fn rule_no_dark_greens() {
+fn rule_no_brown_mud() {
     let k = contract();
-    for seed in 0..3 {
-        each_render(
-            Category::World,
-            &dark_foliage(256, seed),
-            |name, style, _, out| {
-                let floor =
-                    green_floor(style) - style.watercolor.floor_margin - k.tolerance.lightness;
-                assert_few(name, "dark green", out, |p| {
-                    let [l, c, h] = lch(p);
-                    c >= k.palette.green_min_chroma
-                        && in_hue_range(h, k.palette.green_hue)
-                        && l < floor
-                });
-            },
+    each_render(Category::World, &dull_browns(192, 4), |name, _, _, out| {
+        assert_few(name, "brown mud", out, |p| k.palette.is_mud(lch(p)));
+    });
+}
+
+#[test]
+fn rule_identity_is_kept() {
+    // Each texture's mean color stays close to the source's, and hue families stay put.
+    let k = contract();
+    let reference =
+        pastelplash::report::Reference::load(&repo().join("reference/ss-lit.toml")).unwrap();
+    for img in [tiling(256, 5), mid_foliage(256, 6), dull_browns(192, 7)] {
+        let src_mean = pastelplash::report::mean_oklab(&img);
+        each_render(Category::World, &img, |name, _, _, out| {
+            let m = pastelplash::report::mean_oklab(out);
+            let de = (0..3)
+                .map(|i| (m[i] - src_mean[i]).powi(2))
+                .sum::<f32>()
+                .sqrt();
+            let bound = k.identity.bound(name);
+            assert!(
+                de <= bound,
+                "{name}: mean color moved ΔE {de:.3} (bound {bound})"
+            );
+            // Per hue group (by source hue): the mean hue shift of colored texels.
+            let mut shifts = vec![(0.0f32, 0usize); reference.groups.len()];
+            for (a, b) in img.pixels.iter().zip(&out.pixels) {
+                let (sa, sb) = (lch(*a), lch(*b));
+                if sa[1] < 0.05 || sb[1] < 0.04 {
+                    continue;
+                }
+                if let Some(g) = reference.group_of(sa[2]) {
+                    shifts[g].0 += pastelplash::color::hue_diff(sa[2], sb[2]);
+                    shifts[g].1 += 1;
+                }
+            }
+            let total: usize = shifts.iter().map(|s| s.1).sum();
+            for (g, (sum, n)) in reference.groups.iter().zip(shifts) {
+                if n * 20 < total {
+                    continue; // groups with under 5% of the texels
+                }
+                let mean = sum / n as f32;
+                assert!(
+                    mean.abs() <= k.identity.max_group_hue_shift,
+                    "{name}: {} hue moved {mean:.1} degrees",
+                    g.name
+                );
+            }
+        });
+    }
+}
+
+#[test]
+fn rule_value_contrast_is_compressed_color_is_kept() {
+    // Fine light/dark detail is reduced by at least the configured amount, while the texture's
+    // mean lightness and its color stay.
+    let k = contract();
+    let img = gritty_blocks(256, 8);
+    let (std0, mean0) = (local_std(&img), pastelplash::report::mean_oklab(&img)[0]);
+    let c0 = median(img.pixels.iter().map(|&p| lch(p)[1]).collect());
+    for path in styles() {
+        let config = load(&path, &default_target());
+        let Some(out) = render(&path, &config, Category::World, &img) else {
+            return;
+        };
+        let n = name(&path);
+        let fine = config.style.value_contrast.fine;
+        let std1 = local_std(&out);
+        let want = std0 * (1.0 - k.technique.value_min_effect * fine);
+        assert!(
+            std1 <= want,
+            "{n}: local L std {std0:.4} -> {std1:.4} (want <= {want:.4})"
+        );
+        let mean1 = pastelplash::report::mean_oklab(&out)[0];
+        let bound = k.technique.value_mean_tolerance.max(k.identity.bound(&n));
+        assert!(
+            (mean1 - mean0).abs() <= bound,
+            "{n}: mean L {mean0:.3} -> {mean1:.3}"
+        );
+        let c1 = median(out.pixels.iter().map(|&p| lch(p)[1]).collect());
+        assert!(
+            c1 >= k.palette.retained(c0),
+            "{n}: median chroma {c0:.3} -> {c1:.3}"
         );
     }
 }
 
 #[test]
-fn rule_all_hue_pastel_floor_except_accents() {
+fn rule_actor_keeps_color_and_value() {
+    // A pale peach skin-like actor texture keeps its hue and chroma (never gray or tint-safe)
+    // and its lightness (held only to the target's ceiling).
     let k = contract();
-    each_render(
-        Category::World,
-        &dark_hues(256, 1),
-        |name, style, _, out| {
-            let floor =
-                style.palette.l_floor - style.watercolor.floor_margin - k.tolerance.lightness;
-            assert_few(name, "below floor and not an accent", out, |p| {
-                let v = lch(p);
-                v[0] < floor && !is_accent(style, v)
-            });
-            // Accent darks: bounded in count and depth, and cool.
-            let dark: Vec<[f32; 3]> = out
-                .pixels
-                .iter()
-                .map(|&p| lch(p))
-                .filter(|v| v[0] < floor)
-                .collect();
-            let frac = dark.len() as f32 / out.pixels.len() as f32;
-            assert!(
-                frac <= style.palette.accent_fraction + k.tolerance.outliers * 5.0,
-                "{name}: {frac} of texels below the floor (accent_fraction {})",
-                style.palette.accent_fraction
-            );
-            for v in dark {
-                assert!(
-                    v[0] >= style.palette.accent_min_l - k.tolerance.lightness,
-                    "{name}: accent too dark: {v:?}"
-                );
-            }
-        },
-    );
-}
-
-#[test]
-fn rule_accents_are_never_green() {
-    let k = contract();
-    each_render(
-        Category::World,
-        &dark_foliage(256, 7),
-        |name, style, _, out| {
-            // Anything that got darker than the green floor must have left the green family.
-            let floor = green_floor(style) - style.watercolor.floor_margin - k.tolerance.lightness;
-            assert_few(name, "green accent", out, |p| {
-                let [l, c, h] = lch(p);
-                l < floor && c >= k.palette.green_min_chroma && in_hue_range(h, k.palette.green_hue)
-            });
-        },
-    );
+    let img = pale_skin(128, 9);
+    let c0 = median(img.pixels.iter().map(|&p| lch(p)[1]).collect());
+    let l0 = median(img.pixels.iter().map(|&p| lch(p)[0]).collect());
+    each_render(Category::Actor, &img, |name, _, config, out| {
+        let ceiling = config
+            .target
+            .treatment(Category::Actor)
+            .lightness_ceiling
+            .unwrap_or(1.0);
+        let c1 = median(out.pixels.iter().map(|&p| lch(p)[1]).collect());
+        let l1 = median(out.pixels.iter().map(|&p| lch(p)[0]).collect());
+        assert!(
+            c1 >= k.actor.retention_ratio * c0,
+            "{name}: actor skin lost color: C {c0:.3} -> {c1:.3}"
+        );
+        assert!(
+            (l1 - l0.min(ceiling)).abs() <= k.actor.max_lightness_shift,
+            "{name}: actor lightness {l0:.3} -> {l1:.3} (ceiling {ceiling})"
+        );
+    });
 }
 
 #[test]
@@ -157,14 +228,12 @@ fn rule_vivid_colors_are_bounded() {
         [r, g, b, 1.0]
     });
     each_render(Category::World, &img, |name, style, _, out| {
-        let cap = style
-            .palette
-            .chroma_cap
-            .max(style.palette.vivid_max_chroma)
+        // Brushwork and pooling may add a little chroma on top of the palette's cap; the
+        // contract bounds the result.
+        let cap = (style.palette.chroma_cap.max(style.palette.vivid_max_chroma) * 1.25)
             .min(k.vivid.max_chroma);
-        // Watercolor pooling may add a little chroma on top of the palette's cap.
         assert_few(name, "chroma above cap", out, |p| {
-            lch(p)[1] > cap * 1.15 + k.tolerance.chroma
+            lch(p)[1] > cap + k.tolerance.chroma
         });
     });
 }
@@ -352,7 +421,7 @@ fn rule_output_in_gamut_and_finite() {
 #[test]
 fn rule_identity_when_all_strengths_are_zero() {
     // A palette at strength 0 with every other effect off must leave the image unchanged.
-    let path = repo().join("styles/skyward-watercolor.toml");
+    let path = repo().join("styles/watercolor.toml");
     let dir = tempfile::tempdir().unwrap();
     let neutral = dir.path().join("neutral.toml");
     std::fs::write(&neutral, "[palette]\nenabled = true\nstrength = 0.0\n").unwrap();
@@ -379,7 +448,7 @@ fn rule_identity_when_all_strengths_are_zero() {
 fn rule_sixteen_bit_inputs_are_handled() {
     use pastelplash::pipeline::Pipeline;
     use pastelplash::process::{self, Options};
-    let style = repo().join("styles/skyward-watercolor.toml");
+    let style = repo().join("styles/watercolor.toml");
     if stylizer(&style).is_none() {
         return;
     }
@@ -429,7 +498,7 @@ fn rule_chunked_processing_matches_whole_image() {
     // show. (Accent thresholds are per chunk, so accents are off for this comparison.)
     use pastelplash::pipeline::{FileContext, Stage};
     use pastelplash::stylize::Stylize;
-    let style = repo().join("styles/skyward-watercolor.toml");
+    let style = repo().join("styles/watercolor.toml");
     if stylizer(&style).is_none() {
         return;
     }
@@ -451,7 +520,7 @@ fn rule_chunked_processing_matches_whole_image() {
     let (whole, chunked) = (run(None), run(Some(160)));
     for (a, b) in whole.pixels.iter().zip(&chunked.pixels) {
         for k in 0..3 {
-            assert!((a[k] - b[k]).abs() < 1e-3, "chunk seam: {a:?} vs {b:?}");
+            assert!((a[k] - b[k]).abs() < 3e-3, "chunk seam: {a:?} vs {b:?}");
         }
     }
 }

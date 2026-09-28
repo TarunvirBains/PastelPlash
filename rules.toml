@@ -1,8 +1,10 @@
-# PastelPlash style contract: the hard limits every style in `styles/` and every target in `targets/`
-# must stay within. The rule tests (tests/rules_*.rs) read these bounds; they never hard-code values.
+# PastelPlash style contract: the hard limits every style in `styles/` (in every mood it defines)
+# and every target in `targets/` must stay within. The rule tests (tests/rules_*.rs) read these
+# bounds; they never hard-code values. Bounds are wide enough for every shipped style, from the
+# rich-color default to pastel.
 #
 # Tuning a style inside these bounds needs no test changes. Changing a bound here changes what
-# PastelPlash's style *is* — do it deliberately, in its own reviewed commit. See docs/RULES.md.
+# PastelPlash's style *is*: do it deliberately, in its own reviewed commit. See docs/RULES.md.
 
 # Numeric slack for checks on rendered output (OKLab units).
 [tolerance]
@@ -12,46 +14,82 @@ chroma = 0.012
 outliers = 0.002
 
 [palette]
-# The palette may only push toward pastel (strength < 1 would lower the floors).
-min_strength = 1.0
+min_strength = 0.0
 max_strength = 2.0
-# Every style's global floor and every hue group's floor.
-min_floor = 0.55
-# OKLCH hue band that counts as green, and the chroma above which a texel reads as green.
-green_hue = [110.0, 175.0]
-green_min_chroma = 0.04
-# The green group's floor.
-min_green_floor = 0.70
-max_ceiling = 0.99
-max_chroma_cap = 0.20
-# How far watercolor darkening may undercut the palette floor.
 max_floor_margin = 0.08
+# No crushed black: nothing (except accent darks) maps darker than this.
+min_l = 0.15
+# Darks are colored: any output darker than dark_l carries at least dark_min_chroma
+# (never neutral near-black). Tint-safe textures (lightness only) are exempt.
+dark_l = 0.3
+dark_min_chroma = 0.015
+# No brown mud: an output darker than mud_l with a hue in mud_hue must not be dull
+# (chroma between neutral and mud_max_chroma).
+mud_l = 0.4
+mud_hue = [40.0, 100.0]
+mud_max_chroma = 0.035
+# Pastel is not gray: a clearly colored source (chroma ≥ retention_min_source_chroma) keeps at
+# least min(retention_ratio × its chroma, retention_floor).
+retention_min_source_chroma = 0.05
+retention_ratio = 0.6
+retention_floor = 0.05
+# Hue nudges stay nudges: colored texels move by at most this many degrees of hue.
+max_hue_shift = 45.0
 
 [accents]
 max_fraction = 0.08
 # Accents are cool colored shadows: blue to violet, never green, brown or black.
 hue = [235.0, 300.0]
-min_l = 0.35
+min_l = 0.28
 max_chroma = 0.12
 
 [vivid]
 max_amount = 0.8
-max_chroma = 0.20
+# Rendered chroma ceiling (rich styles keep the source's chroma; this only bounds excess).
+max_chroma = 0.3
 
 [technique]
 max_kuwahara_radius = 32.0
 max_edge_darkening = 0.10
 max_granulation = 0.05
 max_paper_grain = 0.03
+max_paper_tint = 0.5
 max_stroke_strength = 0.06
+max_smear = 0.8
 max_temperature_chroma = 0.05
 # Rendered "no blur" check: a hard step edge stays within this many texels (10%–90% width).
 max_edge_width = 4.0
+# Value compression (rendered): fine-scale L std must drop by at least this fraction of the
+# style's `value_contrast.fine` (Kuwahara and compression together), with the texture's mean L
+# kept within value_mean_tolerance.
+value_min_effect = 0.5
+value_mean_tolerance = 0.06
+
+# Identity: it must still look and feel like the source game. Each texture's alpha-weighted mean
+# OKLab color stays within max_mean_delta_e of the source's (for relit actors, of the source
+# with its lightness held to the target's ceiling), and each hue group's mean hue moves by at
+# most max_group_hue_shift. Styles that deliberately move further (opt-in looks) get their own,
+# larger bound here.
+[identity]
+max_mean_delta_e = 0.08
+max_group_hue_shift = 20.0
+[identity.styles]
+ss-baseline = 0.15
+pastel = 0.45
 
 # Applies to every file in targets/.
 [target]
 # Relit (actor) textures: the renderer multiplies by a lit factor that can exceed 1.
-max_actor_ceiling = 0.95
+max_actor_ceiling = 0.9
 # The cel shader decides lit/shadow at runtime: no baked temperature or shadow tint on actors.
 max_actor_warm_cool = 0.0
 max_actor_shadow_tint = 0.0
+# Actors keep their painted form and their own colors.
+max_actor_delight = 0.4
+max_actor_lift = 0.5
+max_actor_hue = 0.5
+
+# Rendered actor preservation: colored actor texels keep their color and value.
+[actor]
+retention_ratio = 0.7
+max_lightness_shift = 0.2
