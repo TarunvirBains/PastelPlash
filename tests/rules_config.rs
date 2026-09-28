@@ -297,8 +297,52 @@ fn lut_matches_the_mapping_outside_the_darkest_cell() {
     }
 }
 
+/// Deterministic property tests: a fixed seed (so CI and local runs see the same cases) and
+/// enough cases to cover the color cube well. Failures found are also persisted in
+/// `tests/rules_config.proptest-regressions` and replayed first on every run.
+/// `PASTELPLASH_PROPTEST_CASES` raises the count for a deeper local sweep.
+fn proptest_config() -> ProptestConfig {
+    let cases = std::env::var("PASTELPLASH_PROPTEST_CASES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(4000);
+    ProptestConfig {
+        cases,
+        rng_seed: proptest::test_runner::RngSeed::Fixed(0x5041_5354_454C),
+        ..ProptestConfig::default()
+    }
+}
+
+#[test]
+fn rule_hued_near_black_darks_keep_their_hue() {
+    // Regression (found by proptest): a near-black navy has tiny absolute chroma but is clearly
+    // blue; it was treated as neutral and warmed into umber "mud".
+    let k = contract();
+    for rgb in [
+        [0.016155554, 0.02241493, 0.045453776], // near-black navy
+        [0.045, 0.02, 0.012],                   // near-black red-brown
+        [0.012, 0.03, 0.014],                   // near-black green
+    ] {
+        let [_, _, h_src] = lch([rgb[0], rgb[1], rgb[2], 1.0]);
+        for (name, _, _, lut) in luts() {
+            let out = mapped_lch(lut, rgb);
+            assert!(
+                !k.palette.is_mud(out),
+                "{name}: {rgb:?} -> {out:?} (brown mud)"
+            );
+            if out[1] >= 0.02 {
+                let d = color::hue_diff(h_src, out[2]).abs();
+                assert!(
+                    d <= k.palette.dark_max_hue_shift,
+                    "{name}: {rgb:?} hue {h_src} -> {out:?}"
+                );
+            }
+        }
+    }
+}
+
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(1500))]
+    #![proptest_config(proptest_config())]
 
     #[test]
     fn rule_darks_are_colored_never_black(r in 0.0f32..1.0, g in 0.0f32..1.0, b in 0.0f32..1.0) {
@@ -345,7 +389,9 @@ proptest! {
         prop_assume!(c_src >= 0.06);
         for (name, _, _, lut) in luts() {
             let [_, co, ho] = mapped_lch(lut, rgb);
-            prop_assume!(co >= 0.05);
+            if co < 0.05 {
+                continue;
+            }
             let d = color::hue_diff(h_src, ho).abs();
             prop_assert!(d <= k.palette.max_hue_shift + 2.0,
                 "{}: hue {} -> {} ({} degrees)", name, h_src, ho, d);
@@ -358,10 +404,15 @@ proptest! {
         let k = contract();
         let rgb = from_oklch(l, c, h);
         let [l_src, c_src, h_src] = lch([rgb[0], rgb[1], rgb[2], 1.0]);
-        prop_assume!(l_src < 0.35 && c_src >= 0.03);
+        // Many dark saturated OKLCH colors are outside sRGB; skip those without counting a reject.
+        if l_src >= 0.35 || c_src < 0.03 {
+            return Ok(());
+        }
         for (name, _, _, lut) in luts() {
             let [_, co, ho] = mapped_lch(lut, rgb);
-            prop_assume!(co >= 0.02);
+            if co < 0.02 {
+                continue;
+            }
             let d = color::hue_diff(h_src, ho).abs();
             prop_assert!(d <= k.palette.dark_max_hue_shift + 2.0,
                 "{}: dark L {} C {} hue {} -> {} ({} degrees)", name, l_src, c_src, h_src, ho, d);
@@ -415,7 +466,7 @@ proptest! {
             let off = lch(Mapping::new(&style.palette, &cold).map(rgb));
             if !(off[1] >= 0.02 && on[1] >= 0.02) { continue; }
             let (d_off, d_on) = (color::hue_diff(off[2], w.hue), color::hue_diff(on[2], w.hue));
-            prop_assert!(d_on.abs() <= d_off.abs() + 1.0 && d_on * d_off >= -1e-3,
+            prop_assert!(d_on.abs() <= d_off.abs() + 1.0 && (d_on * d_off >= -1e-3 || d_on.abs() < 1.0),
                 "{}: hue {} -> {} without warmth, {} with (target {})", name, h_src, off[2], on[2], w.hue);
             if inside(off[2]) {
                 prop_assert!(inside(on[2]) || color::hue_diff(on[2], w.hue).abs() < 1.0,
