@@ -137,7 +137,7 @@ fn soft_cap(c: f32, cap: f32) -> f32 {
     if cap <= 0.0 {
         return 0.0;
     }
-    let knee = 0.6 * cap;
+    let knee = 0.8 * cap;
     if c <= knee {
         c
     } else {
@@ -154,6 +154,7 @@ struct Blend {
     floor: f32,
     c_scale: f32,
     c_cap: f32,
+    c_min: f32,
 }
 
 /// The mapping for one palette config, ready to evaluate or bake.
@@ -205,6 +206,7 @@ impl Mapping<'_> {
             b.floor += w * self.group_floor(g);
             b.c_scale += w * g.c_scale;
             b.c_cap += w * g.c_cap.unwrap_or(1.0);
+            b.c_min += w * g.c_min;
         }
         // Uncovered share behaves like an identity group.
         let rest = 1.0 - b.weight;
@@ -264,14 +266,10 @@ impl Mapping<'_> {
             h2 += harmonize * pigment_pull(&p.pigments, p.pigment_spread, h2);
         }
 
-        // Chroma with soft caps (tighter when extrapolating).
-        let tighten = s.max(1.0).sqrt();
-        let global_cap = if s <= 1.0 {
-            lerp(1.0, p.chroma_cap, s)
-        } else {
-            p.chroma_cap / tighten
-        };
-        let mut cap = g.c_cap.min(p.chroma_cap) / tighten;
+        // Chroma: scale, soft cap, and a per-group chroma floor for clearly colored sources.
+        // Extrapolating past strength 1 lightens; it never grays (caps and scales stop at 1).
+        let global_cap = lerp(1.0, p.chroma_cap, s.min(1.0));
+        let mut cap = g.c_cap.min(p.chroma_cap);
         let mut scale = (g.c_scale * p.chroma_scale).max(0.0);
         // 4. Vivid colors keep more chroma (never more lightness).
         let mut vivid_cap = global_cap;
@@ -288,13 +286,12 @@ impl Mapping<'_> {
                 vivid_cap = lerp(global_cap, p.vivid_max_chroma.max(global_cap), v);
             }
         }
-        // Chroma boosts are never extrapolated past the configured look (pastel means softer).
-        let c1 = c * if scale > 1.0 {
-            scale.powf(s.min(1.0))
-        } else {
-            scale.powf(s)
-        };
-        let c2 = lerp(c1, soft_cap(c1, cap), s.min(1.0));
+        let c1 = c * scale.powf(s.min(1.0));
+        let c1 = c1 * (1.0 + p.chroma_lift * s.min(1.0) * (l3 - l).max(0.0));
+        let mut c2 = lerp(c1, soft_cap(c1, cap), s.min(1.0));
+        // "Pastel is not gray": colored sources keep at least the group's reference chroma.
+        let colored = smoothstep(p.neutral_c, p.neutral_c * 2.5, c) * s.min(1.0);
+        c2 = c2.max(g.c_min * colored);
         let chromatic = color::oklch_to_oklab([l3, c2, h2]);
 
         // 5. Neutral path.
@@ -485,21 +482,35 @@ mod tests {
 
     #[test]
     fn vivid_colors_keep_more_chroma() {
-        let chroma = |p: &Palette| lch(mapping(p).map([0.9, 0.1, 0.1]))[1];
+        let chroma = |p: &Palette| lch(mapping(p).map([0.7, 0.1, 0.1]))[1];
+        // A self-contained palette: one soft group that caps chroma well inside the gamut.
         let plain = Palette {
+            enabled: true,
             vivid: 0.0,
-            ..skyward()
+            vivid_max_chroma: 0.18,
+            groups: vec![crate::config::HueGroup {
+                hue_range: [0.0, 360.0],
+                c_scale: 0.5,
+                c_cap: Some(0.06),
+                ..Default::default()
+            }],
+            ..Palette::default()
         };
         let vivid = Palette {
             vivid: 1.0,
             vivid_hues: Vec::new(),
-            ..skyward()
+            ..plain.clone()
         };
         let other_hues = Palette {
             vivid_hues: vec![[100.0, 200.0]],
             ..vivid.clone()
         };
-        assert!(chroma(&vivid) > chroma(&plain) + 0.01);
+        assert!(
+            chroma(&vivid) > chroma(&plain) + 0.01,
+            "vivid {} vs plain {}",
+            chroma(&vivid),
+            chroma(&plain)
+        );
         assert!((chroma(&other_hues) - chroma(&plain)).abs() < 1e-4);
     }
 

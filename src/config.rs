@@ -254,6 +254,9 @@ pub struct HueGroup {
     pub l_floor: f32,
     pub c_scale: f32,
     pub c_cap: Option<f32>,
+    /// Chroma floor for clearly colored sources of this group ("pastel is not gray"),
+    /// typically the reference palette's median chroma for the group.
+    pub c_min: f32,
     /// Informational (from the reference analysis); not used by the mapping.
     pub l_target_median: Option<f32>,
 }
@@ -270,6 +273,7 @@ impl Default for HueGroup {
             l_floor: 0.0,
             c_scale: 1.0,
             c_cap: None,
+            c_min: 0.0,
             l_target_median: None,
         }
     }
@@ -316,6 +320,9 @@ pub struct Palette {
     pub floor_knee: f32,
     pub chroma_scale: f32,
     pub chroma_cap: f32,
+    /// Extra chroma per unit of lightness lift (`C *= 1 + chroma_lift · ΔL`), so lifted colors
+    /// stay clean instead of chalky.
+    pub chroma_lift: f32,
     /// Chroma below which a color takes the neutral path (feathered over ±50%).
     pub neutral_c: f32,
     pub neutral_tint: Tint,
@@ -374,6 +381,7 @@ impl Default for Palette {
             floor_knee: 0.5,
             chroma_scale: 1.0,
             chroma_cap: 0.4,
+            chroma_lift: 0.0,
             neutral_c: 0.02,
             neutral_tint: Tint::default(),
             shadow_tint: Tint::default(),
@@ -700,15 +708,40 @@ fn non_negative(name: &str, v: f32) -> Result<()> {
 }
 
 impl Style {
+    /// Loads a style file, following `extends` (a path relative to the file): the file's
+    /// settings are deep-merged over the style it extends.
     pub fn load(path: &Path) -> Result<Self> {
+        let raw = Self::load_raw(path, 0)?;
+        Self::from_table(raw).with_context(|| format!("parsing {}", path.display()))
+    }
+
+    fn load_raw(path: &Path, depth: usize) -> Result<toml::Table> {
+        anyhow::ensure!(
+            depth < 8,
+            "style `extends` chain too deep at {}",
+            path.display()
+        );
         let text =
             fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-        Self::parse(&text).with_context(|| format!("parsing {}", path.display()))
+        let mut raw: toml::Table =
+            toml::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
+        let Some(base) = raw.remove("extends") else {
+            return Ok(raw);
+        };
+        let base = base
+            .as_str()
+            .with_context(|| format!("{}: `extends` must be a path", path.display()))?;
+        let base_path = path.parent().unwrap_or(Path::new(".")).join(base);
+        let base_raw = Self::load_raw(&base_path, depth + 1)?;
+        Ok(crate::mood::blend_table(&base_raw, &raw, 1.0))
     }
 
     /// Parses a style, keeping its TOML so moods can be derived from it.
     pub fn parse(text: &str) -> Result<Self> {
-        let raw: toml::Table = toml::from_str(text)?;
+        Self::from_table(toml::from_str(text)?)
+    }
+
+    fn from_table(raw: toml::Table) -> Result<Self> {
         let mut style: Style = toml::Value::Table(raw.clone()).try_into()?;
         style.raw = Some(raw);
         Ok(style)
@@ -1023,6 +1056,33 @@ mod tests {
             })
             .unwrap();
         assert!(!denied.palette.dark_greens);
+    }
+
+    #[test]
+    fn styles_extend_other_styles() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("base.toml"),
+            "name = 'base'\n[palette]\nenabled = true\nl_floor = 0.6\n\
+             [[palette.groups]]\nname = 'a'\nl_floor = 0.7\nc_scale = 0.5\n\
+             [moods.nocturne.palette]\nl_floor = 0.3",
+        )
+        .unwrap();
+        let child = dir.path().join("child.toml");
+        fs::write(
+            &child,
+            "extends = 'base.toml'\nname = 'child'\n[palette]\nstrength = 1.3\n\
+             [[palette.groups]]\nname = 'a'\nc_scale = 0.9",
+        )
+        .unwrap();
+        let s = Config::load(Some(&child), None, None).unwrap().style;
+        assert_eq!(s.name, "child");
+        assert_eq!((s.palette.strength, s.palette.l_floor), (1.3, 0.6));
+        assert_eq!(
+            (s.palette.groups[0].l_floor, s.palette.groups[0].c_scale),
+            (0.7, 0.9)
+        );
+        assert!(s.moods.contains_key("nocturne"), "moods are inherited");
     }
 
     #[test]
