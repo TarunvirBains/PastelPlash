@@ -213,3 +213,21 @@ min_frac = 0.03          # low-res textures on big surfaces still get big shapes
 size = 8.0
 tiling_multiplier = 3.0
 speckle = [0.45, 0.6]
+
+# Nocturne mood (dark, haunting areas; assigned by the pack map): a Whistler/Monet nocturne
+# overlay on this style. Only these keys change; everything else (abstraction, marks, contrast,
+# strokes, hue-true darks, identity) is inherited. The murk lifts to a lower floor into deep,
+# transparent, cool colored washes (never neutral black or brown mud); a narrower, softer
+# palette; no earth warmth. Only here may darks take a cool bias.
+[moods.nocturne.palette]
+l_curve = [[0, 0.16], [0.104, 0.19], [0.184, 0.23], [0.329, 0.33], [0.453, 0.44], [0.622, 0.6], [0.915, 0.88], [1, 0.96]]
+l_floor = 0.16
+chroma_scale = 0.7
+dark_below = 0.5
+dark_cool_bias = 0.2        # hue rotation toward indigo-violet, chroma kept
+dark_cool_hue = 275.0
+warmth = { strength = 0.0 }
+
+# Atmosphere: let the narrower palette through on busy textures too.
+[moods.nocturne.abstraction]
+chroma_retain = 0.6

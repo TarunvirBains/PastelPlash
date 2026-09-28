@@ -195,3 +195,11 @@ paper_highlight = 0.85
 paper_color = [0.98, 0.965, 0.93]
 floor_margin = 0.06
 seed = 0
+
+# Nocturne mood (dark, haunting areas): pastel's light floor lowered and cooled.
+[moods.nocturne.palette]
+l_floor = 0.4
+chroma_scale = 0.85
+dark_chroma = 0.06
+dark_cool_bias = 0.2
+dark_cool_hue = 275.0
