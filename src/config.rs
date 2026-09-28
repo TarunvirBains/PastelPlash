@@ -159,6 +159,19 @@ pub struct ValueContrast {
     pub radius_coarse: f32,
     /// Lightness difference (OKLab L) beyond which a neighbor counts as across an edge.
     pub range: f32,
+    /// Adaptive compression: 0..1 of the extra mid-scale compression needed to bring the
+    /// texture's own mid-scale lightness spread (median L std over `radius_mid` windows) down to
+    /// `target_std`. Low-contrast textures (at or below the target) are left as they are;
+    /// high-contrast ones (bark, cliffs) are compressed more.
+    pub adaptive: f32,
+    pub target_std: f32,
+    /// Share of the adaptive amount also applied at the coarse scale.
+    pub adaptive_coarse: f32,
+    /// Upper bound on the resulting mid-scale compression.
+    pub max_mid: f32,
+    /// At full adaptive amount, `range` is multiplied by `1 + adaptive_range`, so deep grooves
+    /// of high-contrast textures count as texture to compress rather than as structure to keep.
+    pub adaptive_range: f32,
 }
 
 impl Default for ValueContrast {
@@ -172,6 +185,11 @@ impl Default for ValueContrast {
             radius_mid: 12.0,
             radius_coarse: 40.0,
             range: 0.12,
+            adaptive: 0.0,
+            target_std: 0.03,
+            adaptive_coarse: 0.3,
+            max_mid: 0.85,
+            adaptive_range: 0.0,
         }
     }
 }
@@ -332,6 +350,9 @@ pub struct Tint {
     pub amount: f32,
     /// Shadow tints only: weight falls from 1 at input L 0 to 0 at this input L.
     pub below_input_l: f32,
+    /// Shadow tints only: share of the tint applied to clearly colored sources (0 = neutral
+    /// darks only, so dark browns stay brown and dark greens stay green).
+    pub colored: f32,
 }
 
 impl Default for Tint {
@@ -341,6 +362,46 @@ impl Default for Tint {
             chroma: 0.0,
             amount: 0.0,
             below_input_l: 0.25,
+            colored: 1.0,
+        }
+    }
+}
+
+/// Targeted earth warmth: sources whose hue lies in `band` (earth, olive, khaki) are pulled
+/// toward a warm golden-tan hue, weighted by their chroma (near-neutral stone barely moves).
+/// Hues outside the band are untouched exactly; hues inside never leave it (the target lies
+/// inside the band and the pull is a fraction < 1 of the way there).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Warmth {
+    /// 0..0.9: fraction of the way to `hue` at full weight; 0 disables.
+    pub strength: f32,
+    /// Source OKLCH hue band `[from, to]`, degrees.
+    pub band: [f32; 2],
+    /// Width in degrees of the fade-in at each band edge (zero weight at the edges).
+    pub feather: f32,
+    /// Target hue (SS lit earth, golden tan).
+    pub hue: f32,
+    /// Target chroma (SS lit earth median); colors below it gain up to `chroma_boost` of the gap.
+    pub chroma: f32,
+    pub chroma_boost: f32,
+    /// Source chroma range over which the weight fades in (near-neutrals barely move).
+    pub min_chroma: [f32; 2],
+    /// Lightness lift at full weight (OKLab L); usually 0.
+    pub lift: f32,
+}
+
+impl Default for Warmth {
+    fn default() -> Self {
+        Self {
+            strength: 0.0,
+            band: [50.0, 115.0],
+            feather: 10.0,
+            hue: 68.0,
+            chroma: 0.079,
+            chroma_boost: 0.0,
+            min_chroma: [0.02, 0.06],
+            lift: 0.0,
         }
     }
 }
@@ -371,6 +432,12 @@ pub struct Palette {
     /// along the source's own hue. Fades in below `dark_below` (output OKLCH L).
     pub dark_chroma: f32,
     pub dark_below: f32,
+    /// Optional cool bias on lifted darks: OKLab chroma pushed toward `dark_cool_hue` (0 = off;
+    /// darks keep their source hue).
+    pub dark_cool_bias: f32,
+    pub dark_cool_hue: f32,
+    /// Targeted earth warmth (scaled per category by the target's `warmth`).
+    pub warmth: Warmth,
     /// Chroma below which a color takes the neutral path (feathered over ±50%).
     pub neutral_c: f32,
     pub neutral_tint: Tint,
@@ -432,6 +499,9 @@ impl Default for Palette {
             chroma_lift: 0.0,
             dark_chroma: 0.0,
             dark_below: 0.45,
+            dark_cool_bias: 0.0,
+            dark_cool_hue: 255.0,
+            warmth: Warmth::default(),
             neutral_c: 0.02,
             neutral_tint: Tint::default(),
             shadow_tint: Tint::default(),
@@ -575,6 +645,8 @@ pub struct Treatment {
     pub paper: f32,
     /// Multiplies the style's value-contrast compression.
     pub value_contrast: f32,
+    /// Multiplies the palette's earth warmth.
+    pub warmth: f32,
 }
 
 impl Default for Treatment {
@@ -594,6 +666,7 @@ impl Default for Treatment {
             shadow_tint: 1.0,
             paper: 1.0,
             value_contrast: 1.0,
+            warmth: 1.0,
         }
     }
 }

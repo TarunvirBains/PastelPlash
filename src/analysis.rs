@@ -214,6 +214,59 @@ impl Lowres {
     }
 }
 
+/// Median OKLab lightness standard deviation over square windows of `radius` texels, centred on
+/// a grid of about 600 opaque texels: the texture's value spread at that scale. Windows are
+/// sampled on a sub-grid, so the cost is independent of the radius.
+pub fn local_l_std(image: &Image, radius: f32, wrap: [bool; 2]) -> f32 {
+    let (w, h) = (image.width as isize, image.height as isize);
+    let r = radius.round().max(1.0) as isize;
+    let sub = (r / 6).max(1);
+    let at = |x: isize, y: isize| {
+        let x = if wrap[0] {
+            x.rem_euclid(w)
+        } else {
+            x.clamp(0, w - 1)
+        };
+        let y = if wrap[1] {
+            y.rem_euclid(h)
+        } else {
+            y.clamp(0, h - 1)
+        };
+        image.pixels[(y * w + x) as usize]
+    };
+    let step = (((w * h) as f32 / 600.0).sqrt().max(1.0)) as isize;
+    let centres: Vec<(isize, isize)> = (0..h)
+        .step_by(step as usize)
+        .flat_map(|y| (0..w).step_by(step as usize).map(move |x| (x, y)))
+        .filter(|&(x, y)| at(x, y)[3] >= 0.5)
+        .collect();
+    let mut stds: Vec<f32> = centres
+        .par_iter()
+        .map(|&(cx, cy)| {
+            let (mut s, mut s2, mut n) = (0.0f64, 0.0f64, 0.0f64);
+            for y in (cy - r..=cy + r).step_by(sub as usize) {
+                for x in (cx - r..=cx + r).step_by(sub as usize) {
+                    let p = at(x, y);
+                    if p[3] < 0.5 {
+                        continue;
+                    }
+                    let l = color::srgb_to_oklab([p[0], p[1], p[2]])[0] as f64;
+                    s += l;
+                    s2 += l * l;
+                    n += 1.0;
+                }
+            }
+            let m = s / n.max(1.0);
+            ((s2 / n.max(1.0) - m * m).max(0.0)).sqrt() as f32
+        })
+        .collect();
+    if stds.is_empty() {
+        return 0.0;
+    }
+    let i = stds.len() / 2;
+    *stds.select_nth_unstable_by(i, f32::total_cmp).1
+}
+
 /// 99th-percentile OKLab chroma over the opaque texels (tint-safe detection).
 pub fn chroma_p99(image: &Image) -> f32 {
     let (w, h) = (image.width as usize, image.height as usize);

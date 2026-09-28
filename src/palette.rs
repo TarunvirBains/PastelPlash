@@ -118,6 +118,24 @@ fn compress(l: f32, lo: f32, floor: f32, ceiling: f32, knee_frac: f32) -> f32 {
     }
 }
 
+/// Weight of the earth warmth for a source hue and chroma: zero at and outside the band edges,
+/// fading in over `feather` degrees inside the band, times a chroma fade-in.
+pub fn warmth_weight(w: &crate::config::Warmth, h: f32, c: f32) -> f32 {
+    let [from, to] = w.band;
+    let span = (to - from).rem_euclid(360.0);
+    let x = (h - from).rem_euclid(360.0);
+    if x >= span || span <= 0.0 {
+        return 0.0;
+    }
+    let f = w.feather.clamp(1e-3, span / 2.0);
+    let edge = smoothstep(0.0, f, x) * (1.0 - smoothstep(span - f, span, x));
+    edge * smoothstep(
+        w.min_chroma[0],
+        w.min_chroma[1].max(w.min_chroma[0] + 1e-4),
+        c,
+    )
+}
+
 /// Signed pull toward the pigment set: Gaussian-weighted average of the differences to each
 /// pigment hue, so it is continuous everywhere.
 fn pigment_pull(pigments: &[f32], spread: f32, hue: f32) -> f32 {
@@ -166,12 +184,15 @@ pub struct Mapping<'a> {
     pub shadow_scale: f32,
     /// Scales hue shifts, pulls and harmonization (target `hue`).
     pub hue_scale: f32,
+    /// Scales the earth warmth (target `warmth`).
+    pub warmth_scale: f32,
 }
 
 impl<'a> Mapping<'a> {
     /// The mapping for a palette under a category's treatment.
     pub fn new(palette: &'a Palette, tr: &crate::config::Treatment) -> Self {
         Self {
+            warmth_scale: tr.warmth,
             palette,
             lift_scale: tr.floor_scale,
             shadow_scale: tr.shadow_tint,
@@ -307,6 +328,18 @@ impl Mapping<'_> {
         // "Pastel is not gray": colored sources keep at least the group's reference chroma.
         let colored = smoothstep(p.neutral_c, p.neutral_c * 2.5, c) * s.min(1.0);
         c2 = c2.max(g.c_min * colored);
+        // Targeted earth warmth (weight 0 exactly outside the source band).
+        let wm = &p.warmth;
+        let ww = warmth_weight(wm, h, c)
+            * (wm.strength * self.warmth_scale * s.min(1.0)).clamp(0.0, 0.9);
+        let mut l3 = l3;
+        if ww > 0.0 {
+            h2 += ww * hue_diff(h2, wm.hue);
+            if c2 < wm.chroma {
+                c2 += (wm.chroma - c2) * (wm.chroma_boost * ww).min(1.0);
+            }
+            l3 = (l3 + wm.lift * ww).min(ceiling);
+        }
         let chromatic = color::oklch_to_oklab([l3, c2, h2]);
 
         // 5. Neutral path.
@@ -324,8 +357,10 @@ impl Mapping<'_> {
 
         // 6. Shadow tint on originally dark texels.
         let st = &p.shadow_tint;
+        let colored_src = smoothstep(0.02, 0.04, c);
         let st_w = (st.amount * s).min(1.0)
             * self.shadow_scale
+            * lerp(1.0, st.colored.clamp(0.0, 1.0), colored_src)
             * (1.0 - smoothstep(0.0, st.below_input_l.max(1e-3), l));
         if st_w > 0.0 {
             let v = color::oklch_to_oklab([0.0, st.chroma, st.hue]);
@@ -349,12 +384,26 @@ impl Mapping<'_> {
         // tint's hue when it is (near-)neutral, rotating between them along the shortest arc so
         // no mix ever passes through gray.
         if p.dark_chroma > 0.0 {
-            let dark = 1.0 - smoothstep(p.dark_below - 0.08, p.dark_below, ll);
+            // Full strength until just below `dark_below`, fading out just above it.
+            let dark = 1.0 - smoothstep(p.dark_below - 0.03, p.dark_below + 0.05, ll);
             let want = p.dark_chroma * dark * s.min(1.0);
             if cc < want {
-                let own = smoothstep(0.02, 0.04, c);
-                hh = p.shadow_tint.hue + own * hue_diff(p.shadow_tint.hue, hh);
+                // Keep the source's own hue whenever it has one; only true neutrals take the
+                // shadow tint's hue. (Rotating between the two would pass through unrelated
+                // hues: halfway between umber and blue is green.)
+                if c < 0.0055 {
+                    hh = p.shadow_tint.hue;
+                }
                 cc = want;
+            }
+            // Optional cool bias (off by default: darks keep their source hue).
+            if p.dark_cool_bias > 0.0 {
+                let mut ab = color::oklch_to_oklab([ll, cc, hh]);
+                let cool = color::oklch_to_oklab([0.0, p.dark_cool_bias * dark, p.dark_cool_hue]);
+                ab[1] += cool[1];
+                ab[2] += cool[2];
+                let lch = color::oklab_to_oklch(ab);
+                (cc, hh) = (lch[1], lch[2]);
             }
         }
         let [r, g, b] = color::oklch_to_srgb_gamut([ll, cc, hh]);
@@ -385,6 +434,7 @@ mod tests {
             lift_scale: 1.0,
             shadow_scale: 1.0,
             hue_scale: 1.0,
+            warmth_scale: 1.0,
         }
     }
 

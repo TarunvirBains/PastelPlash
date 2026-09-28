@@ -175,7 +175,7 @@ impl Drop for SlotGuard<'_> {
 }
 
 /// Palette LUT cache key: mood key and the bits of the treatment's lift, shadow and hue scales.
-type LutKey = (String, [u32; 3]);
+type LutKey = (String, [u32; 4]);
 
 pub struct Stylize {
     gpu: Gpu,
@@ -385,7 +385,7 @@ impl Stylize {
         let buf = luts
             .entry((
                 key,
-                [tr.floor_scale, tr.shadow_tint, tr.hue].map(f32::to_bits),
+                [tr.floor_scale, tr.shadow_tint, tr.hue, tr.warmth].map(f32::to_bits),
             ))
             .or_insert_with(|| {
                 let lut = Mapping::new(&style.palette, tr).bake();
@@ -487,6 +487,22 @@ impl Stage for Stylize {
         let wc = &style.watercolor;
         let st = &style.strokes;
         let vc = &style.value_contrast;
+        // Adaptive value compression: textures with a large mid-scale lightness spread (bark,
+        // cliffs) are compressed toward the target; low-contrast ones keep the base amounts.
+        let r_mid = (vc.radius_mid * f).max(2.0);
+        let (spread, adapt) = if vc.adaptive > 0.0 && tr.value_contrast > 0.0 {
+            let s = analysis::local_l_std(image, r_mid, wrap);
+            let need = if s > vc.target_std {
+                1.0 - vc.target_std / s
+            } else {
+                0.0
+            };
+            (s, (vc.adaptive * need).clamp(0.0, 1.0))
+        } else {
+            (0.0, 0.0)
+        };
+        let vc_mid = (vc.mid + adapt).min(vc.max_mid.max(vc.mid));
+        let vc_coarse = (vc.coarse + adapt * vc.adaptive_coarse).min(vc.max_mid);
         let stroke_width = (st.width * f * tr.stroke_scale).max(0.75);
         let stroke_len = (st.length * f * tr.stroke_scale).max(1.0);
         let edge_step = (wc.edge_width * f).max(1.0);
@@ -528,13 +544,13 @@ impl Stage for Stylize {
             gran_radius: (gran_px * 0.75).max(1.0),
             smear: st.smear * tr.strokes,
             vc_fine: vc.fine * tr.value_contrast,
-            vc_mid: vc.mid * tr.value_contrast,
-            vc_coarse: vc.coarse * tr.value_contrast,
+            vc_mid: vc_mid * tr.value_contrast,
+            vc_coarse: vc_coarse * tr.value_contrast,
             vc_chroma: vc.chroma,
             vc_r_fine: (vc.radius_fine * f).max(1.0),
             vc_r_mid: (vc.radius_mid * f).max(2.0),
             vc_r_coarse: (vc.radius_coarse * f).max(4.0),
-            vc_range: vc.range,
+            vc_range: vc.range * (1.0 + adapt * vc.adaptive_range),
             paper: wc.paper_grain * tr.paper,
             paper_tint: wc.paper_tint * tr.paper,
             paper_cells_x: cells(w, paper_px),
@@ -603,7 +619,7 @@ impl Stage for Stylize {
         }
         println!(
             "  {}: {w}x{h} {:?} mood={} wrap={}{} seam={:.1}/{:.1} tint_safe={} (C99 {:.3}) \
-             scale={f:.2} r={radius:.1}{} | analysis {} gpu {}",
+             scale={f:.2} r={radius:.1} spread={spread:.4} mid={vc_mid:.2}{} | analysis {} gpu {}",
             ctx.rel.display(),
             ctx.category,
             ctx.mood,
