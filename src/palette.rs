@@ -16,7 +16,8 @@
 //!
 //! `strength` s moves every parameter from the identity (0) to the configured look (1) and
 //! extrapolates beyond it (lighter, softer, more harmonized) without leaving the gamut:
-//! lightness targets move in log-headroom space toward `L_MAX`, shifts scale by s, pulls by
+//! the tone curve is composed with itself (monotone), floors move in log-headroom space toward
+//! `L_MAX`, shifts scale by s, pulls by
 //! `1 + 2(s − 1)` (≤ 0.8), chroma scales as `x^s`, caps tighten by `1/√s`, tints by s.
 //!
 //! Each LUT entry also stores the lightness floor that applied to it, so the shader can keep
@@ -70,6 +71,23 @@ fn curve(points: &[[f32; 2]], x: f32) -> f32 {
     }
 }
 
+/// The tone curve applied "`s` times": `s` in 0..1 blends identity → curve, 1..2 blends curve →
+/// curve∘curve, and so on. Blends and compositions of monotone curves stay monotone, so
+/// extrapolating never reverses value order.
+fn curve_power(points: &[[f32; 2]], x: f32, s: f32) -> f32 {
+    let s = s.clamp(0.0, 8.0);
+    let whole = s.floor() as u32;
+    let mut v = x;
+    for _ in 0..whole {
+        v = curve(points, v);
+    }
+    let frac = s - whole as f32;
+    if frac > 0.0 {
+        v = lerp(v, curve(points, v), frac);
+    }
+    v
+}
+
 /// Weight of a hue inside a (possibly wrapping) range, with a smooth `feather`-wide ramp
 /// centred on each end.
 fn group_weight(range: [f32; 2], feather: f32, h: f32) -> f32 {
@@ -85,6 +103,18 @@ fn group_weight(range: [f32; 2], feather: f32, h: f32) -> f32 {
     let d = hue_diff(mid, h); // -180..180, 0 at the middle
     let x = d + span / 2.0; // 0 at `from`, span at `to`
     smoothstep(-f / 2.0, f / 2.0, x) * (1.0 - smoothstep(span - f / 2.0, span + f / 2.0, x))
+}
+
+/// Monotone floor: compresses `[lo, knee]` up into `[floor, knee]` (values above the knee are
+/// untouched), so darks are lifted without losing their order. `knee` sits at `knee_frac` of the
+/// way from `floor` to `ceiling`.
+fn compress(l: f32, lo: f32, floor: f32, ceiling: f32, knee_frac: f32) -> f32 {
+    let knee = floor + (ceiling - floor) * knee_frac.clamp(0.0, 1.0);
+    if floor > lo && l < knee && knee > lo {
+        floor + (knee - floor) * ((l - lo) / (knee - lo)).max(0.0)
+    } else {
+        l
+    }
 }
 
 /// Signed pull toward the pigment set: Gaussian-weighted average of the differences to each
@@ -182,8 +212,8 @@ impl Mapping<'_> {
         };
         let global_floor = extrapolate_l(0.0, p.l_floor, s).min(ceiling);
         // 1. Tone curve (each point extrapolated from the identity).
-        let l1 = extrapolate_l(l, curve(&p.l_curve, l), s);
-        let l1_at_zero = extrapolate_l(0.0, curve(&p.l_curve, 0.0), s);
+        let l1 = curve_power(&p.l_curve, l, s);
+        let l1_at_zero = curve_power(&p.l_curve, 0.0, s);
 
         // 2. Hue groups.
         let (g, weighted) = self.groups(h);
@@ -198,17 +228,19 @@ impl Mapping<'_> {
             }
         }
         h2 += pull;
-        let offset = g.offset * s;
+        // Lightness: one monotone mapping shared by the chromatic and neutral paths; the group's
+        // offset and floor fade in with chroma, so near-grays don't jump between two curves.
+        let nw = 1.0 - smoothstep(p.neutral_c * 0.5, p.neutral_c * 1.5, c);
+        let cw = 1.0 - nw;
+        let offset = g.offset * s * cw;
         let l2 = (l1 + offset).min(ceiling);
         let lo = l1_at_zero + offset;
-        let floor = extrapolate_l(0.0, g.floor, s).min(ceiling - 0.05);
-        // Compress [lo, knee] up into [floor, knee]; values above the knee are untouched.
-        let knee = floor + (ceiling - floor) * p.floor_knee.clamp(0.0, 1.0);
-        let l3 = if floor > lo && l2 < knee && knee > lo {
-            floor + (knee - floor) * ((l2 - lo) / (knee - lo)).max(0.0)
-        } else {
-            l2
-        };
+        let neutral_floor = global_floor.min(ceiling - 0.05);
+        let group_floor = extrapolate_l(0.0, g.floor, s)
+            .max(global_floor)
+            .min(ceiling - 0.05);
+        let floor = lerp(neutral_floor, group_floor, cw);
+        let l3 = compress(l2, lo, floor, ceiling, p.floor_knee);
 
         // 3. Pigment harmonization.
         let harmonize = (p.harmonize * s).min(1.0);
@@ -249,14 +281,13 @@ impl Mapping<'_> {
         let n_amount = (nt.amount * s).min(1.0);
         let n_vec = color::oklch_to_oklab([0.0, nt.chroma, nt.hue]);
         let neutral = [
-            l1.min(ceiling),
+            l3,
             lerp(c * h.to_radians().cos(), n_vec[1], n_amount),
             lerp(c * h.to_radians().sin(), n_vec[2], n_amount),
         ];
-        let nw = 1.0 - smoothstep(p.neutral_c * 0.5, p.neutral_c * 1.5, c);
         let mut lab = [0, 1, 2].map(|k| lerp(chromatic[k], neutral[k], nw));
         // Lowest lightness this hue can map to (the guard for later darkening).
-        let floor = lerp(floor.max(lo), l1_at_zero, nw).max(global_floor);
+        let floor = floor.max(lo);
 
         // 6. Shadow tint on originally dark texels.
         let st = &p.shadow_tint;
