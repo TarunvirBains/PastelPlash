@@ -83,6 +83,12 @@ transparency becomes an alpha channel. Ancillary chunks (`gAMA`, `sRGB`, `iCCP`,
 6. **Lightness ceiling** for relit categories (prevents clipping under the cel shader).
 7. Restore alpha, encode.
 
+## Style rules
+
+The hard limits of the style (no dark greens, pastel floors, cool accent darks, the actor lightness ceiling,
+no blur, …) live in the style contract `rules.toml` and are enforced by tests over every style in `styles/`.
+See [docs/RULES.md](docs/RULES.md) for each rule, why it exists, and the test that enforces it.
+
 ## Palette (Skyward style)
 
 Per-hue OKLCH remapping, not a global brighten/desaturate:
