@@ -24,11 +24,40 @@ enum Command {
     Process(ProcessArgs),
     /// Show the GPU adapter and run a compute self-test.
     GpuInfo,
+    /// Restyle the textures of a `.o2r` pack (Ship of Harkinian) into a new `.o2r` mod.
+    O2r(O2rArgs),
     /// Bake a style's palette into a `.cube` 3D LUT.
     BakeLut(BakeLutArgs),
     /// Write downsized before/after images and 1:1 crops for visual comparison.
     #[command(hide = true)]
     DevCompare(DevCompareArgs),
+}
+
+#[derive(Args)]
+struct O2rArgs {
+    /// Source `.o2r` pack.
+    input: PathBuf,
+    /// Output `.o2r` (by default only the restyled textures, to load after the source pack).
+    output: PathBuf,
+    /// Only entries matching this glob (repeatable), e.g. 'alt/scenes/*/spot04_scene/**'.
+    #[arg(long, value_name = "GLOB")]
+    include: Vec<String>,
+    /// Also copy every unprocessed entry, producing a complete standalone pack.
+    #[arg(long)]
+    complete: bool,
+    #[arg(long, value_name = "FILE")]
+    style: Option<PathBuf>,
+    #[arg(long, value_name = "FILE")]
+    target: Option<PathBuf>,
+    /// Pack map (TOML) that classifies entries by path.
+    #[arg(long, value_name = "FILE")]
+    pack: Option<PathBuf>,
+    /// Treat every entry as this category, overriding the pack map.
+    #[arg(long, value_name = "CATEGORY")]
+    category: Option<Category>,
+    /// Worker threads (default or 0: all cores).
+    #[arg(short, long, value_name = "N")]
+    jobs: Option<usize>,
 }
 
 #[derive(Args)]
@@ -100,6 +129,7 @@ fn main() -> ExitCode {
         Command::Process(args) => process(args),
         Command::GpuInfo => pastelplash::gpu::info().map(|()| ExitCode::SUCCESS),
         Command::BakeLut(args) => bake_lut(args).map(|()| ExitCode::SUCCESS),
+        Command::O2r(args) => o2r(args).map(|()| ExitCode::SUCCESS),
         Command::DevCompare(args) => pastelplash::compare::run(
             &args.before,
             &args.after,
@@ -169,4 +199,22 @@ fn bake_lut(args: BakeLutArgs) -> anyhow::Result<()> {
     lut.save(&args.output, &title)?;
     println!("wrote {}^3 LUT to {}", lut.size, args.output.display());
     Ok(())
+}
+
+fn o2r(args: O2rArgs) -> anyhow::Result<()> {
+    let config = Config::load(
+        args.style.as_deref(),
+        args.target.as_deref(),
+        args.pack.as_deref(),
+    )?;
+    let pipeline = Pipeline::from_config(&config)?;
+    let opts = pastelplash::o2r::Options {
+        input: args.input,
+        output: args.output,
+        include: args.include,
+        category: args.category,
+        complete: args.complete,
+        jobs: args.jobs,
+    };
+    pastelplash::o2r::run(&opts, &config, &pipeline)
 }

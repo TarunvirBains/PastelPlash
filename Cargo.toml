@@ -14,6 +14,7 @@ rayon = "1.12.0"
 serde = { version = "1.0.229", features = ["derive"] }
 toml = "1.1.6"
 wgpu = "30.0.1"
+zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 proptest = "1"
