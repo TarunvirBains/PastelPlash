@@ -2,6 +2,7 @@
 
 pub mod analysis;
 pub mod color;
+pub mod compare;
 pub mod config;
 pub mod gpu;
 pub mod image;

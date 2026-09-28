@@ -22,6 +22,8 @@ pub struct Options {
     pub copy_other: bool,
     /// Worker threads; `None` uses all cores.
     pub jobs: Option<usize>,
+    /// Category for every PNG, overriding the pack map (prototyping before classification).
+    pub category: Option<Category>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -87,8 +89,9 @@ pub fn run(opts: &Options, config: &Config, pipeline: &Pipeline) -> Result<Summa
             } else if config.pack.is_non_color_map(&entry.rel) {
                 Action::PassThrough
             } else {
-                match config.pack.default_category {
-                    Category::Skip => Action::PassThrough,
+                match opts.category.unwrap_or(config.pack.default_category) {
+                    // UI is copied through until it gets its own treatment.
+                    Category::Skip | Category::Ui => Action::PassThrough,
                     category => Action::Process(category),
                 }
             };
@@ -124,6 +127,10 @@ pub fn run(opts: &Options, config: &Config, pipeline: &Pipeline) -> Result<Summa
     Ok(summary)
 }
 
+fn ms(d: Duration) -> String {
+    format!("{:.0}ms", d.as_secs_f64() * 1000.0)
+}
+
 fn handle(
     opts: &Options,
     config: &Config,
@@ -138,7 +145,9 @@ fn handle(
     }
     match action {
         Action::Process(category) => {
+            let t0 = Instant::now();
             let mut image = png_io::read(&src)?;
+            let t_read = t0.elapsed();
             let ctx = FileContext {
                 rel,
                 category,
@@ -147,7 +156,20 @@ fn handle(
             pipeline
                 .run(&mut image, &ctx)
                 .with_context(|| format!("processing {}", src.display()))?;
-            png_io::write(&image, &dst)
+            let t_run = t0.elapsed() - t_read;
+            png_io::write(&image, &dst)?;
+            let total = t0.elapsed();
+            println!(
+                "{}: {}x{} total {} (read {}, pipeline {}, write {})",
+                rel.display(),
+                image.width,
+                image.height,
+                ms(total),
+                ms(t_read),
+                ms(t_run),
+                ms(total - t_read - t_run)
+            );
+            Ok(())
         }
         Action::PassThrough | Action::CopyOther => fs::copy(&src, &dst)
             .map(drop)
