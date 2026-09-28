@@ -238,6 +238,15 @@ fn storage_ro() -> wgpu::BindingType {
 
 impl Stylize {
     pub fn new(config: &Config) -> Result<Self> {
+        let max_chunk = std::env::var("PASTELPLASH_MAX_CHUNK")
+            .ok()
+            .and_then(|v| v.parse::<u32>().ok());
+        Self::with_max_chunk(config, max_chunk)
+    }
+
+    /// Like [`Stylize::new`], forcing chunked processing for images with a side above
+    /// `max_chunk` texels (at least 64; clamped to the device limit).
+    pub fn with_max_chunk(config: &Config, max_chunk: Option<u32>) -> Result<Self> {
         let gpu = pollster::block_on(Gpu::new())?;
         let device = &gpu.device;
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -308,10 +317,7 @@ impl Stylize {
         };
 
         let limit = gpu.device.limits().max_texture_dimension_2d;
-        let max_side = std::env::var("PASTELPLASH_MAX_CHUNK")
-            .ok()
-            .and_then(|v| v.parse::<u32>().ok())
-            .map_or(limit, |v| v.clamp(64, limit));
+        let max_side = max_chunk.map_or(limit, |v| v.clamp(64, limit));
 
         Ok(Self {
             gpu,
