@@ -81,6 +81,7 @@ pub fn decode(reader: impl BufRead + Seek) -> Result<Image> {
             has_alpha,
         },
         source_scale: None,
+        tint_safe: None,
     })
 }
 

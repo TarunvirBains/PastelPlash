@@ -152,6 +152,7 @@ pub fn image(w: u32, h: u32, f: impl Fn(u32, u32) -> [f32; 4]) -> Image {
             has_alpha: true,
         },
         source_scale: None,
+        tint_safe: None,
     }
 }
 

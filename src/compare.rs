@@ -56,6 +56,7 @@ pub fn downsize(image: &Image, max_side: u32) -> Image {
         pixels,
         source: RGBA8,
         source_scale: None,
+        tint_safe: None,
     }
 }
 
@@ -72,6 +73,7 @@ pub fn crop(image: &Image, x0: u32, y0: u32, size: u32) -> Image {
         pixels,
         source: RGBA8,
         source_scale: None,
+        tint_safe: None,
     }
 }
 

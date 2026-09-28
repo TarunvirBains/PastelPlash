@@ -20,6 +20,9 @@ pub struct Image {
     /// lower-resolution original. Stages use it to size brushes consistently; `None` falls back
     /// to the pack/style default, then to image-size-relative sizing.
     pub source_scale: Option<f32>,
+    /// `Some(true)` when an adapter knows the texture is tinted by the engine (grayscale
+    /// origin): it then gets lightness changes only. `None` lets stages detect it.
+    pub tint_safe: Option<bool>,
 }
 
 impl Image {

@@ -428,7 +428,10 @@ impl Stage for Stylize {
         };
         let accent_radius = (pal.accent_radius * f).max(1.0);
         let chroma_p99 = analysis::chroma_p99(image);
-        let tint_safe = tr.tint_safe.unwrap_or(chroma_p99 < pal.tint_safe_chroma);
+        let tint_safe = tr
+            .tint_safe
+            .or(image.tint_safe)
+            .unwrap_or(chroma_p99 < pal.tint_safe_chroma);
         let t_analysis = t_start.elapsed();
 
         // Parameters.

@@ -257,6 +257,7 @@ mod tests {
                 has_alpha: true,
             },
             source_scale: None,
+            tint_safe: None,
         }
     }
 
