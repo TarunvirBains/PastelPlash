@@ -30,7 +30,7 @@ max_radius = 32.0
 [palette]
 enabled = true
 strength = 1.35
-lut_size = 33
+lut_size = 65
 l_curve = [[0, 0.38], [0.104, 0.407], [0.184, 0.438], [0.329, 0.565], [0.453, 0.72], [0.622, 0.87], [0.915, 0.955], [1, 0.975]]
 l_floor = 0.55
 l_ceiling = 0.975
@@ -88,7 +88,7 @@ hue_shift = 3.6
 hue_center = 99.6
 hue_pull = 0.15
 l_offset = 0.05
-l_floor = 0.66
+l_floor = 0.72
 c_scale = 0.94
 c_cap = 0.124
 
@@ -110,7 +110,7 @@ hue_shift = 5.0
 hue_center = 198.3
 hue_pull = 0.15
 l_offset = -0.034
-l_floor = 0.62
+l_floor = 0.70
 c_scale = 1.24
 c_cap = 0.08
 
