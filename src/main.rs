@@ -38,6 +38,20 @@ enum Command {
     /// Write a contact sheet of every PNG under a folder.
     #[command(hide = true)]
     DevSheet(DevSheetArgs),
+    /// Per-texture metrics of processed PNGs against their sources (and a baseline render).
+    #[command(hide = true)]
+    DevMetrics(DevMetricsArgs),
+}
+
+#[derive(Args)]
+struct DevMetricsArgs {
+    /// Folder of source PNGs.
+    source: PathBuf,
+    /// Folder of processed PNGs (same relative paths).
+    output: PathBuf,
+    /// Folder of an earlier render to compare against (per-texel ΔE).
+    #[arg(long, value_name = "DIR")]
+    baseline: Option<PathBuf>,
 }
 
 #[derive(Args)]
@@ -193,6 +207,14 @@ fn main() -> ExitCode {
                 }
                 Ok(ExitCode::SUCCESS)
             }),
+        Command::DevMetrics(args) => {
+            pastelplash::report::metrics(&args.source, &args.output, args.baseline.as_deref()).map(
+                |text| {
+                    print!("{text}");
+                    ExitCode::SUCCESS
+                },
+            )
+        }
         Command::DevSheet(args) => {
             pastelplash::compare::sheet(&args.input, &args.output, args.thumb, args.cols)
                 .map(|()| ExitCode::SUCCESS)
