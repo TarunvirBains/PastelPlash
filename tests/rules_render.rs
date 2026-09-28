@@ -125,6 +125,72 @@ fn rule_coarse_identity_is_kept() {
 }
 
 #[test]
+fn rule_small_objects_survive() {
+    // Busy textures get a large-scale abstraction; it must never erase small salient objects
+    // (hooks, tools, bowls painted into a wall). Thin dark sticks and small bright squares on a
+    // gritty, high-contrast wall keep at least half their contrast against their surroundings,
+    // in every style and mood.
+    let wall = bark(256, 21);
+    let is_stick =
+        |x: u32, y: u32| (x % 64 == 20 || x % 64 == 21 || x % 64 == 22) && (40..216).contains(&y);
+    let is_square = |x: u32, y: u32| (100..112).contains(&x) && (y % 80) < 12 && y >= 16;
+    let img = image(256, 256, |x, y| {
+        let p = wall.pixels[(y * 256 + x) as usize];
+        if is_stick(x, y) {
+            let [r, g, b] = from_oklch(0.12, 0.03, 60.0);
+            [r, g, b, 1.0]
+        } else if is_square(x, y) {
+            let [r, g, b] = from_oklch(0.92, 0.02, 90.0);
+            [r, g, b, 1.0]
+        } else {
+            p
+        }
+    });
+    // Mean L of the object texels vs. of the wall texels within 6 px of them.
+    let contrast = |out: &Image, is_obj: &dyn Fn(u32, u32) -> bool| {
+        let (mut o, mut no, mut s, mut ns) = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
+        for y in 6..250 {
+            for x in 6..250 {
+                let l = lch(out.pixels[(y * 256 + x) as usize])[0];
+                if is_obj(x, y) {
+                    o += l;
+                    no += 1.0;
+                } else if (x - 6..=x + 6).any(|xx| is_obj(xx, y))
+                    || (y - 6..=y + 6).any(|yy| is_obj(x, yy))
+                {
+                    s += l;
+                    ns += 1.0;
+                }
+            }
+        }
+        (o / no - s / ns).abs()
+    };
+    let k = contract();
+    let (c_stick, c_square) = (contrast(&img, &is_stick), contrast(&img, &is_square));
+    for (label, path, config, mood) in style_moods() {
+        let Some(out) = render_mood(&path, &config, Category::World, &mood, &img) else {
+            return;
+        };
+        let (s1, q1) = (contrast(&out, &is_stick), contrast(&out, &is_square));
+        let style_name = label.split(" [").next().unwrap_or_default();
+        let keep = k
+            .technique
+            .small_object_styles
+            .get(style_name)
+            .copied()
+            .unwrap_or(k.technique.small_object_min_contrast);
+        assert!(
+            s1 >= keep * c_stick,
+            "{label}: stick contrast {c_stick:.3} -> {s1:.3}"
+        );
+        assert!(
+            q1 >= keep * c_square,
+            "{label}: square contrast {c_square:.3} -> {q1:.3}"
+        );
+    }
+}
+
+#[test]
 fn rule_bark_does_not_turn_blue() {
     // Regression: v2 lifted bark and cliff darks toward navy. Dark bark (brown, and near-neutral
     // olive-gray with near-black grooves) must keep a warm hue in every style.

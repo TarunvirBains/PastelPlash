@@ -71,6 +71,11 @@ value_mean_tolerance = 0.06
 # this fraction when the style enables `value_contrast.adaptive`; textures below the style's
 # target spread are not affected by adaptivity at all.
 adaptive_min_effect = 0.2
+# Small salient objects (thin sticks, small bright shapes) on a busy wall keep at least this
+# share of their contrast against their surroundings.
+small_object_min_contrast = 0.5
+# pastel lifts every dark to its light floor by design, so dark objects keep less contrast.
+small_object_styles = { pastel = 0.2 }
 
 # Identity: it must still look and feel like the source game. Each texture's alpha-weighted mean
 # OKLab color stays within max_mean_delta_e of the source's (for relit actors, of the source

@@ -172,6 +172,9 @@ pub struct TechniqueRules {
     pub value_min_effect: f32,
     pub value_mean_tolerance: f32,
     pub adaptive_min_effect: f32,
+    pub small_object_min_contrast: f32,
+    #[serde(default)]
+    pub small_object_styles: std::collections::BTreeMap<String, f32>,
 }
 
 #[derive(Debug, Deserialize)]
