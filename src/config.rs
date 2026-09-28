@@ -706,6 +706,9 @@ pub struct Treatment {
     pub paper: f32,
     /// Multiplies the style's value-contrast compression.
     pub value_contrast: f32,
+    /// Multiplies the design-like abstraction (0 for finished paintings such as pre-rendered
+    /// backgrounds).
+    pub abstraction: f32,
     /// Multiplies the palette's earth warmth.
     pub warmth: f32,
 }
@@ -728,6 +731,7 @@ impl Default for Treatment {
             paper: 1.0,
             value_contrast: 1.0,
             warmth: 1.0,
+            abstraction: 1.0,
         }
     }
 }

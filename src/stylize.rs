@@ -137,7 +137,7 @@ struct Params {
     mean_l: f32,
     mean_a: f32,
     mean_b: f32,
-    _pad6: f32,
+    spread: f32,
 }
 
 #[repr(C)]
@@ -538,7 +538,7 @@ impl Stage for Stylize {
         };
         // Busy weight for the design-like abstraction (photographic, high-contrast textures).
         let busy = if abstraction_on {
-            (ab.strength * gate * tr.value_contrast.min(1.0)).clamp(0.0, 1.0)
+            (ab.strength * gate * tr.value_contrast.min(1.0) * tr.abstraction).clamp(0.0, 1.0)
         } else {
             0.0
         };
@@ -626,6 +626,7 @@ impl Stage for Stylize {
             mean_l: mean_lab[0],
             mean_a: mean_lab[1],
             mean_b: mean_lab[2],
+            spread,
             paper: wc.paper_grain * tr.paper,
             paper_tint: wc.paper_tint * tr.paper,
             paper_cells_x: cells(w, paper_px),

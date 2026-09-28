@@ -27,7 +27,7 @@ struct Params {
     vc_r_fine: f32, vc_r_mid: f32, vc_r_coarse: f32, vc_range: f32,
     amp: f32, busy: f32, kuw_radius_coarse: f32, edge_coarse_step: f32,
     edge_soften: f32, highlight_calm: f32, highlight_radius: f32, chroma_retain: f32,
-    mean_l: f32, mean_a: f32, mean_b: f32, _pad6: f32,
+    mean_l: f32, mean_a: f32, mean_b: f32, spread: f32,
 };
 
 struct Band { y0: i32, y1: i32, _a: i32, _b: i32 };
@@ -359,7 +359,14 @@ fn kuwahara(@builtin(global_invocation_id) gid: vec3<u32>) {
         let painted = acc.rgb / acc.w;
         // Fully transparent texels take the painted neighborhood color (fewer dark fringes
         // under bilinear filtering); others blend by strength.
-        let t = select(strength, 1.0, center.a <= 0.0);
+        var t = select(strength, 1.0, center.a <= 0.0);
+        // Coarse pass: never erase small salient objects. Where the simplification would change
+        // a texel's lightness a lot (a thin stick, a hook, a bowl rim against the wall), keep
+        // it; noise (small changes) and large shapes (little change) are simplified as before.
+        if (coarse && center.a > 0.0) {
+            let dl = abs(srgb_to_oklab(painted).x - srgb_to_oklab(center.rgb).x);
+            t *= 1.0 - smoothstep(0.07, 0.16, dl);
+        }
         rgb = mix(center.rgb, painted, t);
     }
     textureStore(outTex, p, vec4<f32>(rgb, center.a));
@@ -651,7 +658,9 @@ fn finish(@builtin(global_invocation_id) gid: vec3<u32>) {
             let t_glob = smoothstep(0.08, 0.2, v.x - g.x)
                 * smoothstep(0.0, 0.03, length(g.yz) - length(v.yz));
             let calm_to = select(m, vec3<f32>(mix(v.x, g.x, 0.6), g.yz), t_glob > t_ring);
-            let t = P.busy * P.highlight_calm * max(t_ring, t_glob);
+            // Salient objects (far outside the texture's value distribution) are not glare.
+            let salient = smoothstep(3.0, 4.0, abs(v.x - P.mean_l) / max(P.spread, 1e-3));
+            let t = P.busy * P.highlight_calm * max(t_ring, t_glob) * (1.0 - salient);
             let w = mix(v, calm_to, t);
             c = vec4<f32>(linear_to_srgb(clamp(oklab_to_linear(w), vec3<f32>(0.0), vec3<f32>(1.0))), c.a);
         }
@@ -772,7 +781,10 @@ fn finish(@builtin(global_invocation_id) gid: vec3<u32>) {
     // position and the palette's own per-texel changes stay.
     if (P.amp < 1.0 && P.low_w > 0) {
         let pivot = pow(max(lowres_sample(gp), 0.0), 1.0 / 3.0);
-        lab.x = lab.x - (1.0 - P.amp) * (src.x - pivot);
+        // Salient objects (value outliers beyond ~3 sigma of the texture's spread) keep their
+        // contrast; grooves and grain within the distribution are compressed.
+        let keep = smoothstep(2.0, 3.0, abs(src.x - pivot) / max(P.spread, 1e-3));
+        lab.x = lab.x - (1.0 - P.amp) * (1.0 - keep) * (src.x - pivot);
     }
 
     // Busy textures: keep each texel's own source chroma (no gray-and-warm averaging into mud).
