@@ -42,15 +42,23 @@ pub struct Walk {
 }
 
 pub fn is_png(path: &Path) -> bool {
-    path.extension().is_some_and(|e| e.eq_ignore_ascii_case("png"))
+    path.extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("png"))
 }
 
 /// Lists files under `root`. Fails only if `root` itself cannot be read; problems further down are
 /// collected in [`Walk::errors`].
 pub fn walk(root: &Path, opts: &WalkOptions) -> io::Result<Walk> {
     let root_canon = fs::canonicalize(root)?;
-    let exclude = opts.exclude.as_deref().and_then(|p| fs::canonicalize(p).ok());
-    let mut walker = Walker { opts, exclude, out: Walk::default() };
+    let exclude = opts
+        .exclude
+        .as_deref()
+        .and_then(|p| fs::canonicalize(p).ok());
+    let mut walker = Walker {
+        opts,
+        exclude,
+        out: Walk::default(),
+    };
     fs::read_dir(root)?;
     walker.visit(root, Path::new(""), &mut vec![root_canon]);
     walker.out.entries.sort_by(|a, b| a.rel.cmp(&b.rel));
@@ -142,7 +150,13 @@ mod tests {
 
     fn tree() -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
-        for rel in ["b.png", "A.PNG", "notes.txt", "sub/c.Png", "sub/deeper/d.png"] {
+        for rel in [
+            "b.png",
+            "A.PNG",
+            "notes.txt",
+            "sub/c.Png",
+            "sub/deeper/d.png",
+        ] {
             touch(dir.path(), rel);
         }
         dir
@@ -158,18 +172,30 @@ mod tests {
     #[test]
     fn recursive_lists_everything_sorted() {
         let dir = tree();
-        let opts = WalkOptions { recursive: true, ..Default::default() };
+        let opts = WalkOptions {
+            recursive: true,
+            ..Default::default()
+        };
         let walk = walk(dir.path(), &opts).unwrap();
         assert_eq!(
             rels(&walk),
-            ["A.PNG", "b.png", "notes.txt", "sub/c.Png", "sub/deeper/d.png"]
+            [
+                "A.PNG",
+                "b.png",
+                "notes.txt",
+                "sub/c.Png",
+                "sub/deeper/d.png"
+            ]
         );
     }
 
     #[test]
     fn png_extension_is_case_insensitive() {
         let dir = tree();
-        let opts = WalkOptions { recursive: true, ..Default::default() };
+        let opts = WalkOptions {
+            recursive: true,
+            ..Default::default()
+        };
         let walk = walk(dir.path(), &opts).unwrap();
         let pngs: Vec<_> = walk.entries.iter().map(|e| e.is_png).collect();
         assert_eq!(pngs, [true, true, false, true, true]);
@@ -231,19 +257,32 @@ mod tests {
     #[test]
     fn symlinks_are_not_followed_by_default() {
         let Some(dir) = tree_with_loop() else { return };
-        let opts = WalkOptions { recursive: true, ..Default::default() };
+        let opts = WalkOptions {
+            recursive: true,
+            ..Default::default()
+        };
         let walk = walk(dir.path(), &opts).unwrap();
         assert_eq!(rels(&walk).len(), 5);
-        assert_eq!(walk.skipped, [(PathBuf::from("sub/loop"), SkipReason::Symlink)]);
+        assert_eq!(
+            walk.skipped,
+            [(PathBuf::from("sub/loop"), SkipReason::Symlink)]
+        );
     }
 
     #[test]
     fn followed_symlink_loops_are_cut() {
         let Some(dir) = tree_with_loop() else { return };
-        let opts = WalkOptions { recursive: true, follow_links: true, ..Default::default() };
+        let opts = WalkOptions {
+            recursive: true,
+            follow_links: true,
+            ..Default::default()
+        };
         let walk = walk(dir.path(), &opts).unwrap();
         assert_eq!(rels(&walk).len(), 5);
-        assert_eq!(walk.skipped, [(PathBuf::from("sub/loop"), SkipReason::Loop)]);
+        assert_eq!(
+            walk.skipped,
+            [(PathBuf::from("sub/loop"), SkipReason::Loop)]
+        );
     }
 
     #[test]
@@ -255,7 +294,11 @@ mod tests {
             eprintln!("skipping symlink test: {e}");
             return;
         }
-        let opts = WalkOptions { recursive: true, follow_links: true, ..Default::default() };
+        let opts = WalkOptions {
+            recursive: true,
+            follow_links: true,
+            ..Default::default()
+        };
         let walk = walk(dir.path(), &opts).unwrap();
         assert!(rels(&walk).contains(&"linked/e.png".to_string()));
     }

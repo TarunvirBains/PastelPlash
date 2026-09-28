@@ -4,7 +4,11 @@ use std::process::ExitCode;
 use clap::{Args, Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "pastelplash", version, about = "Restyle PNG texture packs into a pastel, watercolor look")]
+#[command(
+    name = "pastelplash",
+    version,
+    about = "Restyle PNG texture packs into a pastel, watercolor look"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,

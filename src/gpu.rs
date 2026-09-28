@@ -45,7 +45,11 @@ impl Gpu {
             })
             .await
             .context("failed to create device")?;
-        Ok(Self { adapter, device, queue })
+        Ok(Self {
+            adapter,
+            device,
+            queue,
+        })
     }
 }
 
@@ -54,7 +58,10 @@ pub fn info() -> Result<()> {
     pollster::block_on(async {
         let gpu = Gpu::new().await?;
         let info = gpu.adapter.get_info();
-        println!("adapter: {} ({:?}, driver {})", info.name, info.backend, info.driver_info);
+        println!(
+            "adapter: {} ({:?}, driver {})",
+            info.name, info.backend, info.driver_info
+        );
         self_test(&gpu)
     })
 }
@@ -91,7 +98,10 @@ fn self_test(gpu: &Gpu) -> Result<()> {
     let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: None,
         layout: &pipeline.get_bind_group_layout(0),
-        entries: &[wgpu::BindGroupEntry { binding: 0, resource: storage.as_entire_binding() }],
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: storage.as_entire_binding(),
+        }],
     });
 
     let start = std::time::Instant::now();
@@ -109,12 +119,20 @@ fn self_test(gpu: &Gpu) -> Result<()> {
 
     let slice = readback.slice(..);
     slice.map_async(wgpu::MapMode::Read, |r| r.expect("map failed"));
-    device.poll(wgpu::PollType::wait_indefinitely()).context("device poll failed")?;
+    device
+        .poll(wgpu::PollType::wait_indefinitely())
+        .context("device poll failed")?;
     let elapsed = start.elapsed();
 
-    let mapped = slice.get_mapped_range().context("mapped range unavailable")?;
+    let mapped = slice
+        .get_mapped_range()
+        .context("mapped range unavailable")?;
     let output: &[f32] = bytemuck::cast_slice(&mapped);
-    let bad = output.iter().enumerate().filter(|&(i, &v)| v != i as f32 * 2.0).count();
+    let bad = output
+        .iter()
+        .enumerate()
+        .filter(|&(i, &v)| v != i as f32 * 2.0)
+        .count();
     println!("{SELF_TEST_COUNT} values doubled in {elapsed:.2?}, mismatches: {bad}");
     if bad != 0 {
         bail!("GPU self-test produced {bad} wrong results");
