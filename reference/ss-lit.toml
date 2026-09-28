@@ -1,0 +1,62 @@
+# Skyward Sword HD reference palette: per hue group statistics of the "lit" subset (each
+# screenshot's pixels at or above its own 40th-percentile lightness) of 27 official 2021 press
+# screenshots, in OKLCH. Measured by the palette study (see PLAN.md, Palette); used by
+# `pastelplash palette-report` and the "pastel is not gray" rule as the chroma reference.
+name = "ss-lit"
+
+# group: OKLCH hue range, median L, median C, 90th-percentile C, median hue.
+[[groups]]
+name = "red_pink"
+hue_range = [345, 40]
+l = 0.537
+c = 0.036
+c_p90 = 0.104
+h = 11.5
+
+[[groups]]
+name = "orange_brown_earth"
+hue_range = [40, 85]
+l = 0.577
+c = 0.079
+c_p90 = 0.132
+h = 63.2
+
+[[groups]]
+name = "yellow_olive"
+hue_range = [85, 115]
+l = 0.862
+c = 0.059
+c_p90 = 0.124
+h = 99.6
+
+[[groups]]
+name = "green_foliage"
+hue_range = [115, 170]
+l = 0.71
+c = 0.066
+c_p90 = 0.117
+h = 135.8
+
+[[groups]]
+name = "cyan_teal"
+hue_range = [170, 215]
+l = 0.89
+c = 0.052
+c_p90 = 0.08
+h = 198.3
+
+[[groups]]
+name = "blue_sky_water"
+hue_range = [215, 275]
+l = 0.811
+c = 0.073
+c_p90 = 0.105
+h = 230.0
+
+[[groups]]
+name = "violet_magenta"
+hue_range = [275, 345]
+l = 0.641
+c = 0.044
+c_p90 = 0.075
+h = 307.0

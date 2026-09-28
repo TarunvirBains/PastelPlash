@@ -28,6 +28,8 @@ enum Command {
     O2r(O2rArgs),
     /// Export textures from a `.o2r` pack as PNGs, keeping their archive paths.
     O2rExport(O2rExportArgs),
+    /// Per hue group OKLCH statistics of a folder of PNGs next to a reference palette.
+    PaletteReport(PaletteReportArgs),
     /// Bake a style's palette into a `.cube` 3D LUT.
     BakeLut(BakeLutArgs),
     /// Write downsized before/after images and 1:1 crops for visual comparison.
@@ -78,6 +80,15 @@ struct O2rArgs {
     /// Worker threads (default or 0: all cores).
     #[arg(short, long, value_name = "N")]
     jobs: Option<usize>,
+}
+
+#[derive(Args)]
+struct PaletteReportArgs {
+    /// Folder of PNGs (searched recursively).
+    input: PathBuf,
+    /// Reference palette (TOML), e.g. reference/ss-lit.toml.
+    #[arg(long, value_name = "FILE")]
+    reference: PathBuf,
 }
 
 #[derive(Args)]
@@ -169,6 +180,12 @@ fn main() -> ExitCode {
         Command::GpuInfo => pastelplash::gpu::info().map(|()| ExitCode::SUCCESS),
         Command::BakeLut(args) => bake_lut(args).map(|()| ExitCode::SUCCESS),
         Command::O2r(args) => o2r(args).map(|()| ExitCode::SUCCESS),
+        Command::PaletteReport(args) => pastelplash::report::Reference::load(&args.reference)
+            .and_then(|r| pastelplash::report::report(&args.input, &r))
+            .map(|text| {
+                print!("{text}");
+                ExitCode::SUCCESS
+            }),
         Command::DevSheet(args) => {
             pastelplash::compare::sheet(&args.input, &args.output, args.thumb, args.cols)
                 .map(|()| ExitCode::SUCCESS)

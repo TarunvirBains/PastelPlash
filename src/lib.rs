@@ -13,5 +13,6 @@ pub mod palette;
 pub mod pipeline;
 pub mod png_io;
 pub mod process;
+pub mod report;
 pub mod stylize;
 pub mod walk;
