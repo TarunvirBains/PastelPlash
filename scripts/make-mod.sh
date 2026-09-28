@@ -1,24 +1,26 @@
 #!/usr/bin/env bash
-# Builds PastelPlash mods from an OoT Reloaded .o2r pack and installs one into Ship of Harkinian.
-# Works from Git Bash on Windows and from bash in WSL. Needs only pastelplash.exe, coreutils and
-# (optionally, for VRAM numbers) nvidia-smi.
+# Builds PastelPlash mods from an OoT Reloaded .o2r pack. Works from Git Bash on Windows and from
+# bash in WSL. Needs only pastelplash.exe, coreutils and (optionally, for VRAM numbers)
+# nvidia-smi. The source pack is only read.
 #
-#   scripts/make-mod.sh                 # test mod: Kokiri Forest + Link, all styles
+#   scripts/make-mod.sh                 # test mods: Kokiri Forest + Link, every style
 #   FULL=1 scripts/make-mod.sh          # every texture in the pack
-#   STYLES=impressionist scripts/make-mod.sh
-#   NO_INSTALL=1 scripts/make-mod.sh    # build only
+#   STYLES=impressionist TAG=v3 scripts/make-mod.sh
+#
+# Built mods are copied to $SOH_DIR/pastelplash-variants/ as PastelPlash-<style>-<TAG>.o2r;
+# nothing is written to the mods folder unless INSTALL=mods (the game may have it open).
 #
 # Settings (environment variables):
 #   SOH_DIR        Ship of Harkinian folder (default: autodetected, see below)
 #   PACK           source pack (default: $SOH_DIR/mods/OoT_Reloaded_v11.0.0_4K.o2r)
-#   STYLES         styles to build, space-separated (default: all three presets)
-#   INSTALL_STYLE  style installed into $SOH_DIR/mods (default: skyward-watercolor); the others
-#                  go to $SOH_DIR/pastelplash-variants/ for swapping in
+#   STYLES         styles to build, space-separated (default: every preset)
+#   TAG            name suffix (default: test, or full with FULL=1)
+#   INSTALL        variants (default), mods (only INSTALL_STYLE, into $SOH_DIR/mods) or none
+#   INSTALL_STYLE  style for INSTALL=mods (default: watercolor)
 #   INCLUDE        entry globs, space-separated (default: the Kokiri Forest + Link test set)
 #   FULL=1         no INCLUDE filter: restyle the whole pack
 #   JOBS           worker threads (default: all cores)
 #   OUT_DIR        where built mods and logs go (default: <repo>/target/mods)
-#   NO_INSTALL=1   don't copy anything into the Ship of Harkinian folder
 set -euo pipefail
 
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -47,18 +49,21 @@ fi
 [[ -n "${SOH_DIR:-}" && -d "$SOH_DIR" ]] || { echo "set SOH_DIR to your Ship of Harkinian folder" >&2; exit 1; }
 PACK=${PACK:-"$SOH_DIR/mods/OoT_Reloaded_v11.0.0_4K.o2r"}
 [[ -f "$PACK" ]] || { echo "pack not found: $PACK" >&2; exit 1; }
-STYLES=${STYLES:-"skyward-watercolor ss-baseline impressionist"}
-INSTALL_STYLE=${INSTALL_STYLE:-skyward-watercolor}
+STYLES=${STYLES:-"watercolor impressionist ss-baseline pastel"}
+INSTALL=${INSTALL:-variants}
+INSTALL_STYLE=${INSTALL_STYLE:-watercolor}
 OUT_DIR=${OUT_DIR:-"$REPO/target/mods"}
 mkdir -p "$OUT_DIR"
 LOG="$OUT_DIR/make-mod.log"
 
 if [[ "${FULL:-0}" == 1 ]]; then
     INCLUDE=""
-    SCOPE=full
+    SCOPE=${TAG:-full}
 else
-    INCLUDE=${INCLUDE:-"alt/scenes/*/spot04_scene/** alt/objects/object_spot04_objects/** alt/objects/object_link_boy/** alt/objects/object_link_child/** alt/objects/gameplay_field_keep/**"}
-    SCOPE=test
+    # Kokiri Forest (scene, interiors and their pre-rendered backdrops), its people and props,
+    # Link, and the shared keeps (bushes, grass, rocks, signs, doors, pots).
+    INCLUDE=${INCLUDE:-"alt/scenes/*/spot04_scene/** alt/scenes/*/kokiri_home*_scene/** alt/scenes/*/link_home_scene/** alt/scenes/*/kokiri_shop_scene/** alt/textures/vr_K3VR_static/** alt/textures/vr_K4VR_static/** alt/textures/vr_K5VR_static/** alt/textures/vr_LHVR_static/** alt/textures/vr_KSVR_static/** alt/objects/object_spot04_objects/** alt/objects/object_link_boy/** alt/objects/object_link_child/** alt/objects/gameplay_field_keep/** alt/objects/gameplay_keep/** alt/objects/object_km1/** alt/objects/object_kw1/** alt/objects/object_sa/** alt/objects/object_mm/** alt/objects/object_kanban/** alt/objects/object_gs/** alt/objects/object_tsubo/** alt/objects/object_masterkokiri*/**"}
+    SCOPE=${TAG:-test}
 fi
 include_args=()
 for g in $INCLUDE; do include_args+=(--include "$g"); done
@@ -113,17 +118,19 @@ for style in $STYLES; do
 done
 echo "all styles: $(elapsed "$total_start" "$(now)") s" | tee -a "$LOG"
 
-if [[ "${NO_INSTALL:-0}" != 1 ]]; then
-    mkdir -p "$SOH_DIR/pastelplash-variants"
-    for style in $STYLES; do
-        src="$OUT_DIR/PastelPlash-$style-$SCOPE.o2r"
-        if [[ "$style" == "$INSTALL_STYLE" ]]; then
-            cp "$src" "$SOH_DIR/mods/"
-            echo "installed $(basename "$src") into $SOH_DIR/mods" | tee -a "$LOG"
-        else
-            cp "$src" "$SOH_DIR/pastelplash-variants/"
-        fi
-    done
-    echo "variants: $SOH_DIR/pastelplash-variants (move one into mods/ to switch)" | tee -a "$LOG"
-    echo "In SoH: enable it in the Mod Menu and order it after OoT Reloaded." | tee -a "$LOG"
-fi
+case "$INSTALL" in
+    variants)
+        mkdir -p "$SOH_DIR/pastelplash-variants"
+        for style in $STYLES; do
+            cp "$OUT_DIR/PastelPlash-$style-$SCOPE.o2r" "$SOH_DIR/pastelplash-variants/"
+            echo "copied PastelPlash-$style-$SCOPE.o2r to $SOH_DIR/pastelplash-variants" | tee -a "$LOG"
+        done
+        echo "To use one: quit SoH, move it into mods/, enable it in the Mod Menu after OoT Reloaded." | tee -a "$LOG"
+        ;;
+    mods)
+        cp "$OUT_DIR/PastelPlash-$INSTALL_STYLE-$SCOPE.o2r" "$SOH_DIR/mods/"
+        echo "installed PastelPlash-$INSTALL_STYLE-$SCOPE.o2r into $SOH_DIR/mods" | tee -a "$LOG"
+        ;;
+    none) ;;
+    *) echo "INSTALL must be variants, mods or none" >&2; exit 1 ;;
+esac
