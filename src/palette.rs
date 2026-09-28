@@ -18,7 +18,8 @@
 //! extrapolates beyond it (lighter, softer, more harmonized) without leaving the gamut:
 //! the tone curve is composed with itself (monotone), floors move in log-headroom space toward
 //! `L_MAX`, shifts scale by s, pulls by
-//! `1 + 2(s − 1)` (≤ 0.8), chroma scales as `x^s`, caps tighten by `1/√s`, tints by s.
+//! `1 + 2(s − 1)` (≤ 0.8), chroma scales as `x^s` (boosts stop at s = 1), caps tighten by `1/√s`,
+//! tints by s.
 //!
 //! Each LUT entry also stores the lightness floor that applied to it, so the shader can keep
 //! watercolor darkening from undercutting the palette.
@@ -272,7 +273,8 @@ impl Mapping<'_> {
                 vivid_cap = lerp(global_cap, p.vivid_max_chroma.max(global_cap), v);
             }
         }
-        let c1 = c * scale.powf(s);
+        // Chroma boosts are never extrapolated past the configured look (pastel means softer).
+        let c1 = c * if scale > 1.0 { scale.powf(s.min(1.0)) } else { scale.powf(s) };
         let c2 = lerp(c1, soft_cap(c1, cap), s.min(1.0));
         let chromatic = color::oklch_to_oklab([l3, c2, h2]);
 
