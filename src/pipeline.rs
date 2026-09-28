@@ -28,9 +28,14 @@ pub struct Pipeline {
 }
 
 impl Pipeline {
-    /// Builds the pipeline a config asks for. No stages exist yet, so this is the identity.
-    pub fn from_config(_config: &Config) -> Result<Self> {
-        Ok(Self::default())
+    /// Builds the pipeline a config asks for. A neutral config gives the identity pipeline and
+    /// never opens the GPU.
+    pub fn from_config(config: &Config) -> Result<Self> {
+        let mut pipeline = Self::default();
+        if crate::stylize::wanted(config) {
+            pipeline.push(crate::stylize::Stylize::new(config)?);
+        }
+        Ok(pipeline)
     }
 
     pub fn push(&mut self, stage: impl Stage + 'static) {
