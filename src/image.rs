@@ -16,6 +16,10 @@ pub struct Image {
     pub pixels: Vec<[f32; 4]>,
     /// How the source file stored its pixels; decides how the result is encoded.
     pub source: SourceFormat,
+    /// Output pixels per source pixel, when an adapter knows the texture was upscaled from a
+    /// lower-resolution original. Stages use it to size brushes consistently; `None` falls back
+    /// to the pack/style default, then to image-size-relative sizing.
+    pub source_scale: Option<f32>,
 }
 
 impl Image {
