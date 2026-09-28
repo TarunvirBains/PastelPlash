@@ -49,8 +49,13 @@ dark_chroma = 0.05      # dull darks → deep colored shadows along their own hu
 dark_below = 0.45
 neutral_c = 0.02
 neutral_tint = { hue = 105.0, chroma = 0.012, amount = 0.3 }
-# Crushed darks become deep cool colored shadows, never neutral black or brown mud.
-shadow_tint = { below_input_l = 0.22, hue = 262.0, chroma = 0.05, amount = 0.6 }
+# Lifted darks keep their source hue (dark brown → deep warm brown, dark green → deep green).
+# Only neutral near-blacks get a tint: SS's measured shadow is warm umber (~70°), not blue.
+shadow_tint = { below_input_l = 0.22, hue = 70.0, chroma = 0.04, amount = 0.6, colored = 0.0 }
+dark_cool_bias = 0.0    # optional cool push on lifted darks; off keeps OoT's own shadow hues
+# Targeted earth warmth: earth/olive/khaki hues lean toward SS's golden tan, weighted by chroma
+# (gray stone stays gray). Tuned a little strong: Kokiri Forest's vertex light is greenish.
+warmth = { strength = 0.45, band = [50.0, 115.0], feather = 10.0, hue = 68.0, chroma = 0.079, chroma_boost = 0.4, min_chroma = [0.02, 0.06], lift = 0.0 }
 hue_feather = 10
 pigments = [20.0, 58.0, 80.0, 100.0, 118.0, 135.0, 160.0, 195.0, 242.0, 280.0]
 harmonize = 0.05
@@ -59,11 +64,11 @@ tint_safe_chroma = 0.03
 vivid = 0.0
 vivid_threshold = 0.15
 vivid_max_chroma = 0.2
-accent_fraction = 0.01
+accent_fraction = 0.0    # off: specks read as noise, not shadow (impressionist keeps a few)
 accent_radius = 16.0
 accent_min_l = 0.3
 accent_hue = 265.0
-accent_chroma = 0.04
+accent_chroma = 0.015
 accent_softness = 0.6
 accent_min_depth = 0.1
 dark_greens = true
@@ -153,6 +158,13 @@ radius_fine = 3.0
 radius_mid = 12.0
 radius_coarse = 40.0
 range = 0.12
+# Adaptive: high-contrast textures (bark, cliffs) get extra mid-scale compression toward
+# target_std; textures already at or below it (the ground) are left as they are.
+adaptive = 1.0
+target_std = 0.06       # ~the ground's spread (0.066, barely affected); bark (0.10–0.19) adapts
+adaptive_coarse = 0.5
+max_mid = 0.85
+adaptive_range = 3.0    # bark grooves are texture, not structure
 
 [watercolor]
 edge_darkening = 0.05

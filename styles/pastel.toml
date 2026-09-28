@@ -132,9 +132,9 @@ c_min = 0.047
 [[palette.groups]]
 name = "blue_sky_water"
 hue_range = [215, 275]
-hue_shift = -15.0
+hue_shift = -8.0
 hue_center = 230.0
-hue_pull = 0.5
+hue_pull = 0.35
 l_offset = 0.05
 l_floor = 0.62
 c_scale = 1.0

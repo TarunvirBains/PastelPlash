@@ -8,7 +8,8 @@ name = "impressionist"
 radius = 10.0
 
 [palette]
-accent_fraction = 0.02
+accent_fraction = 0.006
+accent_chroma = 0.03
 accent_min_depth = 0.08
 vivid = 0.4
 
