@@ -83,6 +83,7 @@ fn run(dir: &Path, config: &Config, include: &[&str], complete: bool) -> Vec<(St
         output: output.clone(),
         include: include.iter().map(|s| s.to_string()).collect(),
         category: None,
+        mood: None,
         complete,
         jobs: Some(2),
     };

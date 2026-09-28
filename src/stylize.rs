@@ -26,7 +26,7 @@ use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
 
 use crate::analysis;
-use crate::config::{Category, Config, Style, Treatment};
+use crate::config::{Category, Config, Mood, Style, Treatment};
 use crate::gpu::Gpu;
 use crate::image::Image;
 use crate::lut::Lut3d;
@@ -173,8 +173,10 @@ pub struct Stylize {
     /// Loaded `.cube` from the style (replaces the generated palette).
     external_lut: Option<Arc<wgpu::Buffer>>,
     external_lut_size: i32,
-    /// Generated palette LUTs by (lift scale, shadow scale) bits.
-    luts: Mutex<HashMap<(u32, u32), Arc<wgpu::Buffer>>>,
+    /// Generated palette LUTs by (mood, lift scale bits, shadow scale bits).
+    luts: Mutex<HashMap<(String, u32, u32), Arc<wgpu::Buffer>>>,
+    /// Styles derived for non-base moods, by mood key.
+    moods: Mutex<HashMap<String, Arc<Style>>>,
     slots: Slots,
     max_side: u32,
 }
@@ -326,6 +328,7 @@ impl Stylize {
             external_lut,
             external_lut_size,
             luts: Mutex::new(HashMap::new()),
+            moods: Mutex::new(HashMap::new()),
             slots: Slots {
                 free: Mutex::new(GPU_SLOTS),
                 cv: Condvar::new(),
@@ -334,18 +337,38 @@ impl Stylize {
         })
     }
 
-    /// The palette LUT buffer and its size for a category's treatment, if the style has a
-    /// palette.
-    fn lut(&self, style: &Style, tr: &Treatment) -> Option<(Arc<wgpu::Buffer>, i32)> {
+    /// The style for a file's mood: the configured style itself for the base mood, otherwise
+    /// derived once per mood and cached.
+    fn style_for<'a>(&self, ctx: &'a FileContext) -> Result<std::borrow::Cow<'a, Style>> {
+        if ctx.mood.is_base() {
+            return Ok(std::borrow::Cow::Borrowed(&ctx.config.style));
+        }
+        let key = ctx.mood.key();
+        if let Some(s) = self.moods.lock().unwrap().get(&key) {
+            return Ok(std::borrow::Cow::Owned((**s).clone()));
+        }
+        let style = Arc::new(ctx.config.style.for_mood(&ctx.mood)?);
+        self.moods.lock().unwrap().insert(key, style.clone());
+        Ok(std::borrow::Cow::Owned((*style).clone()))
+    }
+
+    /// The palette LUT buffer and its size for a mood and category treatment, if the style has
+    /// a palette.
+    fn lut(&self, style: &Style, mood: &Mood, tr: &Treatment) -> Option<(Arc<wgpu::Buffer>, i32)> {
         if let Some(buf) = &self.external_lut {
             return Some((buf.clone(), self.external_lut_size));
         }
         if !style.palette.enabled {
             return None;
         }
+        let key = if mood.is_base() {
+            String::new()
+        } else {
+            mood.key()
+        };
         let mut luts = self.luts.lock().unwrap();
         let buf = luts
-            .entry((tr.floor_scale.to_bits(), tr.shadow_tint.to_bits()))
+            .entry((key, tr.floor_scale.to_bits(), tr.shadow_tint.to_bits()))
             .or_insert_with(|| {
                 let lut = Mapping {
                     palette: &style.palette,
@@ -391,7 +414,8 @@ impl Stage for Stylize {
             return Ok(());
         }
         let t_start = Instant::now();
-        let style = &ctx.config.style;
+        let style = self.style_for(ctx)?;
+        let style = &*style;
         let tr = ctx.config.target.treatment(ctx.category);
         let (w, h) = (image.width, image.height);
         if w == 0 || h == 0 {
@@ -424,7 +448,7 @@ impl Stage for Stylize {
         let temp_strength = style.temperature.chroma * tr.warm_cool;
         let lowres = (delight_strength > 0.0 || temp_strength > 0.0)
             .then(|| analysis::lowres_luminance(image, style.delight.radius * gm, wrap));
-        let lut = self.lut(style, &tr);
+        let lut = self.lut(style, &ctx.mood, &tr);
         let pal = &style.palette;
         let accent_fraction = if lut.is_some() {
             pal.accent_fraction * tr.accent
@@ -559,10 +583,11 @@ impl Stage for Stylize {
             }
         }
         println!(
-            "  {}: {w}x{h} {:?} wrap={}{} seam={:.1}/{:.1} tint_safe={} (C99 {:.3}) \
+            "  {}: {w}x{h} {:?} mood={} wrap={}{} seam={:.1}/{:.1} tint_safe={} (C99 {:.3}) \
              scale={f:.2} r={radius:.1}{} | analysis {} gpu {}",
             ctx.rel.display(),
             ctx.category,
+            ctx.mood,
             if wrap[0] { "u" } else { "-" },
             if wrap[1] { "v" } else { "-" },
             ratios[0].min(99.0),

@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, bail, ensure};
 use rayon::prelude::*;
 
-use crate::config::{Category, Config, glob_match};
+use crate::config::{Category, Config, Mood, glob_match};
 use crate::image::{Image, SourceColor, SourceFormat};
 use crate::pipeline::{FileContext, Pipeline};
 
@@ -97,6 +97,8 @@ pub struct Options {
     pub include: Vec<String>,
     /// Category for every entry, overriding the pack map.
     pub category: Option<Category>,
+    /// Mood for every entry, overriding the pack map's mood rules.
+    pub mood: Option<Mood>,
     /// Also copy unprocessed entries, producing a complete standalone pack.
     pub complete: bool,
     pub jobs: Option<usize>,
@@ -281,6 +283,10 @@ fn handle(
     let ctx = FileContext {
         rel,
         category,
+        mood: opts
+            .mood
+            .clone()
+            .unwrap_or_else(|| config.pack.mood_for(rel)),
         config,
     };
     pipeline.run(&mut image, &ctx)?;

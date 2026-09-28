@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand};
-use pastelplash::config::{Category, Config};
+use pastelplash::config::{Category, Config, Mood};
 use pastelplash::pipeline::Pipeline;
 use pastelplash::process;
 
@@ -55,6 +55,9 @@ struct O2rArgs {
     /// Treat every entry as this category, overriding the pack map.
     #[arg(long, value_name = "CATEGORY")]
     category: Option<Category>,
+    /// Give every entry this mood (NAME or NAME:STRENGTH), overriding the pack map.
+    #[arg(long, value_name = "MOOD")]
+    mood: Option<Mood>,
     /// Worker threads (default or 0: all cores).
     #[arg(short, long, value_name = "N")]
     jobs: Option<usize>,
@@ -71,6 +74,9 @@ struct BakeLutArgs {
     /// Category whose target treatment to apply.
     #[arg(long, value_name = "CATEGORY", default_value = "world")]
     category: Category,
+    /// Mood to bake (NAME or NAME:STRENGTH).
+    #[arg(long, value_name = "MOOD", default_value = "pastel")]
+    mood: Mood,
     /// Output `.cube` file.
     output: PathBuf,
 }
@@ -118,9 +124,14 @@ struct ProcessArgs {
     /// Worker threads (default or 0: all cores).
     #[arg(short, long, value_name = "N")]
     jobs: Option<usize>,
-    /// Treat every PNG as this category (actor, world, skybox, ui, skip), overriding the pack map.
+    /// Treat every PNG as this category (actor, world, skybox, background, ui, skip), overriding
+    /// the pack map.
     #[arg(long, value_name = "CATEGORY")]
     category: Option<Category>,
+    /// Give every PNG this mood (NAME or NAME:STRENGTH, e.g. nocturne:0.6), overriding the pack
+    /// map.
+    #[arg(long, value_name = "MOOD")]
+    mood: Option<Mood>,
 }
 
 fn main() -> ExitCode {
@@ -160,6 +171,7 @@ fn process(args: ProcessArgs) -> anyhow::Result<ExitCode> {
         copy_other: args.copy_other,
         jobs: args.jobs,
         category: args.category,
+        mood: args.mood,
     };
     let s = process::run(&opts, &config, &pipeline)?;
 
@@ -188,14 +200,14 @@ fn process(args: ProcessArgs) -> anyhow::Result<ExitCode> {
 fn bake_lut(args: BakeLutArgs) -> anyhow::Result<()> {
     let config = Config::load(Some(&args.style), args.target.as_deref(), None)?;
     let tr = config.target.treatment(args.category);
-    let palette = config.style.palette.clone();
+    let style = config.style.for_mood(&args.mood)?;
     let lut = pastelplash::palette::Mapping {
-        palette: &palette,
+        palette: &style.palette,
         lift_scale: tr.floor_scale,
         shadow_scale: tr.shadow_tint,
     }
     .bake();
-    let title = format!("{} ({:?})", config.style.name, args.category);
+    let title = format!("{} ({:?}, {})", config.style.name, args.category, args.mood);
     lut.save(&args.output, &title)?;
     println!("wrote {}^3 LUT to {}", lut.size, args.output.display());
     Ok(())
@@ -213,6 +225,7 @@ fn o2r(args: O2rArgs) -> anyhow::Result<()> {
         output: args.output,
         include: args.include,
         category: args.category,
+        mood: args.mood,
         complete: args.complete,
         jobs: args.jobs,
     };

@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
 use pastelplash::color;
-use pastelplash::config::{Category, Config};
+use pastelplash::config::{Category, Config, Mood};
 use pastelplash::image::{Image, SourceColor, SourceFormat};
 use pastelplash::pipeline::{FileContext, Stage};
 use pastelplash::stylize::Stylize;
@@ -283,13 +283,25 @@ pub fn stylizer(style: &Path) -> Option<&'static Stylize> {
     })
 }
 
-/// Runs the stage on a copy of `img` as `category`; `None` if no GPU is available.
+/// Runs the stage on a copy of `img` as `category` in the base mood; `None` without a GPU.
 pub fn render(style: &Path, config: &Config, category: Category, img: &Image) -> Option<Image> {
+    render_mood(style, config, category, &Mood::default(), img)
+}
+
+/// Runs the stage on a copy of `img` as `category` in `mood`; `None` if no GPU is available.
+pub fn render_mood(
+    style: &Path,
+    config: &Config,
+    category: Category,
+    mood: &Mood,
+    img: &Image,
+) -> Option<Image> {
     let stage = stylizer(style)?;
     let mut out = img.clone();
     let ctx = FileContext {
         rel: Path::new("test.png"),
         category,
+        mood: mood.clone(),
         config,
     };
     stage.apply(&mut out, &ctx).unwrap();

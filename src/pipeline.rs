@@ -4,7 +4,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
-use crate::config::{Category, Config};
+use crate::config::{Category, Config, Mood};
 use crate::image::Image;
 
 /// What a stage knows about the file it is processing.
@@ -12,6 +12,8 @@ pub struct FileContext<'a> {
     /// Path relative to the input root.
     pub rel: &'a Path,
     pub category: Category,
+    /// The mood the pack map (or an override) assigns to this file.
+    pub mood: Mood,
     pub config: &'a Config,
 }
 

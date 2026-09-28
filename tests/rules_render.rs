@@ -416,6 +416,7 @@ fn rule_neutral_config_is_identity_without_a_gpu() {
     let ctx = pastelplash::pipeline::FileContext {
         rel: std::path::Path::new("x.png"),
         category: Category::World,
+        mood: Default::default(),
         config: &config,
     };
     pipeline.run(&mut img, &ctx).unwrap();
@@ -441,6 +442,7 @@ fn rule_chunked_processing_matches_whole_image() {
         let ctx = FileContext {
             rel: std::path::Path::new("c.png"),
             category: Category::World,
+            mood: Default::default(),
             config: &config,
         };
         stage.apply(&mut out, &ctx).unwrap();

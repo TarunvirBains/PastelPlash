@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, bail};
 use rayon::prelude::*;
 
-use crate::config::{Category, Config};
+use crate::config::{Category, Config, Mood};
 use crate::pipeline::{FileContext, Pipeline};
 use crate::png_io;
 use crate::walk::{self, SkipReason, WalkOptions};
@@ -24,6 +24,8 @@ pub struct Options {
     pub jobs: Option<usize>,
     /// Category for every PNG, overriding the pack map (prototyping before classification).
     pub category: Option<Category>,
+    /// Mood for every PNG, overriding the pack map's mood rules.
+    pub mood: Option<Mood>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -154,6 +156,10 @@ fn handle(
             let ctx = FileContext {
                 rel,
                 category,
+                mood: opts
+                    .mood
+                    .clone()
+                    .unwrap_or_else(|| config.pack.mood_for(rel)),
                 config,
             };
             pipeline
