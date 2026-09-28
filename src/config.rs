@@ -575,7 +575,138 @@ impl Config {
         if let Some(base) = pack.and_then(Path::parent) {
             resolve(&mut config.pack.list, base);
         }
+        if let Some(path) = style {
+            config
+                .style
+                .validate()
+                .with_context(|| format!("invalid style {}", path.display()))?;
+        }
+        if let Some(path) = target {
+            config
+                .target
+                .validate()
+                .with_context(|| format!("invalid target {}", path.display()))?;
+        }
         Ok(config)
+    }
+}
+
+fn check(ok: bool, msg: impl FnOnce() -> String) -> Result<()> {
+    if ok { Ok(()) } else { anyhow::bail!(msg()) }
+}
+
+fn unit(name: &str, v: f32) -> Result<()> {
+    check((0.0..=1.0).contains(&v), || {
+        format!("{name} = {v} must be within 0..=1")
+    })
+}
+
+fn non_negative(name: &str, v: f32) -> Result<()> {
+    check(v >= 0.0 && v.is_finite(), || {
+        format!("{name} = {v} must be >= 0")
+    })
+}
+
+impl Style {
+    /// Rejects settings that are out of range or contradict each other.
+    pub fn validate(&self) -> Result<()> {
+        let p = &self.palette;
+        unit("palette.l_floor", p.l_floor)?;
+        unit("palette.l_ceiling", p.l_ceiling)?;
+        check(p.l_floor <= p.l_ceiling, || {
+            format!(
+                "palette.l_floor ({}) is above palette.l_ceiling ({})",
+                p.l_floor, p.l_ceiling
+            )
+        })?;
+        unit("palette.floor_knee", p.floor_knee)?;
+        non_negative("palette.strength", p.strength)?;
+        check((2..=129).contains(&p.lut_size), || {
+            format!("palette.lut_size = {} must be within 2..=129", p.lut_size)
+        })?;
+        for w in p.l_curve.windows(2) {
+            check(w[1][0] > w[0][0] && w[1][1] >= w[0][1], || {
+                format!(
+                    "palette.l_curve must be increasing: {:?} then {:?}",
+                    w[0], w[1]
+                )
+            })?;
+        }
+        for pt in &p.l_curve {
+            unit("palette.l_curve input", pt[0])?;
+            unit("palette.l_curve output", pt[1])?;
+        }
+        for g in &p.groups {
+            let name = format!("palette.groups[{}]", g.name);
+            unit(&format!("{name}.l_floor"), g.l_floor)?;
+            check(g.l_floor <= p.l_ceiling, || {
+                format!(
+                    "{name}.l_floor ({}) is above palette.l_ceiling ({})",
+                    g.l_floor, p.l_ceiling
+                )
+            })?;
+            non_negative(&format!("{name}.c_scale"), g.c_scale)?;
+            unit(&format!("{name}.hue_pull"), g.hue_pull)?;
+        }
+        non_negative("palette.chroma_cap", p.chroma_cap)?;
+        unit("palette.harmonize", p.harmonize)?;
+        unit("palette.vivid", p.vivid)?;
+        check((0.0..=0.5).contains(&p.accent_fraction), || {
+            format!(
+                "palette.accent_fraction = {} must be within 0..=0.5",
+                p.accent_fraction
+            )
+        })?;
+        unit("palette.accent_min_l", p.accent_min_l)?;
+        unit("palette.accent_softness", p.accent_softness)?;
+        let k = &self.kuwahara;
+        non_negative("kuwahara.radius", k.radius)?;
+        unit("kuwahara.strength", k.strength)?;
+        check(k.min_radius <= k.max_radius, || {
+            format!(
+                "kuwahara.min_radius ({}) is above kuwahara.max_radius ({})",
+                k.min_radius, k.max_radius
+            )
+        })?;
+        check(k.anisotropy > 0.0, || {
+            "kuwahara.anisotropy must be > 0".into()
+        })?;
+        check(self.scale.reference_size > 0.0, || {
+            "scale.reference_size must be > 0".into()
+        })?;
+        let w = &self.watercolor;
+        for (name, v) in [
+            ("watercolor.edge_darkening", w.edge_darkening),
+            ("watercolor.bleed", w.bleed),
+            ("watercolor.granulation", w.granulation),
+            ("watercolor.paper_grain", w.paper_grain),
+            ("watercolor.floor_margin", w.floor_margin),
+            ("strokes.strength", self.strokes.strength),
+            ("temperature.chroma", self.temperature.chroma),
+            ("delight.strength", self.delight.strength),
+        ] {
+            non_negative(name, v)?;
+        }
+        check(self.delight.min_gain <= self.delight.max_gain, || {
+            "delight.min_gain is above delight.max_gain".into()
+        })?;
+        Ok(())
+    }
+}
+
+impl Target {
+    pub fn validate(&self) -> Result<()> {
+        for (cat, t) in &self.categories {
+            if let Some(c) = t.lightness_ceiling {
+                check(c > 0.0 && c <= 1.0, || {
+                    format!("categories.{cat:?}.lightness_ceiling = {c} must be within (0, 1]")
+                })?;
+            }
+            unit(&format!("categories.{cat:?}.delight"), t.delight)?;
+            non_negative(&format!("categories.{cat:?}.warm_cool"), t.warm_cool)?;
+            non_negative(&format!("categories.{cat:?}.floor_scale"), t.floor_scale)?;
+        }
+        Ok(())
     }
 }
 
@@ -654,6 +785,25 @@ mod tests {
     fn categories_parse_from_cli_strings() {
         assert_eq!("Actor".parse::<Category>(), Ok(Category::Actor));
         assert!("actors".parse::<Category>().is_err());
+    }
+
+    #[test]
+    fn contradictory_settings_are_rejected_with_clear_errors() {
+        let style: Style = toml::from_str("[palette]\nl_floor = 0.9\nl_ceiling = 0.8").unwrap();
+        let err = style.validate().unwrap_err().to_string();
+        assert!(
+            err.contains("l_floor") && err.contains("l_ceiling"),
+            "{err}"
+        );
+        let style: Style =
+            toml::from_str("[palette]\nl_curve = [[0, 0.5], [0.5, 0.4], [1, 1]]").unwrap();
+        assert!(style.validate().is_err());
+        let style: Style = toml::from_str("[kuwahara]\nradius = -1").unwrap();
+        assert!(style.validate().is_err());
+        let target: Target = toml::from_str("[categories.actor]\nlightness_ceiling = 1.5").unwrap();
+        assert!(target.validate().is_err());
+        assert!(Style::default().validate().is_ok());
+        assert!(Target::default().validate().is_ok());
     }
 
     #[test]
