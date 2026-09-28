@@ -7,6 +7,7 @@ pub mod config;
 pub mod gpu;
 pub mod image;
 pub mod lut;
+pub mod mood;
 pub mod o2r;
 pub mod palette;
 pub mod pipeline;

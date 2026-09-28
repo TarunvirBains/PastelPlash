@@ -12,6 +12,8 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
+pub use crate::mood::Mood;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Category {
@@ -66,6 +68,12 @@ pub struct Style {
     pub temperature: Temperature,
     pub strokes: Strokes,
     pub watercolor: Watercolor,
+    /// Named moods: partial overrides of this style (see `src/mood.rs`). The style itself is
+    /// the `pastel` mood.
+    pub moods: BTreeMap<String, toml::Table>,
+    /// The file's TOML, kept to derive moods from.
+    #[serde(skip)]
+    pub raw: Option<toml::Table>,
 }
 
 /// How style sizes (in "reference texels") become texels of a given image.
@@ -346,6 +354,12 @@ pub struct Palette {
     /// Minimum darkness relative to the surroundings (OKLab L) for any accent, so flat or
     /// noise-only textures get none.
     pub accent_min_depth: f32,
+    /// Allow hue groups in `green_hue` their own (possibly low) floors. When false (a pack-map
+    /// rule can force this per texture), those groups are floored at `light_green_floor`.
+    pub dark_greens: bool,
+    /// OKLCH hue range of the green groups `dark_greens` applies to.
+    pub green_hue: [f32; 2],
+    pub light_green_floor: f32,
 }
 
 impl Default for Palette {
@@ -380,6 +394,9 @@ impl Default for Palette {
             accent_chroma: 0.1,
             accent_softness: 0.6,
             accent_min_depth: 0.03,
+            dark_greens: true,
+            green_hue: [110.0, 175.0],
+            light_green_floor: 0.0,
         }
     }
 }
@@ -520,12 +537,30 @@ pub struct Pack {
     pub non_color_suffixes: Vec<String>,
     /// HD texels per original texel for this pack, when adapters don't supply it per image.
     pub source_scale: Option<f32>,
+    /// Mood rules by path glob, first match wins; unmatched files get the base mood.
+    pub moods: Vec<MoodRule>,
+}
+
+/// Assigns a mood (and optionally allows or denies dark greens) to matching files.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MoodRule {
+    pub glob: String,
+    pub mood: String,
+    #[serde(default = "one")]
+    pub strength: f32,
+    pub dark_greens: Option<bool>,
+}
+
+fn one() -> f32 {
+    1.0
 }
 
 impl Default for Pack {
     fn default() -> Self {
         Self {
             source_scale: None,
+            moods: Vec::new(),
             name: String::new(),
             rules: Vec::new(),
             list: None,
@@ -545,6 +580,19 @@ impl Pack {
             .iter()
             .find(|r| glob_match(&r.glob, &p))
             .map_or(self.default_category, |r| r.category)
+    }
+
+    /// Mood by the first matching mood rule, else the base mood.
+    pub fn mood_for(&self, path: &Path) -> Mood {
+        let p = path.to_string_lossy().replace('\\', "/");
+        self.moods
+            .iter()
+            .find(|r| glob_match(&r.glob, &p))
+            .map_or_else(Mood::default, |r| Mood {
+                name: r.mood.clone(),
+                strength: r.strength,
+                dark_greens: r.dark_greens,
+            })
     }
 
     /// True if the file stem ends in one of [`Pack::non_color_suffixes`].
@@ -597,7 +645,10 @@ pub struct Config {
 impl Config {
     pub fn load(style: Option<&Path>, target: Option<&Path>, pack: Option<&Path>) -> Result<Self> {
         let mut config = Self {
-            style: load_or_default(style)?,
+            style: match style {
+                Some(path) => Style::load(path)?,
+                None => Style::default(),
+            },
             target: load_or_default(target)?,
             pack: load_or_default(pack)?,
         };
@@ -608,10 +659,19 @@ impl Config {
             resolve(&mut config.pack.list, base);
         }
         if let Some(path) = style {
-            config
-                .style
-                .validate()
-                .with_context(|| format!("invalid style {}", path.display()))?;
+            let invalid = || format!("invalid style {}", path.display());
+            config.style.validate().with_context(invalid)?;
+            // Every mood must be valid in full and half blended with the base.
+            for name in config.style.moods.keys() {
+                for strength in [0.5, 1.0] {
+                    let mood = Mood {
+                        name: name.clone(),
+                        strength,
+                        dark_greens: None,
+                    };
+                    config.style.for_mood(&mood).with_context(invalid)?;
+                }
+            }
         }
         if let Some(path) = target {
             config
@@ -640,6 +700,57 @@ fn non_negative(name: &str, v: f32) -> Result<()> {
 }
 
 impl Style {
+    pub fn load(path: &Path) -> Result<Self> {
+        let text =
+            fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+        Self::parse(&text).with_context(|| format!("parsing {}", path.display()))
+    }
+
+    /// Parses a style, keeping its TOML so moods can be derived from it.
+    pub fn parse(text: &str) -> Result<Self> {
+        let raw: toml::Table = toml::from_str(text)?;
+        let mut style: Style = toml::Value::Table(raw.clone()).try_into()?;
+        style.raw = Some(raw);
+        Ok(style)
+    }
+
+    /// The style for a mood: the base itself for `pastel`, otherwise the base blended toward
+    /// the mood's overrides by its strength. A mood's `dark_greens` setting is applied last.
+    pub fn for_mood(&self, mood: &Mood) -> Result<Style> {
+        let mut style = if mood.name == crate::mood::BASE || mood.strength <= 0.0 {
+            self.clone()
+        } else {
+            let over = self.moods.get(&mood.name).with_context(|| {
+                let known: Vec<&str> = self.moods.keys().map(String::as_str).collect();
+                format!(
+                    "style {:?} has no mood {:?} (it has: pastel{}{})",
+                    self.name,
+                    mood.name,
+                    if known.is_empty() { "" } else { ", " },
+                    known.join(", ")
+                )
+            })?;
+            let raw = self
+                .raw
+                .as_ref()
+                .context("style was not loaded from TOML, so it has no moods")?;
+            let mut table = crate::mood::blend_table(raw, over, mood.strength.min(1.0) as f64);
+            table.remove("moods");
+            let mut derived: Style = toml::Value::Table(table)
+                .try_into()
+                .with_context(|| format!("mood {:?}", mood.name))?;
+            derived.lut = self.lut.clone();
+            derived.moods = self.moods.clone();
+            derived.raw = self.raw.clone();
+            derived
+        };
+        if let Some(dark) = mood.dark_greens {
+            style.palette.dark_greens = dark;
+        }
+        style.validate().with_context(|| format!("mood {mood}"))?;
+        Ok(style)
+    }
+
     /// Rejects settings that are out of range or contradict each other.
     pub fn validate(&self) -> Result<()> {
         let p = &self.palette;
@@ -883,6 +994,69 @@ mod tests {
             Category::Actor
         );
         assert_eq!(pack.classify(Path::new("alt/scenes/s/t")), Category::World);
+    }
+
+    #[test]
+    fn moods_derive_from_the_base_style() {
+        let style = Style::parse(
+            "name = 's'\n[palette]\nenabled = true\nl_floor = 0.6\nl_ceiling = 0.95\n\
+             [moods.nocturne.palette]\nl_floor = 0.3\nl_ceiling = 0.85",
+        )
+        .unwrap();
+        let mood = |name: &str, strength| Mood {
+            name: name.into(),
+            strength,
+            dark_greens: None,
+        };
+        let full = style.for_mood(&mood("nocturne", 1.0)).unwrap();
+        assert_eq!(full.palette.l_floor, 0.3);
+        assert!(full.palette.enabled, "unset keys come from the base");
+        let half = style.for_mood(&mood("nocturne", 0.5)).unwrap();
+        assert!((half.palette.l_floor - 0.45).abs() < 1e-6);
+        assert_eq!(style.for_mood(&Mood::default()).unwrap(), style);
+        let err = style.for_mood(&mood("gloom", 1.0)).unwrap_err().to_string();
+        assert!(err.contains("gloom") && err.contains("nocturne"), "{err}");
+        let denied = style
+            .for_mood(&Mood {
+                dark_greens: Some(false),
+                ..mood("nocturne", 1.0)
+            })
+            .unwrap();
+        assert!(!denied.palette.dark_greens);
+    }
+
+    #[test]
+    fn invalid_moods_are_rejected_on_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("s.toml");
+        fs::write(
+            &path,
+            "[palette]\nl_ceiling = 0.9\n[moods.nocturne.palette]\nl_floor = 0.95",
+        )
+        .unwrap();
+        let err = format!("{:#}", Config::load(Some(&path), None, None).unwrap_err());
+        assert!(err.contains("nocturne") && err.contains("l_floor"), "{err}");
+    }
+
+    #[test]
+    fn pack_mood_rules_first_match_wins() {
+        let pack: Pack = toml::from_str(
+            "[[moods]]\nglob = 'alt/scenes/*/ydan_scene/*Moss*'\nmood = 'nocturne'\n\
+             dark_greens = false\n\
+             [[moods]]\nglob = 'alt/scenes/*/ydan_scene/**'\nmood = 'nocturne'\nstrength = 0.6",
+        )
+        .unwrap();
+        let m = pack.mood_for(Path::new("alt/scenes/shared/ydan_scene/wall"));
+        assert_eq!(
+            (m.name.as_str(), m.strength, m.dark_greens),
+            ("nocturne", 0.6, None)
+        );
+        let moss = pack.mood_for(Path::new("alt/scenes/nonmq/ydan_scene/gMossTex"));
+        assert_eq!((moss.strength, moss.dark_greens), (1.0, Some(false)));
+        assert!(
+            pack.mood_for(Path::new("alt/scenes/shared/spot04_scene/x"))
+                .is_base()
+        );
     }
 
     #[test]

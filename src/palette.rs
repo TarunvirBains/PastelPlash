@@ -166,6 +166,21 @@ pub struct Mapping<'a> {
 }
 
 impl Mapping<'_> {
+    /// A group's floor; green groups are held at `light_green_floor` when dark greens are
+    /// denied.
+    fn group_floor(&self, g: &HueGroup) -> f32 {
+        let p = self.palette;
+        let [from, to] = g.hue_range;
+        let mid = from + (to - from).rem_euclid(360.0) / 2.0;
+        let [gf, gt] = p.green_hue;
+        let green = (mid - gf).rem_euclid(360.0) <= (gt - gf).rem_euclid(360.0);
+        if !p.dark_greens && green {
+            g.l_floor.max(p.light_green_floor)
+        } else {
+            g.l_floor
+        }
+    }
+
     fn groups(&self, h: f32) -> (Blend, Vec<(f32, &HueGroup)>) {
         let p = self.palette;
         let weighted: Vec<(f32, &HueGroup)> = p
@@ -187,7 +202,7 @@ impl Mapping<'_> {
             b.weight += w;
             b.shift += w * g.hue_shift;
             b.offset += w * g.l_offset;
-            b.floor += w * g.l_floor;
+            b.floor += w * self.group_floor(g);
             b.c_scale += w * g.c_scale;
             b.c_cap += w * g.c_cap.unwrap_or(1.0);
         }
@@ -448,6 +463,24 @@ mod tests {
         assert!(pigment_pull(&pigments, 25.0, 70.0) < 0.0);
         assert!(pigment_pull(&pigments, 25.0, 110.0) > 0.0);
         assert!(pigment_pull(&pigments, 25.0, 90.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn denying_dark_greens_lifts_only_green_groups() {
+        let mut p = skyward();
+        for g in &mut p.groups {
+            g.l_floor = 0.3;
+        }
+        p.l_floor = 0.3;
+        p.light_green_floor = 0.8;
+        let dark_green = [0.05, 0.2, 0.03];
+        let dark_red = [0.25, 0.03, 0.03];
+        let allowed = lch(mapping(&p).map(dark_green))[0];
+        let red_allowed = lch(mapping(&p).map(dark_red))[0];
+        p.dark_greens = false;
+        assert!(lch(mapping(&p).map(dark_green))[0] >= 0.8 - 1e-3);
+        assert!(allowed < 0.8);
+        assert!((lch(mapping(&p).map(dark_red))[0] - red_allowed).abs() < 1e-4);
     }
 
     #[test]
