@@ -31,6 +31,35 @@ pub struct Contract {
     pub target: TargetRules,
     pub actor: ActorRules,
     pub identity: IdentityRules,
+    /// Per-mood allowances (keyed by mood name).
+    #[serde(default)]
+    pub moods: std::collections::BTreeMap<String, MoodRules>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MoodRules {
+    pub dark_max_hue_shift: Option<f32>,
+    pub max_cool_bias: Option<f32>,
+}
+
+impl Contract {
+    /// The dark-hue-shift bound for a style label like "watercolor [nocturne:0.50] World".
+    pub fn dark_max_hue_shift(&self, label: &str) -> f32 {
+        self.moods
+            .iter()
+            .find(|(m, _)| label.contains(&format!("[{m}")))
+            .and_then(|(_, r)| r.dark_max_hue_shift)
+            .unwrap_or(self.palette.dark_max_hue_shift)
+    }
+
+    /// The cool-bias bound for a mood name ("base" and unlisted moods: 0).
+    pub fn max_cool_bias(&self, mood: &str) -> f32 {
+        self.moods
+            .get(mood)
+            .and_then(|r| r.max_cool_bias)
+            .unwrap_or(0.0)
+    }
 }
 
 #[derive(Debug, Deserialize)]

@@ -116,3 +116,9 @@ max_actor_hue = 0.5
 [actor]
 retention_ratio = 0.7
 max_lightness_shift = 0.2
+
+# Per-mood allowances. Only in nocturne may lifted darks lean cool (indigo, violet, deep teal):
+# their hue may rotate further, but they stay colored (the dark/mud/identity rules still apply).
+[moods.nocturne]
+dark_max_hue_shift = 60.0
+max_cool_bias = 0.3

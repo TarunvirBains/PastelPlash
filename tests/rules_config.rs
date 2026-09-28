@@ -186,6 +186,108 @@ fn impressionist_inherits_the_default_look() {
 }
 
 #[test]
+fn rule_cool_darks_only_where_the_mood_allows() {
+    // A cool bias on darks is the nocturne's Impressionist device; the base look and moods the
+    // contract doesn't list must keep darks hue-true.
+    let k = contract();
+    for path in styles() {
+        let style = Style::load(&path).unwrap();
+        let n = name(&path);
+        assert!(
+            style.palette.dark_cool_bias <= k.max_cool_bias("base"),
+            "{n}: base dark_cool_bias {}",
+            style.palette.dark_cool_bias
+        );
+        for mood in style.moods.keys() {
+            let m = style
+                .for_mood(&pastelplash::config::Mood {
+                    name: mood.clone(),
+                    strength: 1.0,
+                    dark_greens: None,
+                })
+                .unwrap();
+            assert!(
+                m.palette.dark_cool_bias <= k.max_cool_bias(mood),
+                "{n} [{mood}]: dark_cool_bias {} > {}",
+                m.palette.dark_cool_bias,
+                k.max_cool_bias(mood)
+            );
+        }
+    }
+}
+
+/// Every leaf key path of a TOML table, as dotted strings (array-of-tables entries by index).
+fn leaves(t: &toml::Table, prefix: &str, out: &mut Vec<(String, toml::Value)>) {
+    for (k, v) in t {
+        let path = if prefix.is_empty() {
+            k.clone()
+        } else {
+            format!("{prefix}.{k}")
+        };
+        match v {
+            toml::Value::Table(sub) => leaves(sub, &path, out),
+            toml::Value::Array(a) if a.iter().all(|x| x.is_table()) && !a.is_empty() => {
+                for (i, x) in a.iter().enumerate() {
+                    leaves(x.as_table().unwrap(), &format!("{path}[{i}]"), out);
+                }
+            }
+            _ => out.push((path, v.clone())),
+        }
+    }
+}
+
+#[test]
+fn moods_inherit_everything_they_do_not_override() {
+    // A mood is an overlay: every setting it doesn't name equals the base style's, so base
+    // improvements (abstraction, marks, contrast, strokes, ...) flow into it automatically.
+    for path in styles() {
+        let style = Style::load(&path).unwrap();
+        let raw = style.raw.clone().unwrap();
+        let mut base_leaves = Vec::new();
+        leaves(&raw, "", &mut base_leaves);
+        for (mood, over) in &style.moods {
+            let mut overridden = Vec::new();
+            leaves(over, "", &mut overridden);
+            let over_keys: Vec<&String> = overridden.iter().map(|(k, _)| k).collect();
+            let derived = pastelplash::mood::blend_table(&raw, over, 1.0);
+            let mut derived_leaves = Vec::new();
+            leaves(&derived, "", &mut derived_leaves);
+            for (key, value) in &base_leaves {
+                if key.starts_with("moods.") || over_keys.contains(&key) {
+                    continue;
+                }
+                let got = derived_leaves
+                    .iter()
+                    .find(|(k, _)| k == key)
+                    .map(|(_, v)| v);
+                assert_eq!(
+                    got,
+                    Some(value),
+                    "{} [{mood}]: {key} differs from the base style",
+                    path.display()
+                );
+            }
+            // And the resolved style is exactly that overlay.
+            let m = style
+                .for_mood(&pastelplash::config::Mood {
+                    name: mood.clone(),
+                    strength: 1.0,
+                    dark_greens: None,
+                })
+                .unwrap();
+            let mut table = derived.clone();
+            table.remove("moods");
+            let expected: Style = toml::Value::Table(table).try_into().unwrap();
+            assert_eq!(m.abstraction, expected.abstraction, "{mood}");
+            assert_eq!(m.marks, expected.marks, "{mood}");
+            assert_eq!(m.contrast, expected.contrast, "{mood}");
+            assert_eq!(m.strokes, expected.strokes, "{mood}");
+            assert_eq!(m.palette, expected.palette, "{mood}");
+        }
+    }
+}
+
+#[test]
 fn rule_actor_targets_leave_lighting_to_the_renderer() {
     let c = &contract().target;
     for path in targets() {
@@ -333,7 +435,7 @@ fn rule_hued_near_black_darks_keep_their_hue() {
             if out[1] >= 0.02 {
                 let d = color::hue_diff(h_src, out[2]).abs();
                 assert!(
-                    d <= k.palette.dark_max_hue_shift,
+                    d <= k.dark_max_hue_shift(name),
                     "{name}: {rgb:?} hue {h_src} -> {out:?}"
                 );
             }
@@ -414,7 +516,7 @@ proptest! {
                 continue;
             }
             let d = color::hue_diff(h_src, ho).abs();
-            prop_assert!(d <= k.palette.dark_max_hue_shift + 2.0,
+            prop_assert!(d <= k.dark_max_hue_shift(name) + 2.0,
                 "{}: dark L {} C {} hue {} -> {} ({} degrees)", name, l_src, c_src, h_src, ho, d);
         }
     }
@@ -462,8 +564,11 @@ proptest! {
             let tr = target().treatment(Category::World);
             let mut cold = tr.clone();
             cold.warmth = 0.0;
-            let on = lch(Mapping::new(&style.palette, &tr).map(rgb));
-            let off = lch(Mapping::new(&style.palette, &cold).map(rgb));
+            // Warmth in isolation: a mood's cool bias on darks is a separate, later rotation.
+            let mut pal = style.palette.clone();
+            pal.dark_cool_bias = 0.0;
+            let on = lch(Mapping::new(&pal, &tr).map(rgb));
+            let off = lch(Mapping::new(&pal, &cold).map(rgb));
             if !(off[1] >= 0.02 && on[1] >= 0.02) { continue; }
             let (d_off, d_on) = (color::hue_diff(off[2], w.hue), color::hue_diff(on[2], w.hue));
             prop_assert!(d_on.abs() <= d_off.abs() + 1.0 && (d_on * d_off >= -1e-3 || d_on.abs() < 1.0),
