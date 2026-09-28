@@ -38,12 +38,32 @@ pub struct Contract {
 pub struct IdentityRules {
     pub max_mean_delta_e: f32,
     pub max_group_hue_shift: f32,
+    pub coarse_max_color: f32,
+    pub coarse_max_lightness: f32,
     /// Larger bounds for named opt-in styles.
     #[serde(default)]
     pub styles: std::collections::BTreeMap<String, f32>,
+    #[serde(default)]
+    pub coarse_color_styles: std::collections::BTreeMap<String, f32>,
+    #[serde(default)]
+    pub coarse_lightness_styles: std::collections::BTreeMap<String, f32>,
 }
 
 impl IdentityRules {
+    /// The coarse (chroma, lightness) bounds for a style.
+    pub fn coarse_bounds(&self, style: &str) -> (f32, f32) {
+        (
+            self.coarse_color_styles
+                .get(style)
+                .copied()
+                .unwrap_or(self.coarse_max_color),
+            self.coarse_lightness_styles
+                .get(style)
+                .copied()
+                .unwrap_or(self.coarse_max_lightness),
+        )
+    }
+
     /// The mean-color ΔE bound for a style (by file stem).
     pub fn bound(&self, style: &str) -> f32 {
         self.styles
@@ -77,6 +97,7 @@ pub struct PaletteRules {
     pub retention_ratio: f32,
     pub retention_floor: f32,
     pub max_hue_shift: f32,
+    pub dark_max_hue_shift: f32,
 }
 
 impl PaletteRules {
@@ -121,6 +142,7 @@ pub struct TechniqueRules {
     pub max_edge_width: f32,
     pub value_min_effect: f32,
     pub value_mean_tolerance: f32,
+    pub adaptive_min_effect: f32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -352,6 +374,33 @@ pub fn gritty_blocks(size: u32, seed: u32) -> Image {
         let base = if mortar { 0.35 } else { 0.62 };
         let l = base + 0.18 * (noise(x, y, seed) - 0.5);
         let [r, g, b] = from_oklch(l, 0.05, 75.0);
+        [r, g, b, 1.0]
+    })
+}
+
+/// Tree bark: near-neutral olive-gray ridges with deep near-black vertical grooves (like OoT
+/// Reloaded's Kokiri Forest trunks), tiling.
+pub fn bark(size: u32, seed: u32) -> Image {
+    image(size, size, |x, y| {
+        let (fx, fy) = (x as f32, y as f32);
+        // Wavy vertical grooves.
+        let u = fx / size as f32 * 10.0 + 0.8 * smooth_noise(fx, fy, 6, size, seed);
+        let ridge = (u * std::f32::consts::TAU).sin() * 0.5 + 0.5;
+        let groove = 1.0 - ((ridge - 0.25) / 0.25).clamp(0.0, 1.0);
+        let l = 0.62 * (1.0 - groove) + 0.08 * groove + 0.1 * (noise(x, y, seed) - 0.5);
+        let [r, g, b] = from_oklch(l.clamp(0.02, 0.95), 0.025 + 0.015 * (1.0 - groove), 105.0);
+        [r, g, b, 1.0]
+    })
+}
+
+/// Dark brown bark (colored darks).
+pub fn dark_brown_bark(size: u32, seed: u32) -> Image {
+    image(size, size, |x, y| {
+        let (fx, fy) = (x as f32, y as f32);
+        let u = fx / size as f32 * 8.0 + 0.6 * smooth_noise(fx, fy, 5, size, seed);
+        let ridge = (u * std::f32::consts::TAU).sin() * 0.5 + 0.5;
+        let l = 0.12 + 0.2 * ridge + 0.05 * noise(x, y, seed);
+        let [r, g, b] = from_oklch(l, 0.05 + 0.02 * ridge, 55.0);
         [r, g, b, 1.0]
     })
 }

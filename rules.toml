@@ -35,6 +35,9 @@ retention_ratio = 0.6
 retention_floor = 0.05
 # Hue nudges stay nudges: colored texels move by at most this many degrees of hue.
 max_hue_shift = 45.0
+# Lifted darks keep their source hue family: a dark (L < 0.35), clearly colored source moves by
+# at most this many degrees (dark brown stays brown, dark green stays green; nothing turns blue).
+dark_max_hue_shift = 40.0
 
 [accents]
 max_fraction = 0.08
@@ -64,6 +67,10 @@ max_edge_width = 4.0
 # kept within value_mean_tolerance.
 value_min_effect = 0.5
 value_mean_tolerance = 0.06
+# Adaptive compression: a high-contrast (trunk-like) texture's mid-scale L std drops by at least
+# this fraction when the style enables `value_contrast.adaptive`; textures below the style's
+# target spread are not affected by adaptivity at all.
+adaptive_min_effect = 0.2
 
 # Identity: it must still look and feel like the source game. Each texture's alpha-weighted mean
 # OKLab color stays within max_mean_delta_e of the source's (for relit actors, of the source
@@ -73,9 +80,25 @@ value_mean_tolerance = 0.06
 [identity]
 max_mean_delta_e = 0.08
 max_group_hue_shift = 20.0
+# Coarse identity ("from across the room"): on a 16×16 grid, each cell's dark-half and
+# light-half mean colors (split at the cell's median L) are compared with the source's. Chroma
+# change (OKLab a/b distance, 90th percentile over cells) is bounded tightly: it catches hue
+# transformations such as dark grooves turned navy, which a mean color hides. Lightness change is
+# bounded loosely (lifted darks and value compression are intended). Brushwork moves texels
+# within a cell and does not register at this scale.
+coarse_max_color = 0.06
+coarse_max_lightness = 0.2
+
 [identity.styles]
 ss-baseline = 0.15
 pastel = 0.45
+
+[identity.coarse_color_styles]
+pastel = 0.12
+
+[identity.coarse_lightness_styles]
+ss-baseline = 0.25
+pastel = 0.7   # pastel lifts near-black to its 0.55 floor by design
 
 # Applies to every file in targets/.
 [target]

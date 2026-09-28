@@ -353,6 +353,78 @@ proptest! {
     }
 
     #[test]
+    fn rule_lifted_darks_keep_their_hue(l in 0.04f32..0.35, c in 0.03f32..0.15, h in 0.0f32..360.0) {
+        // Dark brown stays brown, dark green stays green: never shifted toward blue.
+        let k = contract();
+        let rgb = from_oklch(l, c, h);
+        let [l_src, c_src, h_src] = lch([rgb[0], rgb[1], rgb[2], 1.0]);
+        prop_assume!(l_src < 0.35 && c_src >= 0.03);
+        for (name, _, _, lut) in luts() {
+            let [_, co, ho] = mapped_lch(lut, rgb);
+            prop_assume!(co >= 0.02);
+            let d = color::hue_diff(h_src, ho).abs();
+            prop_assert!(d <= k.palette.dark_max_hue_shift + 2.0,
+                "{}: dark L {} C {} hue {} -> {} ({} degrees)", name, l_src, c_src, h_src, ho, d);
+        }
+    }
+
+    #[test]
+    fn rule_warmth_is_targeted(l in 0.1f32..0.95, c in 0.0f32..0.2, h in 0.0f32..360.0) {
+        // Outside the style's warmth band, the warmth has no effect at all.
+        let rgb = from_oklch(l, c, h);
+        let [_, _, h_src] = lch([rgb[0], rgb[1], rgb[2], 1.0]);
+        for (name, style) in resolved() {
+            let w = &style.palette.warmth;
+            if w.strength <= 0.0 {
+                continue;
+            }
+            let [from, to] = w.band;
+            if (h_src - from).rem_euclid(360.0) < (to - from).rem_euclid(360.0) {
+                continue;
+            }
+            for cat in [Category::World, Category::Actor] {
+                let tr = target().treatment(cat);
+                let on = Mapping::new(&style.palette, &tr).map(rgb);
+                let mut cold = tr.clone();
+                cold.warmth = 0.0;
+                let off = Mapping::new(&style.palette, &cold).map(rgb);
+                prop_assert_eq!(on, off, "{} {:?}: warmth changed hue {} outside its band", name, cat, h_src);
+            }
+        }
+    }
+
+    #[test]
+    fn rule_warmth_stays_in_band(l in 0.15f32..0.9, c in 0.03f32..0.2, h in 40.0f32..125.0) {
+        // Warmth pulls earth hues toward its target but never out of the band: compared with the
+        // same mapping without warmth, the output hue moves toward the target and never overshoots.
+        let rgb = from_oklch(l, c, h);
+        let [_, c_src, h_src] = lch([rgb[0], rgb[1], rgb[2], 1.0]);
+        prop_assume!(c_src >= 0.03);
+        for (name, style) in resolved() {
+            let w = &style.palette.warmth;
+            if w.strength <= 0.0 {
+                continue;
+            }
+            let [from, to] = w.band;
+            let inside = |hh: f32| (hh - from).rem_euclid(360.0) <= (to - from).rem_euclid(360.0);
+            if !(inside(h_src)) { continue; }
+            let tr = target().treatment(Category::World);
+            let mut cold = tr.clone();
+            cold.warmth = 0.0;
+            let on = lch(Mapping::new(&style.palette, &tr).map(rgb));
+            let off = lch(Mapping::new(&style.palette, &cold).map(rgb));
+            if !(off[1] >= 0.02 && on[1] >= 0.02) { continue; }
+            let (d_off, d_on) = (color::hue_diff(off[2], w.hue), color::hue_diff(on[2], w.hue));
+            prop_assert!(d_on.abs() <= d_off.abs() + 1.0 && d_on * d_off >= -1e-3,
+                "{}: hue {} -> {} without warmth, {} with (target {})", name, h_src, off[2], on[2], w.hue);
+            if inside(off[2]) {
+                prop_assert!(inside(on[2]) || color::hue_diff(on[2], w.hue).abs() < 1.0,
+                    "{}: warmth moved hue {} out of the band ({})", name, off[2], on[2]);
+            }
+        }
+    }
+
+    #[test]
     fn oklch_round_trip_is_accurate(r in 0.0f32..1.0, g in 0.0f32..1.0, b in 0.0f32..1.0) {
         let lab = color::srgb_to_oklab([r, g, b]);
         let back = color::oklab_to_srgb(color::oklch_to_oklab(color::oklab_to_oklch(lab)));

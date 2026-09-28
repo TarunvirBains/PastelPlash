@@ -23,9 +23,21 @@ fn each_render(category: Category, img: &Image, mut f: impl FnMut(&str, &Style, 
 
 /// Fails if more than the contract's outlier budget of opaque texels fail `bad`.
 fn assert_few(name: &str, rule: &str, out: &Image, bad: impl Fn([f32; 4]) -> bool) {
+    assert_few_plus(name, rule, out, 0.0, bad);
+}
+
+/// Like [`assert_few`], with `extra` more of the texels allowed to fail (e.g. a style's accent
+/// darks, which have their own rule).
+fn assert_few_plus(
+    name: &str,
+    rule: &str,
+    out: &Image,
+    extra: f32,
+    bad: impl Fn([f32; 4]) -> bool,
+) {
     let opaque: Vec<[f32; 4]> = out.pixels.iter().copied().filter(|p| p[3] > 0.5).collect();
     let failing: Vec<[f32; 4]> = opaque.iter().copied().filter(|&p| bad(p)).collect();
-    let budget = (opaque.len() as f32 * contract().tolerance.outliers).ceil() as usize;
+    let budget = (opaque.len() as f32 * (contract().tolerance.outliers + extra)).ceil() as usize;
     assert!(
         failing.len() <= budget,
         "{name}: {rule}: {} of {} texels fail (budget {budget}); e.g. {:?} = LCh {:?}",
@@ -81,6 +93,110 @@ fn rule_darks_are_colored_never_black() {
             });
         });
     }
+}
+
+#[test]
+fn rule_coarse_identity_is_kept() {
+    // "From across the room" each texture stays recognizably the same: per 16×16 cell, the
+    // dark-half and light-half mean colors stay close to the source's (brushwork doesn't count).
+    use pastelplash::report::{CoarsePart, coarse_delta_e};
+    let k = contract();
+    let cases = [
+        ("bark", bark(256, 11)),
+        ("dark brown bark", dark_brown_bark(256, 12)),
+        ("foliage", mid_foliage(256, 13)),
+        ("blocks", gritty_blocks(256, 14)),
+    ];
+    for (label, img) in cases {
+        each_render(Category::World, &img, |name, _, _, out| {
+            let (max_c, max_l) = k.identity.coarse_bounds(name);
+            let (_, c90, _) = coarse_delta_e(&img, out, 16, CoarsePart::Color);
+            let (_, l90, _) = coarse_delta_e(&img, out, 16, CoarsePart::Lightness);
+            assert!(
+                c90 <= max_c,
+                "{name}: {label}: coarse chroma change p90 {c90:.3} > {max_c}"
+            );
+            assert!(
+                l90 <= max_l,
+                "{name}: {label}: coarse lightness change p90 {l90:.3} > {max_l}"
+            );
+        });
+    }
+}
+
+#[test]
+fn rule_bark_does_not_turn_blue() {
+    // Regression: v2 lifted bark and cliff darks toward navy. Dark bark (brown, and near-neutral
+    // olive-gray with near-black grooves) must keep a warm hue in every style.
+    for img in [dark_brown_bark(192, 1), bark(192, 2)] {
+        each_render(Category::World, &img, |name, style, _, out| {
+            let accents = style.palette.accent_fraction;
+            assert_few_plus(name, "dark bark turned blue", out, accents, |p| {
+                let [l, c, h] = lch(p);
+                l < 0.45 && c >= 0.02 && (200.0..320.0).contains(&h)
+            });
+        });
+    }
+}
+
+#[test]
+fn rule_adaptive_contrast_targets_high_contrast_textures() {
+    // Trunk-like textures (large mid-scale lightness spread) are compressed noticeably; textures
+    // below the style's target spread are not touched by adaptivity at all.
+    let k = contract();
+    let trunk = bark(256, 3);
+    let ground = mid_foliage(256, 4);
+    for path in styles() {
+        let config = load(&path, &default_target());
+        if config.style.value_contrast.adaptive <= 0.0 {
+            continue;
+        }
+        let n = name(&path);
+        let mut off = config.clone();
+        off.style.value_contrast.adaptive = 0.0;
+        let Some(on_t) = render(&path, &config, Category::World, &trunk) else {
+            return;
+        };
+        let off_t = render(&path, &off, Category::World, &trunk).unwrap();
+        let (s_src, s_on) = (mid_std(&trunk), mid_std(&on_t));
+        assert!(
+            s_on <= s_src * (1.0 - k.technique.adaptive_min_effect),
+            "{n}: trunk mid-scale L std {s_src:.4} -> {s_on:.4}"
+        );
+        assert!(
+            mid_std(&on_t) < mid_std(&off_t),
+            "{n}: adaptivity did not compress the trunk"
+        );
+        let on_g = render(&path, &config, Category::World, &ground).unwrap();
+        let off_g = render(&path, &off, Category::World, &ground).unwrap();
+        assert_eq!(
+            on_g.pixels, off_g.pixels,
+            "{n}: adaptivity changed a low-contrast texture"
+        );
+    }
+}
+
+/// Median lightness standard deviation over 25×25 windows on a grid.
+fn mid_std(img: &Image) -> f32 {
+    let (w, h) = (img.width as usize, img.height as usize);
+    let l: Vec<f32> = img.pixels.iter().map(|&p| lch(p)[0]).collect();
+    let mut v = Vec::new();
+    for y in (12..h - 12).step_by(9) {
+        for x in (12..w - 12).step_by(9) {
+            let (mut s, mut s2, mut n) = (0.0f32, 0.0f32, 0.0f32);
+            for yy in (y - 12..=y + 12).step_by(2) {
+                for xx in (x - 12..=x + 12).step_by(2) {
+                    let t = l[yy * w + xx];
+                    s += t;
+                    s2 += t * t;
+                    n += 1.0;
+                }
+            }
+            let m = s / n;
+            v.push((s2 / n - m * m).max(0.0).sqrt());
+        }
+    }
+    median(v)
 }
 
 #[test]
