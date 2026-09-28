@@ -9,6 +9,7 @@ use pastelplash::process;
 #[derive(Parser)]
 #[command(
     name = "pastelplash",
+    bin_name = "pastelplash",
     version,
     about = "Restyle PNG texture packs into a pastel, watercolor look"
 )]
