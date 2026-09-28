@@ -1,4 +1,4 @@
-//! 3D color lookup tables: baking from a function, trilinear sampling, and `.cube` I/O.
+//! 3D color lookup tables: baking from a function, tetrahedral sampling, and `.cube` I/O.
 //!
 //! Tables map gamma-encoded sRGB in `0..=1` to gamma-encoded sRGB. Each entry also carries an
 //! optional fourth value, the **lightness floor** the palette promised for that input (OKLab L);
@@ -43,21 +43,52 @@ impl Lut3d {
         self.data[r + self.size * (g + self.size * b)]
     }
 
-    /// Trilinear lookup (same math as the shader).
+    /// Tetrahedral lookup (same math as the shader). Unlike trilinear interpolation it keeps
+    /// the gray axis exact: a neutral input only ever blends neutral lattice points.
     pub fn sample(&self, rgb: [f32; 3]) -> [f32; 4] {
         let n = self.size - 1;
         let p = rgb.map(|c| c.clamp(0.0, 1.0) * n as f32);
-        let i0 = p.map(|c| (c.floor() as usize).min(n - 1));
-        let t = [0, 1, 2].map(|k| p[k] - i0[k] as f32);
+        let [r, g, b] = p.map(|c| (c.floor() as usize).min(n - 1));
+        let [fr, fg, fb] = [p[0] - r as f32, p[1] - g as f32, p[2] - b as f32];
+        let c = |dr: usize, dg: usize, db: usize| self.at(r + dr, g + dg, b + db);
+        // Four corners and weights of the tetrahedron containing the point.
+        let (w, k): ([f32; 4], [[f32; 4]; 4]) = if fr > fg {
+            if fg > fb {
+                (
+                    [1.0 - fr, fr - fg, fg - fb, fb],
+                    [c(0, 0, 0), c(1, 0, 0), c(1, 1, 0), c(1, 1, 1)],
+                )
+            } else if fr > fb {
+                (
+                    [1.0 - fr, fr - fb, fb - fg, fg],
+                    [c(0, 0, 0), c(1, 0, 0), c(1, 0, 1), c(1, 1, 1)],
+                )
+            } else {
+                (
+                    [1.0 - fb, fb - fr, fr - fg, fg],
+                    [c(0, 0, 0), c(0, 0, 1), c(1, 0, 1), c(1, 1, 1)],
+                )
+            }
+        } else if fb > fg {
+            (
+                [1.0 - fb, fb - fg, fg - fr, fr],
+                [c(0, 0, 0), c(0, 0, 1), c(0, 1, 1), c(1, 1, 1)],
+            )
+        } else if fb > fr {
+            (
+                [1.0 - fg, fg - fb, fb - fr, fr],
+                [c(0, 0, 0), c(0, 1, 0), c(0, 1, 1), c(1, 1, 1)],
+            )
+        } else {
+            (
+                [1.0 - fg, fg - fr, fr - fb, fb],
+                [c(0, 0, 0), c(0, 1, 0), c(1, 1, 0), c(1, 1, 1)],
+            )
+        };
         let mut out = [0.0; 4];
-        for corner in 0..8 {
-            let d = [corner & 1, (corner >> 1) & 1, (corner >> 2) & 1];
-            let w: f32 = (0..3)
-                .map(|k| if d[k] == 1 { t[k] } else { 1.0 - t[k] })
-                .product();
-            let v = self.at(i0[0] + d[0], i0[1] + d[1], i0[2] + d[2]);
-            for k in 0..4 {
-                out[k] += w * v[k];
+        for i in 0..4 {
+            for ch in 0..4 {
+                out[ch] += w[i] * k[i][ch];
             }
         }
         out
@@ -161,6 +192,19 @@ mod tests {
             for k in 0..3 {
                 assert!((out[k] - rgb[k]).abs() < 1e-6, "{rgb:?} -> {out:?}");
             }
+        }
+    }
+
+    #[test]
+    fn grays_only_blend_grays() {
+        // Neutral lattice points map to 0; everything else to 1.
+        let lut = Lut3d::bake(9, |[r, g, b]| {
+            let v = if r == g && g == b { 0.0 } else { 1.0 };
+            [v, v, v, 0.0]
+        });
+        for i in 0..=100 {
+            let v = i as f32 / 100.0;
+            assert_eq!(lut.sample([v, v, v])[0], 0.0, "{v}");
         }
     }
 
