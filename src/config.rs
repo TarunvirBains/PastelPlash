@@ -68,6 +68,7 @@ pub struct Style {
     pub temperature: Temperature,
     pub strokes: Strokes,
     pub value_contrast: ValueContrast,
+    pub contrast: Contrast,
     pub watercolor: Watercolor,
     /// Named moods: partial overrides of this style (see `src/mood.rs`). The style itself is
     /// the `base` mood.
@@ -159,19 +160,6 @@ pub struct ValueContrast {
     pub radius_coarse: f32,
     /// Lightness difference (OKLab L) beyond which a neighbor counts as across an edge.
     pub range: f32,
-    /// Adaptive compression: 0..1 of the extra mid-scale compression needed to bring the
-    /// texture's own mid-scale lightness spread (median L std over `radius_mid` windows) down to
-    /// `target_std`. Low-contrast textures (at or below the target) are left as they are;
-    /// high-contrast ones (bark, cliffs) are compressed more.
-    pub adaptive: f32,
-    pub target_std: f32,
-    /// Share of the adaptive amount also applied at the coarse scale.
-    pub adaptive_coarse: f32,
-    /// Upper bound on the resulting mid-scale compression.
-    pub max_mid: f32,
-    /// At full adaptive amount, `range` is multiplied by `1 + adaptive_range`, so deep grooves
-    /// of high-contrast textures count as texture to compress rather than as structure to keep.
-    pub adaptive_range: f32,
 }
 
 impl Default for ValueContrast {
@@ -185,11 +173,33 @@ impl Default for ValueContrast {
             radius_mid: 12.0,
             radius_coarse: 40.0,
             range: 0.12,
-            adaptive: 0.0,
-            target_std: 0.03,
-            adaptive_coarse: 0.3,
-            max_mid: 0.85,
-            adaptive_range: 0.0,
+        }
+    }
+}
+
+/// Adaptive contrast for busy, high-contrast textures (bark, cliffs): the texture's own
+/// value spread (median OKLab L std over mid-scale windows) is measured, and if it is above
+/// `trigger_spread` the value compression is raised at every scale — including the groove scale —
+/// toward `target_spread` (the spread measured on the reference game's comparable surfaces).
+/// Groove shapes stay; their light/dark amplitude shrinks. Textures below the trigger (the
+/// ground) are untouched by this.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Contrast {
+    /// 0..1: how far toward the target; 0 disables.
+    pub strength: f32,
+    /// Goal spread (median L std over mid-scale windows).
+    pub target_spread: f32,
+    /// Only textures whose spread exceeds this (feathered ±15%) adapt.
+    pub trigger_spread: f32,
+}
+
+impl Default for Contrast {
+    fn default() -> Self {
+        Self {
+            strength: 0.0,
+            target_spread: 0.03,
+            trigger_spread: 0.08,
         }
     }
 }

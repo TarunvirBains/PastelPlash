@@ -25,6 +25,7 @@ struct Params {
     edge_threshold: f32, edge_feather: f32, paper_tint: f32, smear: f32,
     vc_fine: f32, vc_mid: f32, vc_coarse: f32, vc_chroma: f32,
     vc_r_fine: f32, vc_r_mid: f32, vc_r_coarse: f32, vc_range: f32,
+    amp: f32, _pad3: f32, _pad4: f32, _pad5: f32,
 };
 
 struct Band { y0: i32, y1: i32, _a: i32, _b: i32 };
@@ -721,6 +722,14 @@ fn finish(@builtin(global_invocation_id) gid: vec3<u32>) {
             ab = mix(ab, paper.yz, clamp(P.paper_tint * hl * (0.3 + 0.7 * max(n, 0.0)), 0.0, 1.0));
         }
         lab = vec3<f32>(lab.x + P.paper * n * (0.4 + 0.6 * hl), ab);
+    }
+
+    // Adaptive contrast: remove (1 − amp) of the source's deviation from its large-scale local
+    // lightness (the low-res field). Groove amplitude shrinks; big lighting shapes, every edge
+    // position and the palette's own per-texel changes stay.
+    if (P.amp < 1.0 && P.low_w > 0) {
+        let pivot = pow(max(lowres_sample(gp), 0.0), 1.0 / 3.0);
+        lab.x = lab.x - (1.0 - P.amp) * (src.x - pivot);
     }
 
     // Keep watercolor darkening from undercutting the palette floor.

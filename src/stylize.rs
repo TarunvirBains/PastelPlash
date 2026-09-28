@@ -30,7 +30,7 @@ use crate::config::{Category, Config, Mood, Style, Treatment};
 use crate::gpu::Gpu;
 use crate::image::Image;
 use crate::lut::Lut3d;
-use crate::palette::Mapping;
+use crate::palette::{Mapping, smoothstep};
 use crate::pipeline::{FileContext, Stage};
 
 const SHADER: &str = include_str!("shaders/stylize.wgsl");
@@ -126,6 +126,10 @@ struct Params {
     vc_r_mid: f32,
     vc_r_coarse: f32,
     vc_range: f32,
+    amp: f32,
+    _pad3: f32,
+    _pad4: f32,
+    _pad5: f32,
 }
 
 #[repr(C)]
@@ -459,7 +463,9 @@ impl Stage for Stylize {
         };
         let delight_strength = style.delight.strength * tr.delight;
         let temp_strength = style.temperature.chroma * tr.warm_cool;
-        let lowres = (delight_strength > 0.0 || temp_strength > 0.0)
+        // The low-res luminance field also serves as the adaptive-contrast pivot.
+        let contrast_on = style.contrast.strength > 0.0 && tr.value_contrast > 0.0;
+        let lowres = (delight_strength > 0.0 || temp_strength > 0.0 || contrast_on)
             .then(|| analysis::lowres_luminance(image, style.delight.radius * gm, wrap));
         let lut = self.lut(style, &ctx.mood, &tr);
         let pal = &style.palette;
@@ -487,22 +493,27 @@ impl Stage for Stylize {
         let wc = &style.watercolor;
         let st = &style.strokes;
         let vc = &style.value_contrast;
-        // Adaptive value compression: textures with a large mid-scale lightness spread (bark,
-        // cliffs) are compressed toward the target; low-contrast ones keep the base amounts.
+        // Adaptive contrast: busy textures above the trigger spread (bark, cliffs) get their
+        // compression raised at every scale, including the groove scale, toward the target
+        // spread; textures below the trigger (the ground) keep the base amounts.
+        let ct = &style.contrast;
         let r_mid = (vc.radius_mid * f).max(2.0);
-        let (spread, adapt) = if vc.adaptive > 0.0 && tr.value_contrast > 0.0 {
+        let (spread, adapt) = if contrast_on {
             let s = analysis::local_l_std(image, r_mid, wrap);
-            let need = if s > vc.target_std {
-                1.0 - vc.target_std / s
-            } else {
-                0.0
-            };
-            (s, (vc.adaptive * need).clamp(0.0, 1.0))
+            let gate = smoothstep(ct.trigger_spread * 0.85, ct.trigger_spread * 1.15, s);
+            let need = (1.0 - ct.target_spread / s.max(1e-6)).max(0.0);
+            (s, (ct.strength * need * gate).clamp(0.0, 1.0))
         } else {
             (0.0, 0.0)
         };
-        let vc_mid = (vc.mid + adapt).min(vc.max_mid.max(vc.mid));
-        let vc_coarse = (vc.coarse + adapt * vc.adaptive_coarse).min(vc.max_mid);
+        // Fine grit is compressed harder; the rest of the goal is reached by scaling the whole
+        // texture's light/dark amplitude around its mean (`amp`): every shape, groove and edge
+        // stays where it is, only its value contrast shrinks.
+        let vc_fine_a = vc.fine + (0.9 - vc.fine).max(0.0) * adapt;
+        let vc_mid = vc.mid;
+        let vc_coarse = vc.coarse;
+        // adapt = strength · (1 − target/spread): at full strength, amp = target/spread.
+        let amp = 1.0 - adapt;
         let stroke_width = (st.width * f * tr.stroke_scale).max(0.75);
         let stroke_len = (st.length * f * tr.stroke_scale).max(1.0);
         let edge_step = (wc.edge_width * f).max(1.0);
@@ -543,14 +554,15 @@ impl Stage for Stylize {
             gran_valley: wc.granulation_valley.clamp(0.0, 1.0),
             gran_radius: (gran_px * 0.75).max(1.0),
             smear: st.smear * tr.strokes,
-            vc_fine: vc.fine * tr.value_contrast,
+            vc_fine: vc_fine_a * tr.value_contrast,
             vc_mid: vc_mid * tr.value_contrast,
             vc_coarse: vc_coarse * tr.value_contrast,
             vc_chroma: vc.chroma,
             vc_r_fine: (vc.radius_fine * f).max(1.0),
             vc_r_mid: (vc.radius_mid * f).max(2.0),
             vc_r_coarse: (vc.radius_coarse * f).max(4.0),
-            vc_range: vc.range * (1.0 + adapt * vc.adaptive_range),
+            vc_range: vc.range,
+            amp: 1.0 - (1.0 - amp) * tr.value_contrast.min(1.0),
             paper: wc.paper_grain * tr.paper,
             paper_tint: wc.paper_tint * tr.paper,
             paper_cells_x: cells(w, paper_px),
