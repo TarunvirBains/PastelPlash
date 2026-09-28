@@ -1,0 +1,60 @@
+# Pack map: OoT Reloaded (Ship of Harkinian .o2r). Classifies archive entries by path; the first
+# matching rule wins. See PLAN.md "Source notes: OoT Reloaded".
+name = "oot-reloaded"
+# Anything unrecognized is left untouched.
+default_category = "skip"
+
+# Eyes and mouths are swapped per frame by the engine: never restyle them.
+[[rules]]
+glob = "alt/objects/**/*Eyes*"
+category = "skip"
+
+[[rules]]
+glob = "alt/objects/**/*Mouth*"
+category = "skip"
+
+# Actors the cel shader does not relight render like world geometry.
+[[rules]]
+glob = "alt/objects/object_wood02/**"
+category = "world"
+
+[[rules]]
+glob = "alt/objects/object_spot*/**"
+category = "world"
+
+[[rules]]
+glob = "alt/objects/gameplay_field_keep/gFieldDoor*"
+category = "world"
+
+[[rules]]
+glob = "alt/objects/object_bdoor/**"
+category = "world"
+
+[[rules]]
+glob = "alt/objects/object_door_gerudo/**"
+category = "world"
+
+[[rules]]
+glob = "alt/objects/object_haka_door/**"
+category = "world"
+
+[[rules]]
+glob = "alt/objects/object_jya_door/**"
+category = "world"
+
+[[rules]]
+glob = "alt/objects/**"
+category = "actor"
+
+[[rules]]
+glob = "alt/scenes/**"
+category = "world"
+
+[[rules]]
+glob = "alt/textures/vr_*/**"
+category = "skybox"
+
+# HUD, icons, fonts, title cards and maps: copied through for now.
+[[rules]]
+glob = "alt/textures/**"
+category = "ui"
