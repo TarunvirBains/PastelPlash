@@ -257,6 +257,10 @@ impl Mapping<'_> {
         let s = p.strength.max(0.0);
         let [l, c, h] = color::oklab_to_oklch(color::srgb_to_oklab(rgb));
         let l = l.clamp(0.0, 1.0);
+        // Lightness-relative chroma for "is this neutral?" decisions: very dark texels have tiny
+        // absolute chroma even when clearly hued (a near-black navy is still navy), so chroma is
+        // judged as if the color were at mid lightness. Equals `c` from L 0.5 up.
+        let c_rel = c * (0.55 / (l + 0.05)).max(1.0);
 
         let ceiling = if s <= 1.0 {
             lerp(1.0, p.l_ceiling, s)
@@ -284,7 +288,7 @@ impl Mapping<'_> {
         h2 += pull;
         // Lightness: one monotone mapping shared by the chromatic and neutral paths; the group's
         // offset and floor fade in with chroma, so near-grays don't jump between two curves.
-        let nw = 1.0 - smoothstep(p.neutral_c * 0.5, p.neutral_c * 1.5, c);
+        let nw = 1.0 - smoothstep(p.neutral_c * 0.5, p.neutral_c * 1.5, c_rel);
         let cw = 1.0 - nw;
         let offset = g.offset * s * cw;
         let l2 = (l1 + offset).min(ceiling);
@@ -357,7 +361,7 @@ impl Mapping<'_> {
 
         // 6. Shadow tint on originally dark texels.
         let st = &p.shadow_tint;
-        let colored_src = smoothstep(0.02, 0.04, c);
+        let colored_src = smoothstep(0.02, 0.04, c_rel);
         let st_w = (st.amount * s).min(1.0)
             * self.shadow_scale
             * lerp(1.0, st.colored.clamp(0.0, 1.0), colored_src)
@@ -391,7 +395,7 @@ impl Mapping<'_> {
                 // Keep the source's own hue whenever it has one; only true neutrals take the
                 // shadow tint's hue. (Rotating between the two would pass through unrelated
                 // hues: halfway between umber and blue is green.)
-                if c < 0.0055 {
+                if c_rel < 0.012 {
                     hh = p.shadow_tint.hue;
                 }
                 cc = want;
