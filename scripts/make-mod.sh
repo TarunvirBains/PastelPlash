@@ -62,7 +62,7 @@ if [[ "${FULL:-0}" == 1 ]]; then
 else
     # Kokiri Forest (scene, interiors and their pre-rendered backdrops), its people and props,
     # Link, and the shared keeps (bushes, grass, rocks, signs, doors, pots).
-    INCLUDE=${INCLUDE:-"alt/scenes/*/spot04_scene/** alt/scenes/*/kokiri_home*_scene/** alt/scenes/*/link_home_scene/** alt/scenes/*/kokiri_shop_scene/** alt/textures/vr_K3VR_static/** alt/textures/vr_K4VR_static/** alt/textures/vr_K5VR_static/** alt/textures/vr_LHVR_static/** alt/textures/vr_KSVR_static/** alt/objects/object_spot04_objects/** alt/objects/object_link_boy/** alt/objects/object_link_child/** alt/objects/gameplay_field_keep/** alt/objects/gameplay_keep/** alt/objects/object_km1/** alt/objects/object_kw1/** alt/objects/object_sa/** alt/objects/object_mm/** alt/objects/object_kanban/** alt/objects/object_gs/** alt/objects/object_tsubo/** alt/objects/object_masterkokiri*/**"}
+    INCLUDE=${INCLUDE:-"alt/scenes/*/spot04_scene/** alt/scenes/nonmq/ydan_scene/** alt/scenes/*/kokiri_home*_scene/** alt/scenes/*/link_home_scene/** alt/scenes/*/kokiri_shop_scene/** alt/textures/vr_K3VR_static/** alt/textures/vr_K4VR_static/** alt/textures/vr_K5VR_static/** alt/textures/vr_LHVR_static/** alt/textures/vr_KSVR_static/** alt/objects/object_spot04_objects/** alt/objects/object_link_boy/** alt/objects/object_link_child/** alt/objects/gameplay_field_keep/** alt/objects/gameplay_keep/** alt/objects/object_km1/** alt/objects/object_kw1/** alt/objects/object_sa/** alt/objects/object_mm/** alt/objects/object_kanban/** alt/objects/object_gs/** alt/objects/object_tsubo/** alt/objects/object_masterkokiri*/**"}
     SCOPE=${TAG:-test}
 fi
 include_args=()

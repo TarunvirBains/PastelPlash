@@ -47,7 +47,18 @@ There are three kinds of change, and each has its own place:
 
 A **mood** is a named partial override of a style (`[moods.<name>]` in the style file), assigned
 to files by the pack map (`[[moods]]` rules with a glob and a strength 0–1). The style as written
-is the `base` mood. Moods are checked by the same rules.
+is the `base` mood. Moods are checked by the same rules, at half and full strength.
+
+- **Moods are overlays.** A mood's effective settings equal the base style's for every key it
+  doesn't name, so base improvements flow into it (`moods_inherit_everything_they_do_not_override`).
+- **Nocturne** (dark, haunting areas: Deku Tree (milder), Forest/Shadow Temple, Bottom of the
+  Well, Ganon's Castle, graves, ruined Castle Town): the murk lifts to a lower floor, the palette
+  narrows and cools, earth warmth is off — the Whistler/Monet nocturne. Only in moods listed
+  under `[moods.<name>]` in `rules.toml` may lifted darks rotate toward a cool hue (indigo,
+  violet, deep teal), bounded by `max_cool_bias` and that mood's `dark_max_hue_shift`; the base
+  look keeps darks hue-true (`rule_cool_darks_only_where_the_mood_allows`). Darks still never go
+  neutral black or brown mud, and the identity rules still apply: dungeons stay recognizably
+  themselves, just more atmospheric.
 
 ## The rules
 
