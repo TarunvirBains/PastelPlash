@@ -148,3 +148,10 @@ Verified by inspecting `OoT_Reloaded_v11.0.0_4K.o2r` (23.4 GB, 11,527 entries):
 
 - *Skyward Sword* reference screenshots (5–10: Faron Woods, Skyloft, a dungeon, an interior).
 - Permission from OoT Reloaded's author before distributing any restyled pack.
+
+## License
+
+Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or [MIT license](LICENSE-MIT) at your
+option. Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the work
+by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or
+conditions.
