@@ -401,13 +401,11 @@ impl Mapping<'_> {
                 cc = want;
             }
             // Optional cool bias (off by default: darks keep their source hue).
+            // A hue rotation toward the cool hue, chroma kept (adding a vector would cancel warm
+            // chroma into gray mud).
             if p.dark_cool_bias > 0.0 {
-                let mut ab = color::oklch_to_oklab([ll, cc, hh]);
-                let cool = color::oklch_to_oklab([0.0, p.dark_cool_bias * dark, p.dark_cool_hue]);
-                ab[1] += cool[1];
-                ab[2] += cool[2];
-                let lch = color::oklab_to_oklch(ab);
-                (cc, hh) = (lch[1], lch[2]);
+                let t = (p.dark_cool_bias * dark * s.min(1.0)).clamp(0.0, 1.0);
+                hh += t * hue_diff(hh, p.dark_cool_hue);
             }
         }
         let [r, g, b] = color::oklch_to_srgb_gamut([ll, cc, hh]);

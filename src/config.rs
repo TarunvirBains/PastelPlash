@@ -493,8 +493,8 @@ pub struct Palette {
     /// along the source's own hue. Fades in below `dark_below` (output OKLCH L).
     pub dark_chroma: f32,
     pub dark_below: f32,
-    /// Optional cool bias on lifted darks: OKLab chroma pushed toward `dark_cool_hue` (0 = off;
-    /// darks keep their source hue).
+    /// Optional cool bias on lifted darks: 0..1 of the way their hue rotates toward
+    /// `dark_cool_hue`, chroma kept (0 = off; darks keep their source hue).
     pub dark_cool_bias: f32,
     pub dark_cool_hue: f32,
     /// Targeted earth warmth (scaled per category by the target's `warmth`).
