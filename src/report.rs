@@ -120,7 +120,7 @@ pub fn mean_oklab(img: &crate::image::Image) -> [f32; 3] {
 pub enum CoarsePart {
     /// Chromatic difference (OKLab a/b distance): hue and chroma transformations.
     Color,
-    /// Lightness difference.
+    /// Lightness difference of the whole cell's mean.
     Lightness,
 }
 
@@ -176,14 +176,20 @@ pub fn coarse_delta_e(
             let (Some(x), Some(y)) = (half_means(a, cy, cx), half_means(b, cy, cx)) else {
                 continue;
             };
-            let de = |p: [f32; 3], q: [f32; 3]| {
-                let (dl, da, db) = (p[0] - q[0], p[1] - q[1], p[2] - q[2]);
-                match part {
-                    CoarsePart::Color => (da * da + db * db).sqrt(),
-                    CoarsePart::Lightness => dl.abs(),
+            d.push(match part {
+                // Color: per half, so hue changes hidden in the average still show.
+                CoarsePart::Color => {
+                    let de = |p: [f32; 3], q: [f32; 3]| {
+                        ((p[1] - q[1]).powi(2) + (p[2] - q[2]).powi(2)).sqrt()
+                    };
+                    de(x[0], y[0]).max(de(x[1], y[1]))
                 }
-            };
-            d.push(de(x[0], y[0]).max(de(x[1], y[1])));
+                // Lightness: the whole cell's mean, so compressing light/dark within the cell
+                // (an intended effect) doesn't count, but brightening or darkening it does.
+                CoarsePart::Lightness => {
+                    ((x[0][0] + x[1][0]) / 2.0 - (y[0][0] + y[1][0]) / 2.0).abs()
+                }
+            });
         }
     }
     if d.is_empty() {
