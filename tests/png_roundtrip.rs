@@ -77,7 +77,7 @@ fn roundtrip(dir: &Path, color: ColorType, depth: BitDepth, trns: bool) {
     assert_eq!(image.source.bit_depth, depth as u8, "{name}");
     assert_eq!(
         image.source.has_alpha,
-        trns || color.samples() % 2 == 0 && color != ColorType::Indexed,
+        trns || matches!(color, ColorType::GrayscaleAlpha | ColorType::Rgba),
         "{name}"
     );
     png_io::write(&image, &output).unwrap();
