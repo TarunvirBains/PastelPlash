@@ -18,6 +18,13 @@ warm_cool = 1.0
 shadow_tint = 1.0
 accent = 1.0
 
+# Pre-rendered backdrops: their painted lighting is the scene's lighting, so no de-lighting.
+[categories.background]
+delight = 0.0
+warm_cool = 0.5
+shadow_tint = 1.0
+accent = 1.0
+
 [categories.skybox]
 delight = 0.0
 warm_cool = 0.5

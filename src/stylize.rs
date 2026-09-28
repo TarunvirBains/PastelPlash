@@ -414,7 +414,12 @@ impl Stage for Stylize {
             analysis::seam_ratio(image, false),
             analysis::seam_ratio(image, true),
         ];
-        let wrap = ratios.map(|r| r <= style.tiling.threshold);
+        // Pre-rendered backgrounds are whole pictures: never wrap, whatever their edges say.
+        let wrap = if ctx.category == Category::Background {
+            [false; 2]
+        } else {
+            ratios.map(|r| r <= style.tiling.threshold)
+        };
         let delight_strength = style.delight.strength * tr.delight;
         let temp_strength = style.temperature.chroma * tr.warm_cool;
         let lowres = (delight_strength > 0.0 || temp_strength > 0.0)

@@ -50,6 +50,27 @@ fn oot_reloaded_paths_map_to_categories() {
         ),
         ("alt/textures/parameter_static/gHeartFullTex", Category::Ui),
         ("alt/something/else", Category::Skip),
+        // Pre-rendered scene images are backgrounds, not skies or tiling world textures.
+        (
+            "alt/textures/vr_RUVR_static/gMarketRuinsBgTex",
+            Category::Background,
+        ),
+        (
+            "alt/textures/vr_SP1a_static/gBazaarBgTex",
+            Category::Background,
+        ),
+        (
+            "alt/scenes/shared/shrine_r_scene/shrine_r_room_0Background_007AF0",
+            Category::Background,
+        ),
+        (
+            "alt/textures/vr_holy0_static/gHoly0Skybox1Tex",
+            Category::Skybox,
+        ),
+        (
+            "alt/textures/vr_cloud3_static/gNightOvercastSkybox1Tex",
+            Category::Skybox,
+        ),
     ];
     for (path, want) in cases {
         assert_eq!(classify("oot-reloaded.toml", path), want, "{path}");

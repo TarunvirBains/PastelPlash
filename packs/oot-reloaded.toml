@@ -46,10 +46,25 @@ category = "world"
 glob = "alt/objects/**"
 category = "actor"
 
+# Pre-rendered scene images: room backdrops (market, Temple of Time exterior, houses, shops)...
+[[rules]]
+glob = "alt/scenes/**/*Background_*"
+category = "background"
+
 [[rules]]
 glob = "alt/scenes/**"
 category = "world"
 
+# ...and the vr_*VR / vr_SP1a panoramas, which are shops, houses and the market, not skies.
+[[rules]]
+glob = "alt/textures/vr_*VR_static/**"
+category = "background"
+
+[[rules]]
+glob = "alt/textures/vr_SP1a_static/**"
+category = "background"
+
+# Real skies: vr_fine*, vr_cloud*, vr_holy*.
 [[rules]]
 glob = "alt/textures/vr_*/**"
 category = "skybox"

@@ -20,6 +20,8 @@ pub enum Category {
     /// Static world geometry.
     World,
     Skybox,
+    /// Pre-rendered scene images (painted backdrops): no tiling assumptions, no de-lighting.
+    Background,
     Ui,
     /// Copied through untouched.
     Skip,
@@ -33,11 +35,12 @@ impl std::str::FromStr for Category {
             "actor" => Self::Actor,
             "world" => Self::World,
             "skybox" => Self::Skybox,
+            "background" => Self::Background,
             "ui" => Self::Ui,
             "skip" => Self::Skip,
             _ => {
                 return Err(format!(
-                    "unknown category {s:?} (actor, world, skybox, ui, skip)"
+                    "unknown category {s:?} (actor, world, skybox, background, ui, skip)"
                 ));
             }
         })
