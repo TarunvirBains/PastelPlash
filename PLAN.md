@@ -67,6 +67,11 @@ Non-color maps (`_n`, `_nrm`, `_normal`, `_spec`, `_rough`, …) are skipped by 
 All variants: 8/16-bit, RGB, RGBA, grayscale, palette-indexed. Output preserves bit depth and alpha. Tiling is
 detected per image, not assumed.
 
+Working format (`src/image.rs`): RGBA `f32` in 0..1, straight alpha, gamma-encoded sRGB (not linear), so decode →
+encode is exact at 8 and 16 bits and uploads directly as `rgba32float`. Stages convert to linear/OKLCH internally.
+Encoding exceptions: palette images are written as RGB8/RGBA8, gray below 8 bits as 8-bit gray, and `tRNS`
+transparency becomes an alpha channel. Ancillary chunks (`gAMA`, `sRGB`, `iCCP`, text) are not carried over.
+
 ## Pipeline (per texture)
 
 1. Load (alpha-aware); pad with wrap-around when the texture tiles.
