@@ -22,7 +22,7 @@ but the tool itself is pack-agnostic.
 - GPU work via `wgpu` on DirectX 12 (native Windows driver; avoids WSL's immature Vulkan layer). Filters are WGSL
   compute shaders.
 - Input/output live on the Windows side (e.g. `Z:\…`) so the `.exe` reads them natively.
-- Crates: `wgpu`, `image` (PNG I/O), `palette` (OKLCH), `clap` (CLI), `serde` + `toml` (config), `rayon` (CPU-side
+- Crates: `wgpu`, `png` (PNG I/O), `palette` (OKLCH), `clap` (CLI), `serde` + `toml` (config), `rayon` (CPU-side
   I/O parallelism).
 
 ## CLI
