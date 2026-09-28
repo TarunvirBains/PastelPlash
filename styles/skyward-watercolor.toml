@@ -60,7 +60,7 @@ accent_fraction = 0.02
 accent_radius = 16.0
 accent_min_l = 0.58
 accent_hue = 262.0
-accent_chroma = 0.05
+accent_chroma = 0.04
 accent_softness = 0.6
 accent_min_depth = 0.1
 
