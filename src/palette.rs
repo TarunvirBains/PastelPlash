@@ -330,8 +330,10 @@ impl Mapping<'_> {
         let c1 = c1 * (1.0 + p.chroma_lift * s.min(1.0) * (l3 - l).max(0.0));
         let mut c2 = lerp(c1, soft_cap(c1, cap), s.min(1.0));
         // "Pastel is not gray": colored sources keep at least the group's reference chroma.
+        // The floor never more than doubles a source's chroma, so a faint cast (gray curtain
+        // folds with a hint of blue) isn't amplified into colored stripes.
         let colored = smoothstep(p.neutral_c, p.neutral_c * 2.5, c) * s.min(1.0);
-        c2 = c2.max(g.c_min * colored);
+        c2 = c2.max((g.c_min * colored).min(2.0 * c));
         // Targeted earth warmth (weight 0 exactly outside the source band).
         let wm = &p.warmth;
         let ww = warmth_weight(wm, h, c)
@@ -392,10 +394,11 @@ impl Mapping<'_> {
             let dark = 1.0 - smoothstep(p.dark_below - 0.03, p.dark_below + 0.05, ll);
             let want = p.dark_chroma * dark * s.min(1.0);
             if cc < want {
-                // Keep the source's own hue whenever it has one; only true neutrals take the
-                // shadow tint's hue. (Rotating between the two would pass through unrelated
-                // hues: halfway between umber and blue is green.)
-                if c_rel < 0.012 {
+                // Keep the source's own hue when it is clearly hued; near-neutrals (a faint
+                // cast, e.g. a white curtain's fold shadows) take the shadow tint's hue, so the
+                // lift never turns a faint cast into colored stripes. (Rotating between the two
+                // would pass through unrelated hues: halfway between umber and blue is green.)
+                if c_rel < 0.03 {
                     hh = p.shadow_tint.hue;
                 }
                 cc = want;
@@ -404,8 +407,12 @@ impl Mapping<'_> {
             // A hue rotation toward the cool hue, chroma kept (adding a vector would cancel warm
             // chroma into gray mud).
             if p.dark_cool_bias > 0.0 {
-                let t = (p.dark_cool_bias * dark * s.min(1.0)).clamp(0.0, 1.0);
-                hh += t * hue_diff(hh, p.dark_cool_hue);
+                // Hues nearly opposite the cool target have no well-defined "toward" direction
+                // (the shortest arc flips); they keep their hue instead of splitting two ways.
+                let d = hue_diff(hh, p.dark_cool_hue);
+                let t = (p.dark_cool_bias * dark * s.min(1.0)).clamp(0.0, 1.0)
+                    * (1.0 - smoothstep(110.0, 160.0, d.abs()));
+                hh += t * d;
             }
         }
         let [r, g, b] = color::oklch_to_srgb_gamut([ll, cc, hh]);
