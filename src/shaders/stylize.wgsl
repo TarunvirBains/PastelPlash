@@ -22,7 +22,7 @@ struct Params {
     temp_sens: f32, stroke_strength: f32, stroke_chroma: f32, stroke_len: f32,
     stroke_step: f32, stroke_cells_x: f32, stroke_cells_y: f32, bloom_cells_x: f32,
     bloom_cells_y: f32, ceiling_ref: f32, accent_min_depth: f32, edge_rel: f32,
-    edge_threshold: f32, edge_feather: f32, _pad2: f32, _pad3: f32,
+    edge_threshold: f32, edge_feather: f32, paper_tint: f32, _pad3: f32,
 };
 
 struct Band { y0: i32, y1: i32, _a: i32, _b: i32 };
@@ -639,13 +639,16 @@ fn finish(@builtin(global_invocation_id) gid: vec3<u32>) {
         lab = vec3<f32>(lab.x - P.gran * g * depth, lab.yz * (1.0 + 2.0 * P.gran * g));
     }
 
-    // Paper tooth everywhere, and the paper's own color showing through in highlights.
-    if (P.paper > 0.0) {
+    // Paper tooth everywhere, and (bounded by paper_tint) the paper's own color showing through
+    // in highlights.
+    if (P.paper > 0.0 || P.paper_tint > 0.0) {
         let hl = smoothstep(P.paper_hl, 1.0, lab.x);
         let n = fbm(gp, vec2<f32>(P.paper_cells_x, P.paper_cells_y), 11u) * 2.0 - 1.0;
         let paper = srgb_to_oklab(vec3<f32>(P.paper_r, P.paper_g, P.paper_b));
         var ab = lab.yz;
-        if (!tint_safe) { ab = mix(ab, paper.yz, clamp(hl * (0.3 + 0.7 * max(n, 0.0)), 0.0, 1.0)); }
+        if (!tint_safe) {
+            ab = mix(ab, paper.yz, clamp(P.paper_tint * hl * (0.3 + 0.7 * max(n, 0.0)), 0.0, 1.0));
+        }
         lab = vec3<f32>(lab.x + P.paper * n * (0.4 + 0.6 * hl), ab);
     }
 

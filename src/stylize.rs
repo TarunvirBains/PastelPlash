@@ -116,7 +116,7 @@ struct Params {
     edge_rel: f32,
     edge_threshold: f32,
     edge_feather: f32,
-    _pad2: f32,
+    paper_tint: f32,
     _pad3: f32,
 }
 
@@ -512,7 +512,8 @@ impl Stage for Stylize {
             gran_cells_y: cells(h, gran_px),
             gran_valley: wc.granulation_valley.clamp(0.0, 1.0),
             gran_radius: (gran_px * 0.75).max(1.0),
-            paper: wc.paper_grain,
+            paper: wc.paper_grain * tr.paper,
+            paper_tint: wc.paper_tint * tr.paper,
             paper_cells_x: cells(w, paper_px),
             paper_cells_y: cells(h, paper_px),
             paper_hl: wc.paper_highlight,

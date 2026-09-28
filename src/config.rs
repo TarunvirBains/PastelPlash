@@ -436,8 +436,11 @@ pub struct Watercolor {
     pub granulation_scale: f32,
     /// Share of granulation that settles in the source texture's own valleys (vs. noise).
     pub granulation_valley: f32,
-    /// Paper tooth amplitude (OKLab L); its color also shows through in highlights. 0 disables.
+    /// Paper tooth amplitude (OKLab L); 0 disables.
     pub paper_grain: f32,
+    /// How far highlight colors mix toward the paper color (0..1 at full highlight); keep it
+    /// small, or light colors turn chalky.
+    pub paper_tint: f32,
     /// Paper texture cell size in texels at the reference size.
     pub paper_scale: f32,
     /// OKLab lightness above which the paper starts to show.
@@ -464,6 +467,7 @@ impl Default for Watercolor {
             granulation_scale: 3.0,
             granulation_valley: 0.6,
             paper_grain: 0.0,
+            paper_tint: 0.0,
             paper_scale: 1.5,
             paper_highlight: 0.75,
             paper_color: [0.98, 0.965, 0.93],
@@ -511,6 +515,8 @@ pub struct Treatment {
     pub stroke_scale: f32,
     /// Multiplies the palette's shadow tint amount.
     pub shadow_tint: f32,
+    /// Multiplies the paper tooth and paper tint.
+    pub paper: f32,
 }
 
 impl Default for Treatment {
@@ -526,6 +532,7 @@ impl Default for Treatment {
             strokes: 1.0,
             stroke_scale: 1.0,
             shadow_tint: 1.0,
+            paper: 1.0,
         }
     }
 }
