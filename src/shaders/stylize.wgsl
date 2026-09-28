@@ -574,12 +574,15 @@ fn finish(@builtin(global_invocation_id) gid: vec3<u32>) {
                 lab = vec3<f32>(l_new, lab.yz);
             } else {
                 // Interpolate chroma and hue (shortest arc) so mixes never pass through gray.
+                // Hue leads lightness, so a darkening texel has already left its own hue
+                // family (no dark greens, even half-way into an accent).
+                let th = min(1.0, 3.0 * t);
                 let ch = length(lab.yz);
                 let h = atan2(lab.z, lab.y);
                 var dh = P.accent_hue - h;
                 dh = dh - 6.2831853 * round(dh / 6.2831853);
-                let h2 = select(P.accent_hue, h + dh * t, ch > 1e-4);
-                let c2 = mix(ch, P.accent_chroma, t);
+                let h2 = select(P.accent_hue, h + dh * th, ch > 1e-4);
+                let c2 = mix(ch, P.accent_chroma, th);
                 lab = vec3<f32>(l_new, hue_dir(h2) * c2);
             }
             floor_l = min(floor_l, l_new);
