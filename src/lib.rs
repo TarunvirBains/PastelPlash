@@ -1,5 +1,6 @@
 //! PastelPlash: restyles PNG texture packs. See `PLAN.md`.
 
+pub mod color;
 pub mod config;
 pub mod gpu;
 pub mod image;
