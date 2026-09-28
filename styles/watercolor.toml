@@ -186,3 +186,30 @@ paper_highlight = 0.85
 paper_color = [0.98, 0.965, 0.93]
 floor_margin = 0.06
 seed = 0
+
+# Design-like abstraction for busy, photographic textures (same trigger as [contrast]): big
+# shapes first, strokes that paint the simplified wash along the coarse structure, wet edges only
+# on large regions, glare calmed, source chroma kept. Vines and ground (below the trigger) are
+# unaffected.
+[abstraction]
+strength = 1.0
+radius = 20.0
+flow_scale = 3.0
+stroke_scale = 1.8
+edge_scale = 4.0
+edge_soften = 0.5
+highlight_calm = 0.8
+highlight_radius = 12.0
+chroma_retain = 0.9
+min_frac = 0.03          # low-res textures on big surfaces still get big shapes
+
+# Paint marks: fine color variation becomes soft dabs of this radius (reference texels).
+# Tiling, speckled textures (photographic ground grit) get bigger dabs: they repeat many times, so
+# their marks shrink in world space. Skyward Sword ground dabs are ~1% of screen width; a 512 px
+# Kokiri ground tile spans ~20% of the screen near the camera, so a dab is ~5% of the tile
+# (~25 texels across, radius ~12) vs. the default radius 4 at that size: multiplier 3.
+# Shape-based art (vines, leaves: speckle ratio ~0.34) is not affected.
+[marks]
+size = 8.0
+tiling_multiplier = 3.0
+speckle = [0.45, 0.6]
