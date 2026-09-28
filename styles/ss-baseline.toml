@@ -1,12 +1,8 @@
-# Default style: pastel watercolor in the direction of Skyward Sword, pushed further toward pure
-# pastel. Palette = the SS-measured tables (see ss-baseline.toml) extrapolated with `strength`
-# (1.0 = SS; 1.5 = the analysis's "beyond-ss" set, which read washed out on the samples, so the
-# default sits at 1.35). Watercolor technique is measured from public-domain watercolors.
-#
-# Sizes are in "reference texels": texels of a texture whose sqrt(width * height) equals
-# scale.reference_size; they scale with resolution so every texture gets a comparable painterly
-# scale.
-name = "skyward-watercolor"
+# Skyward Sword-matching palette: the baseline set measured from SS HD screenshots vs. the source
+# pack (tone curve, hue groups, chroma), plus the project-wide pastel floors (no dark greens).
+# Lighter watercolor technique than the default. Shares its palette tables with
+# skyward-watercolor and impressionist, which push `strength` further.
+name = "ss-baseline"
 
 [scale]
 reference_size = 1024
@@ -34,7 +30,7 @@ max_radius = 32.0
 
 [palette]
 enabled = true
-strength = 1.35
+strength = 1.0
 lut_size = 33
 l_curve = [[0, 0.38], [0.104, 0.407], [0.184, 0.438], [0.329, 0.565], [0.453, 0.72], [0.622, 0.87], [0.915, 0.955], [1, 0.975]]
 l_floor = 0.55
@@ -62,7 +58,7 @@ accent_min_l = 0.58
 accent_hue = 262.0
 accent_chroma = 0.05
 accent_softness = 0.6
-accent_min_depth = 0.1
+accent_min_depth = 0.08
 
 [[palette.groups]]
 name = "red_pink"
@@ -148,7 +144,7 @@ cool_hue = 285.0
 sensitivity = 1.5
 
 [strokes]
-strength = 0.015
+strength = 0.0
 chroma = 0.15
 width = 8.0
 length = 22.0
