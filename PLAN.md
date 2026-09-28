@@ -33,7 +33,7 @@ pastelplash process <input> <output> [options]
   -r, --recursive     walk subfolders (default: only PNGs directly in <input>); output mirrors the tree
   --copy-other        copy non-PNG files through, so the output is a complete drop-in pack
   --follow-links      follow symlinks when walking (off by default; loops are detected and skipped)
-  --style <file>      style config (e.g. styles/skyward-watercolor.toml)
+  --style <file>      style config (e.g. styles/watercolor.toml)
   --target <file>     target renderer profile (e.g. targets/soh-celshade.toml)
   --pack <file>       pack map (e.g. packs/oot-reloaded.toml)
   -j, --jobs <n>      worker threads (default: all cores)
@@ -49,7 +49,7 @@ file failed. Non-color maps are copied through unchanged rather than dropped.
 
 | Layer | Answers | Example |
 |---|---|---|
-| **Style** | What should it look like? | `skyward-watercolor.toml` — Kuwahara strength, palette LUT, paper grain, edge darkening |
+| **Style** | What should it look like? | `watercolor.toml` — palette, value contrast, brushwork, watercolor finish, moods |
 | **Target** | How will the game render it? | `soh-celshade.toml` — relit actor textures get full de-light and a lightness ceiling |
 | **Pack map** | Which file is what? | `oot-reloaded.toml` — path rules → `actor` / `world` / `skybox` / `ui` / `skip` |
 

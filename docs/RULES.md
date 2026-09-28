@@ -1,5 +1,10 @@
 # PastelPlash style rules
 
+**North star:** it still looks and feels like the source game — for OoT, like OoT — just a
+dreamlike version evoking impressionism and watercolor, in the direction of *Skyward Sword*. It
+must never feel like a different game. The restyle is a **layer** (painted washes, brushwork, wet
+edges, grain, softer internal contrast, colored darks), not a repaint.
+
 These rules define PastelPlash's style. A contribution to this repository must keep them passing.
 If you want a different aesthetic, you are welcome to fork the project and change the rules and
 tests to match your style.
@@ -10,52 +15,72 @@ There are three kinds of change, and each has its own place:
 
 | Change | Where | Review |
 |---|---|---|
-| **Tuning** a style (strengths, sizes, hue shifts, floors inside the bounds) | `styles/*.toml`, `targets/*.toml` | Free. No test edits needed. |
+| **Tuning** a style (strengths, sizes, hue nudges, curves inside the bounds) | `styles/*.toml`, `targets/*.toml` | Free. No test edits needed. |
 | **Changing a rule** (a hard limit of the style) | `rules.toml` (the *style contract*) | Deliberate, in its own commit. |
 | **Intended change of look** | re-bless snapshots: `PASTELPLASH_BLESS=1 cargo test --test snapshots` | Look at the new goldens before committing. |
 
-- **The contract.** `rules.toml` holds the hard limits as bounds, not exact values (for example
-  "green floor ≥ 0.70", not "green floor = 0.74"). The rule tests read every limit from it and
-  contain no magic numbers.
-- **Every style.** The tests discover every file in `styles/` and every file in `targets/`, so a
-  new style is checked automatically. They check two things:
+- **The contract.** `rules.toml` holds the hard limits as bounds, not exact values. The rule
+  tests read every limit from it and contain no magic numbers.
+- **Every style, every mood.** The tests discover every file in `styles/` (following `extends`)
+  and every file in `targets/`, and check each style in the base mood and in every mood it
+  defines (at half and full strength). A new style or mood is checked automatically. They check:
   1. The style's parameters lie within the contract (fast, CPU only).
-  2. Rendered output honors the parameters the style actually sets. For example, if a style sets
-     its green floor to 0.76, no non-accent green texel may come out darker than 0.76, minus the
-     style's `floor_margin` and the contract's tolerance.
+  2. The palette mapping honors the rules over randomized colors (CPU only, proptest).
+  3. Rendered output honors the rules on procedural textures (GPU).
 - **Snapshots are alarms, not rules.** `tests/snapshots.rs` renders a few procedural textures with
-  the default style and compares them with `tests/golden/`. It uses a perceptual tolerance: mean
-  OKLab ΔE plus a small budget of outliers. A failure means the look changed. Decide whether that
-  was intended, then re-bless.
+  the default style and compares them with `tests/golden/` using a perceptual tolerance (mean
+  OKLab ΔE plus a small outlier budget). A failure means the look changed; if intended, re-bless.
   - When running the Windows build from WSL, pass the variable through:
     `WSLENV=PASTELPLASH_BLESS PASTELPLASH_BLESS=1 cargo test --test snapshots`.
-- **GPU tests skip cleanly.** Rendered checks need a GPU adapter. Without one (for example in CI)
-  they print a message and pass. The CPU checks on configuration and palette math always run.
+- **GPU tests skip cleanly** without an adapter (for example in CI); the CPU checks always run.
 - **No third-party images.** Test textures are generated procedurally. Never commit texture pack,
   game or museum images to this repository.
 
+## Styles and moods
+
+| Style | What it is |
+|---|---|
+| `watercolor` (default) | The source's own rich color, painted: gentle SS hue nudges, crushed darks lifted into colored shadows, softer internal value contrast, watercolor technique. |
+| `impressionist` | Extends `watercolor`; differs only in bolder brushwork, slightly stronger warm/cool and a few more accents. |
+| `ss-baseline` | Extends `watercolor`; nudged further toward Skyward Sword (stronger hue pulls, mild lift). |
+| `pastel` (opt-in) | Light and dreamy: every hue lifted toward SS's pastel lightness, at SS's chroma — never gray. Moves furthest from the source, so it has its own identity bound. |
+
+A **mood** is a named partial override of a style (`[moods.<name>]` in the style file), assigned
+to files by the pack map (`[[moods]]` rules with a glob and a strength 0–1). The base look is the
+`pastel` mood name for historical reasons — i.e. "no mood". Moods are checked by the same rules.
+
 ## The rules
 
-All lightness (L) and chroma (C) values are OKLCH. "Tolerance" means the `[tolerance]` values in
-`rules.toml`.
+All lightness (L) and chroma (C) values are OKLCH. "Tolerance" means `[tolerance]` in `rules.toml`.
 
-### Palette
-
-| Rule | Why | Enforced by |
-|---|---|---|
-| **No dark greens.** A texel that reads as green (hue in the contract's green band, C ≥ `green_min_chroma`) is never darker than the style's green floor. Dark foliage becomes light sage, lime or mint. | This is the core of the pastel *Skyward Sword* look. Dark forest and olive greens read as "realistic OoT", not pastel. | `rules_config::rule_no_dark_greens` (palette math, randomized), `rules_render::rule_no_dark_greens` (rendered), `rules_config::rule_styles_stay_within_the_contract` (green floor ≥ `min_green_floor`) |
-| **Pastel floor for every hue.** No texel is darker than the style's global floor. Accent darks are the only exception. | Light pastel overall: no dark reds, blues, purples or browns. | `rule_all_hue_pastel_floor` (CPU), `rule_all_hue_pastel_floor_except_accents` (GPU) |
-| **Compress, don't clamp.** Lightness is mapped monotonically, so value order survives. | Shapes stay readable. Flattening everything to the floor would erase form. | `rule_value_order_preserved`, `lut_matches_the_mapping_outside_the_darkest_cell` |
-| **Chroma is capped** (`chroma_cap`, plus a bounded vivid allowance). | Soft pastel color. The occasional vivid accent is allowed, but it stays bounded. | `rule_chroma_is_capped`, `rule_vivid_colors_are_bounded` |
-| **Only toward pastel.** Palette `strength` is at least 1 (1 = the SS-measured look). | `strength < 1` would lower the floors below the rules. | `rule_styles_stay_within_the_contract` |
-| **Identity at zero.** Strength 0 with every effect off leaves the image unchanged. A neutral (empty) config builds no GPU stage at all. | Makes it safe to reason about each effect in isolation. | `rule_palette_is_identity_at_zero_strength`, `rule_identity_when_all_strengths_are_zero`, `rule_neutral_config_is_identity_without_a_gpu` |
-
-### Accent darks (Impressionist colored shadows)
+### Identity
 
 | Rule | Why | Enforced by |
 |---|---|---|
-| Accents are bounded by `accent_fraction` (≤ the contract's `max_fraction`). They come from high-frequency detail only: crevices and gaps, never low-frequency shading. | Occasional contrast, not a return to dark textures. | `rule_all_hue_pastel_floor_except_accents`, contract check |
-| Accents are cool: their hue is inside the contract's accent band (blue to violet). They are never black, brown or green, and never darker than `accent_min_l`. | The Impressionist rule: shadows take the cool complement, with no muddy darks. A green texel on its way to an accent leaves the green family before it darkens. | `rule_accents_are_never_green`, contract check |
+| **Mean color stays.** Each texture's alpha-weighted mean OKLab color stays within `identity.max_mean_delta_e` of the source's (opt-in styles such as `pastel` have their own larger bound). | Kokiri green stays Kokiri green; Death Mountain stays brown. The game must stay recognizable. | `rules_render::rule_identity_is_kept` |
+| **Hue families stay.** Per hue group, the mean hue moves by at most `identity.max_group_hue_shift`; any colored texel by at most `palette.max_hue_shift`. | SS hue nudges are nudges, not a repaint. | `rule_identity_is_kept`, `rules_config::rule_hue_shifts_are_bounded` |
+| **Pastel is not gray.** A clearly colored source keeps at least `retention_ratio` of its chroma (capped at `retention_floor`), in every style. | The failure we saw in-game: lifted colors went chalky. Light must stay colorful. | `rules_config::rule_pastel_is_not_gray`, `rules_render::rule_value_contrast_is_compressed_color_is_kept` |
+
+### Darks
+
+| Rule | Why | Enforced by |
+|---|---|---|
+| **No crushed black:** nothing (except accent darks) maps below `palette.min_l`. | Watercolor darks are deep transparent washes, not black. | `rule_darks_are_colored_never_black` (CPU and GPU) |
+| **Darks are colored:** below `dark_l`, output carries at least `dark_min_chroma` — the source's own hue when it has one, else a cool shadow hue. | Impressionist colored shadows: never neutral near-black. | same |
+| **No brown mud:** no dark, dull brown/olive output (`mud_l`, `mud_hue`, `mud_max_chroma`). | Mud is the classic watercolor failure. | `rule_no_brown_mud` (CPU and GPU) |
+| **Accent darks** are bounded (`accents.max_fraction`), cool (hue in `accents.hue`), never below `accents.min_l`, and come from structural crevices (band-pass measure), not fine noise. | Occasional Impressionist contrast, not dark textures. | `rule_styles_stay_within_the_contract` |
+
+### Value and technique
+
+| Rule | Why | Enforced by |
+|---|---|---|
+| **Softer internal contrast.** Fine-scale light/dark variation drops by at least `value_min_effect × value_contrast.fine`, while the texture's mean L and chroma stay. | SS surfaces sit in a narrow lightness range (measured: ~0.4× OoT Reloaded's local L std); detail moves into color and brushwork. | `rule_value_contrast_is_compressed_color_is_kept` |
+| **No blur.** A hard step edge stays within `max_edge_width` texels while texel-level grit in flat regions decreases. | Edge-preserving, not blurring — "dreamlike" never means blurry. | `rule_no_blur_edges_stay_crisp_noise_becomes_flat` |
+| **Value order preserved** (monotone lightness mapping). | Shapes stay readable. | `rule_value_order_preserved`, `lut_matches_the_mapping_outside_the_darkest_cell` |
+| **Alpha preserved exactly, no halos.** | Cutouts must drop back into the game unchanged in shape. | `rule_alpha_preserved_and_no_halos` |
+| **Tiling textures stay seamless; chunking is invisible.** | Seams repeat across every wall; 8K skyboxes are processed in chunks. | `rule_tiling_textures_stay_seamless`, `rule_chunked_processing_matches_whole_image` |
+| Technique strengths stay within `[technique]`. | Tasteful: no ink outlines, heavy grain or smeared mush. | `rule_styles_stay_within_the_contract` |
+| `impressionist` extends the default and only overrides brushwork, warm/cool and accents. | Tuning the default carries over; impressionist is never "OoT with brushstrokes". | `impressionist_inherits_the_default_look` |
 
 ### Target: SoH cel-shade fork
 
@@ -64,25 +89,17 @@ exceed 1, and it decides at runtime which side is lit and which is in shadow.
 
 | Rule | Why | Enforced by |
 |---|---|---|
-| **Actor lightness ceiling.** Actor output never exceeds the target's `lightness_ceiling` (≤ `max_actor_ceiling`), including vivid colors. Vivid is achieved through chroma, never lightness. | Pale pastels would clip and hue-shift under a lit multiplier above 1. | `rule_actor_lightness_ceiling`, `rule_actor_targets_leave_lighting_to_the_renderer` |
-| **No baked temperature or shadow tint on actors** (`warm_cool = 0`, `shadow_tint = 0`). | The cel shader decides lit and shadow at runtime. Baked warm/cool would fight it. | `rule_actor_has_no_temperature_shift`, `rule_actor_targets_leave_lighting_to_the_renderer` |
-| **Tint-safe textures stay gray.** Grayscale-origin textures (tinted by the engine, such as Link's tunic or HUD hearts) get lightness changes only, never an added hue. | The engine multiplies them by a tint color. Any baked hue would corrupt every tint. | `rule_tint_safe_grayscale_stays_gray` |
-
-### Filter technique
-
-| Rule | Why | Enforced by |
-|---|---|---|
-| **No blur.** A hard step edge stays within `max_edge_width` texels, while texel-level grit in flat regions decreases. | Edge-preserving, not blurring. This is the project's first principle. | `rule_no_blur_edges_stay_crisp_noise_becomes_flat` |
-| **Alpha is preserved exactly, with no halos.** Opaque texels at a cutout border are not darker than the interior. | Foliage and cutouts must drop back into the game unchanged in shape, without dark fringes. | `rule_alpha_preserved_and_no_halos` |
-| **Tiling textures stay seamless.** | Wrap addressing and tileable noise. A seam would repeat across every wall and floor. | `rule_tiling_textures_stay_seamless` |
-| **Chunking is invisible.** Textures above the GPU limit are processed in overlapping chunks that match whole-image processing. | 8K skyboxes and larger textures must not show chunk grids. | `rule_chunked_processing_matches_whole_image` |
-| Technique strengths stay within the contract's `[technique]` bounds. | Keeps the watercolor finish tasteful: no ink outlines or heavy grain. | `rule_styles_stay_within_the_contract` |
+| **Actors keep their color and value:** colored actor texels keep ≥ `actor.retention_ratio` of their chroma and move by at most `actor.max_lightness_shift` (beyond the ceiling). Actor de-light, lift and hue nudges are bounded (`target.max_actor_*`). | Warm skin, golden hair, brown leather — an early build turned Link's skin gray. | `rule_actor_keeps_color_and_value`, `rule_actor_targets_leave_lighting_to_the_renderer` |
+| **Actor lightness ceiling** (≤ `max_actor_ceiling`), vivid colors included; vividness via chroma, never lightness. | Pale colors would clip under a lit multiplier above 1. | `rule_actor_lightness_ceiling` |
+| **No baked temperature or shadow tint on actors.** | The cel shader decides lit and shadow at runtime. | `rule_actor_has_no_temperature_shift` |
+| **Tint-safe textures stay gray:** grayscale-origin textures (engine-tinted, e.g. Link's tunic, hearts) get lightness changes only. | The engine multiplies them by a tint; any baked hue would corrupt every tint. | `rule_tint_safe_grayscale_stays_gray` |
 
 ### Robustness
 
 | Rule | Enforced by |
 |---|---|
 | Deterministic: the same input and config give identical output. | `rule_deterministic` |
-| Output is in the sRGB gamut, with no NaNs. 16-bit inputs are handled. | `rule_output_in_gamut_and_finite`, `rule_palette_output_is_in_gamut_and_finite`, `rule_sixteen_bit_inputs_are_handled` |
-| Configs are strict: unknown keys are rejected, and contradictory ranges (floor > ceiling, a non-monotone tone curve) fail with a clear error. | `rule_unknown_keys_are_rejected`, `rule_invalid_ranges_are_rejected`, `config::tests::contradictory_settings_are_rejected_with_clear_errors` |
+| Output is in the sRGB gamut, with no NaNs; 16-bit inputs are handled. | `rule_output_in_gamut_and_finite`, `rule_palette_output_is_in_gamut_and_finite`, `rule_sixteen_bit_inputs_are_handled` |
+| Identity when every strength is 0; a neutral config builds no GPU stage. | `rule_palette_is_identity_at_zero_strength`, `rule_identity_when_all_strengths_are_zero`, `rule_neutral_config_is_identity_without_a_gpu` |
+| Configs are strict: unknown keys rejected, contradictory ranges fail with a clear error, every mood validated on load. | `rule_unknown_keys_are_rejected`, `rule_invalid_ranges_are_rejected`, `config::tests` |
 | LUT `.cube` round-trip and OKLCH conversions are accurate. | `cube_round_trip`, `oklch_round_trip_is_accurate`, unit tests in `src/color.rs` and `src/lut.rs` |
