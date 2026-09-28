@@ -59,6 +59,8 @@ All lightness (L) and chroma (C) values are OKLCH. "Tolerance" means `[tolerance
 |---|---|---|
 | **Mean color stays.** Each texture's alpha-weighted mean OKLab color stays within `identity.max_mean_delta_e` of the source's (opt-in styles such as `pastel` have their own larger bound). | Kokiri green stays Kokiri green; Death Mountain stays brown. The game must stay recognizable. | `rules_render::rule_identity_is_kept` |
 | **Hue families stay.** Per hue group, the mean hue moves by at most `identity.max_group_hue_shift`; any colored texel by at most `palette.max_hue_shift`. | SS hue nudges are nudges, not a repaint. | `rule_identity_is_kept`, `rules_config::rule_hue_shifts_are_bounded` |
+| **Recognizable from across the room.** On a 16×16 grid, each cell's dark-half and light-half mean colors (split at the cell's median L) stay close to the source's: chroma change p90 ≤ `identity.coarse_max_color`, lightness change p90 ≤ `identity.coarse_max_lightness` (per-style overrides for opt-in looks). Brushwork only moves texels within a cell and doesn't register. | A mean color can match while the texture is transformed: v2's navy grooves over tan averaged back to brown. The half-means don't. | `rule_coarse_identity_is_kept` |
+| **Warmth is targeted.** Earth warmth changes only sources whose hue is in its band (exactly nothing outside it), weighted by chroma, and never pushes an earth hue past its target. | A safe, deterministic warm-up for OoT's olive ground, unlike an untargeted tint. | `rule_warmth_is_targeted`, `rule_warmth_stays_in_band` |
 | **Pastel is not gray.** A clearly colored source keeps at least `retention_ratio` of its chroma (capped at `retention_floor`), in every style. | The failure we saw in-game: lifted colors went chalky. Light must stay colorful. | `rules_config::rule_pastel_is_not_gray`, `rules_render::rule_value_contrast_is_compressed_color_is_kept` |
 
 ### Darks
@@ -66,7 +68,8 @@ All lightness (L) and chroma (C) values are OKLCH. "Tolerance" means `[tolerance
 | Rule | Why | Enforced by |
 |---|---|---|
 | **No crushed black:** nothing (except accent darks) maps below `palette.min_l`. | Watercolor darks are deep transparent washes, not black. | `rule_darks_are_colored_never_black` (CPU and GPU) |
-| **Darks are colored:** below `dark_l`, output carries at least `dark_min_chroma` — the source's own hue when it has one, else a cool shadow hue. | Impressionist colored shadows: never neutral near-black. | same |
+| **Darks are colored:** below `dark_l`, output carries at least `dark_min_chroma` — the source's own hue when it has one, else a warm umber (SS's measured shadow hue). | Painted shadows, never neutral near-black. | same |
+| **Lifted darks keep their hue:** a dark, colored source moves by at most `palette.dark_max_hue_shift`; dark bark never comes out blue. | v2 lifted OoT's bark and cliff darks toward navy: "a completely different place". Dark brown stays brown, dark green stays green. | `rule_lifted_darks_keep_their_hue`, `rule_bark_does_not_turn_blue` |
 | **No brown mud:** no dark, dull brown/olive output (`mud_l`, `mud_hue`, `mud_max_chroma`). | Mud is the classic watercolor failure. | `rule_no_brown_mud` (CPU and GPU) |
 | **Accent darks** are bounded (`accents.max_fraction`), cool (hue in `accents.hue`), never below `accents.min_l`, and come from structural crevices (band-pass measure), not fine noise. | Occasional Impressionist contrast, not dark textures. | `rule_styles_stay_within_the_contract` |
 
@@ -75,6 +78,7 @@ All lightness (L) and chroma (C) values are OKLCH. "Tolerance" means `[tolerance
 | Rule | Why | Enforced by |
 |---|---|---|
 | **Softer internal contrast.** Fine-scale light/dark variation drops by at least `value_min_effect × value_contrast.fine`, while the texture's mean L and chroma stay. | SS surfaces sit in a narrow lightness range (measured: ~0.4× OoT Reloaded's local L std); detail moves into color and brushwork. | `rule_value_contrast_is_compressed_color_is_kept` |
+| **Busy textures calm down.** With adaptive compression on, a high-contrast (bark-like) texture's mid-scale L std drops by at least `adaptive_min_effect`; textures below the style's target spread (the ground) are untouched by adaptivity. | OoT Reloaded's photographic grooves clash with flat cel-shaded characters; keep the big groove shapes, drop the photographic depth. | `rule_adaptive_contrast_targets_high_contrast_textures` |
 | **No blur.** A hard step edge stays within `max_edge_width` texels while texel-level grit in flat regions decreases. | Edge-preserving, not blurring — "dreamlike" never means blurry. | `rule_no_blur_edges_stay_crisp_noise_becomes_flat` |
 | **Value order preserved** (monotone lightness mapping). | Shapes stay readable. | `rule_value_order_preserved`, `lut_matches_the_mapping_outside_the_darkest_cell` |
 | **Alpha preserved exactly, no halos.** | Cutouts must drop back into the game unchanged in shape. | `rule_alpha_preserved_and_no_halos` |
