@@ -188,6 +188,10 @@ pub struct TargetRules {
     pub max_actor_delight: f32,
     pub max_actor_lift: f32,
     pub max_actor_hue: f32,
+    pub max_background_grouping: f32,
+    pub max_background_accent: f32,
+    pub max_background_warm_cool: f32,
+    pub max_background_palette: f32,
 }
 
 #[derive(Debug, Deserialize)]

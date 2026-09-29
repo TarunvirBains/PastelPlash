@@ -393,6 +393,27 @@ fn rule_actor_targets_leave_lighting_to_the_renderer() {
 }
 
 #[test]
+fn rule_backgrounds_get_the_gentlest_treatment() {
+    let c = &contract().target;
+    for path in targets() {
+        let config = Config::load(None, Some(&path), None).unwrap();
+        let bg = config.target.treatment(Category::Background);
+        let n = name(&path);
+        for (key, v, max) in [
+            ("grouping", bg.grouping, c.max_background_grouping),
+            ("accent", bg.accent, c.max_background_accent),
+            ("warm_cool", bg.warm_cool, c.max_background_warm_cool),
+            ("hue", bg.hue, c.max_background_palette),
+            ("warmth", bg.warmth, c.max_background_palette),
+            ("chroma_floor", bg.chroma_floor, c.max_background_palette),
+            ("dark_chroma", bg.dark_chroma, c.max_background_palette),
+        ] {
+            assert!(v <= max, "{n}: background {key} {v} (at most {max})");
+        }
+    }
+}
+
+#[test]
 fn rule_palette_output_is_in_gamut_and_finite() {
     for (name, _, _, lut) in luts() {
         for v in &lut.data {

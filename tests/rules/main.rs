@@ -24,26 +24,7 @@ use pastelplash::image::Image;
 /// Real rule failures that are known and waiting for a decision (a style or contract change),
 /// as (rule, case label). They are printed on every run instead of failing it; a listed case
 /// that passes again is reported so it can be removed.
-const EXPECTED_FAILURES: &[(&str, &str)] = &[
-    // Pre-rendered backgrounds still get value grouping and compression that crowd the darks
-    // toward the lights; the gentler background treatment (next change) removes these.
-    (
-        "no negative: dark and light stay one family",
-        "impressionist [base] Background",
-    ),
-    (
-        "no negative: dark and light stay one family",
-        "ss-baseline [base] Background",
-    ),
-    (
-        "no negative: dark and light stay one family",
-        "ss-impressionist [base] Background",
-    ),
-    (
-        "no negative: dark and light stay one family",
-        "watercolor [base] Background",
-    ),
-];
+const EXPECTED_FAILURES: &[(&str, &str)] = &[];
 
 /// Every category the stage restyles.
 pub const STYLIZED: [Category; 4] = [

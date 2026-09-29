@@ -20,7 +20,15 @@ pub(super) fn lut(external: Option<&Arc<Lut3d>>, style: &Style, tr: &Treatment) 
     Some(LutSpec::Palette {
         key: (
             fingerprint(&style.palette),
-            [tr.floor_scale, tr.shadow_tint, tr.hue, tr.warmth].map(f32::to_bits),
+            [
+                tr.floor_scale,
+                tr.shadow_tint,
+                tr.hue,
+                tr.warmth,
+                tr.chroma_floor,
+                tr.dark_chroma,
+            ]
+            .map(f32::to_bits),
         ),
         palette: Box::new(style.palette.clone()),
         treatment: tr.clone(),

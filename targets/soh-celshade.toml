@@ -28,15 +28,25 @@ warm_cool = 1.0
 shadow_tint = 1.0
 accent = 1.0
 
-# Pre-rendered backdrops: their painted lighting is the scene's lighting, so no de-lighting.
+# Pre-rendered backdrops (Link's house, the shops, the market): finished paintings with the
+# designers' lighting, so the gentlest treatment. No de-lighting, no value grouping, no
+# abstraction, no accents or warm/cool split (one color family); the palette's hue pulls, warmth
+# and chroma floors held back (brown stays brown); light brushwork; the painted texture recedes a
+# little (softer local contrast) while the room's light and dark masses stay.
 [categories.background]
 delight = 0.0
-warm_cool = 0.5
+warm_cool = 0.0
 shadow_tint = 1.0
-accent = 1.0
-abstraction = 0.0      # a finished painting: keep every painted object
-value_contrast = 0.6   # gentle compression and strokes
-grouping = 0.5         # gentler value grouping; small painted objects keep their value
+accent = 0.0
+abstraction = 0.0      # keep every painted object (tool handles, bowls)
+grouping = 0.0
+value_contrast = 0.9   # recede: local contrast softened, the big masses kept
+hue = 0.3
+warmth = 0.3
+chroma_floor = 0.3
+dark_chroma = 0.35     # the room's shadows: lifted and colored, not re-saturated
+strokes = 0.5          # light brushwork
+radius_scale = 0.8
 # The room's lighting and mood are painted in: keep the murk lift (crushed darks become readable
 # colored shadow), then bring mids and lights down with a monotone curve so the room's mean
 # lightness (its exposure) matches the source.

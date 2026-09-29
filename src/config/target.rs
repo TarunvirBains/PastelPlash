@@ -64,6 +64,12 @@ pub struct Treatment {
     pub exposure: Exposure,
     /// Multiplies the palette's earth warmth.
     pub warmth: f32,
+    /// Multiplies the palette groups' chroma floors (`c_min`, "pastel is not gray"): < 1 keeps a
+    /// finished painting's dull browns brown instead of lifting them toward the reference chroma.
+    pub chroma_floor: f32,
+    /// Multiplies the palette's dark chroma floor (`dark_chroma`): < 1 keeps a finished painting's
+    /// dim shadows as the designers painted them (lifted, colored, but not re-saturated).
+    pub dark_chroma: f32,
     /// Multiplies a mood's moonlight cast (0 for relit categories: the renderer lights them).
     pub cast: f32,
 }
@@ -87,6 +93,8 @@ impl Default for Treatment {
             value_contrast: 1.0,
             warmth: 1.0,
             cast: 1.0,
+            chroma_floor: 1.0,
+            dark_chroma: 1.0,
             abstraction: 1.0,
             grouping: 1.0,
             exposure: Exposure::default(),

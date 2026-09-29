@@ -282,6 +282,10 @@ pub struct Mapping<'a> {
     pub hue_scale: f32,
     /// Scales the earth warmth (target `warmth`).
     pub warmth_scale: f32,
+    /// Scales the groups' chroma floors (target `chroma_floor`).
+    pub floor_c_scale: f32,
+    /// Scales the dark chroma floor (target `dark_chroma`).
+    pub dark_c_scale: f32,
 }
 
 impl<'a> Mapping<'a> {
@@ -293,6 +297,8 @@ impl<'a> Mapping<'a> {
             lift_scale: tr.floor_scale,
             shadow_scale: tr.shadow_tint,
             hue_scale: tr.hue,
+            floor_c_scale: tr.chroma_floor,
+            dark_c_scale: tr.dark_chroma,
         }
     }
 }
@@ -429,7 +435,7 @@ impl Mapping<'_> {
         // The floor never more than doubles a source's chroma, so a faint cast (gray curtain
         // folds with a hint of blue) isn't amplified into colored stripes.
         let colored = smoothstep(p.neutral_c, p.neutral_c * 2.5, c) * s.min(1.0);
-        c2 = c2.max((g.c_min * colored).min(2.0 * c));
+        c2 = c2.max((g.c_min * self.floor_c_scale * colored).min(2.0 * c));
         // Targeted earth warmth (weight 0 exactly outside the source band).
         let wm = &p.warmth;
         let ww = warmth_weight(wm, h, c)
@@ -488,7 +494,7 @@ impl Mapping<'_> {
         if p.dark_chroma > 0.0 {
             // Full strength until just below `dark_below`, fading out just above it.
             let dark = 1.0 - smoothstep(p.dark_below - 0.03, p.dark_below + 0.05, ll);
-            let want = p.dark_chroma * dark * s.min(1.0);
+            let want = p.dark_chroma * self.dark_c_scale * dark * s.min(1.0);
             if cc < want {
                 // Keep the source's own hue when it is clearly hued; near-neutrals (a faint
                 // cast, e.g. a white curtain's fold shadows) take the shadow tint's hue, so the
@@ -540,6 +546,8 @@ mod tests {
             shadow_scale: 1.0,
             hue_scale: 1.0,
             warmth_scale: 1.0,
+            floor_c_scale: 1.0,
+            dark_c_scale: 1.0,
         }
     }
 

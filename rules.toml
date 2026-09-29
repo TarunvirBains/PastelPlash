@@ -142,6 +142,13 @@ max_actor_cast = 0.0
 max_actor_delight = 0.4
 max_actor_lift = 0.5
 max_actor_hue = 0.5
+# Pre-rendered backgrounds (finished paintings) get the gentlest treatment: no value grouping,
+# accents or warm/cool split (one color family), and the palette's hue pulls, earth warmth,
+# chroma floor and dark chroma held back to at most max_background_palette.
+max_background_grouping = 0.0
+max_background_accent = 0.0
+max_background_warm_cool = 0.0
+max_background_palette = 0.35
 
 # Rendered actor preservation: colored actor texels keep their color and value.
 [actor]
