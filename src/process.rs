@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
-use rayon::prelude::*;
 
 use crate::config::{Category, Config, Mood};
 use crate::driver::Driver;
@@ -108,20 +107,19 @@ pub fn run(opts: &Options, config: &Config, pipeline: &Pipeline) -> Result<Summa
     println!("{}", est.summary());
     crate::preflight::check_disk(&opts.output, est.bytes)?;
 
-    let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(opts.jobs.unwrap_or(0))
-        .build()?;
-    let results: Vec<(Action, bool)> = pool.install(|| {
-        jobs.par_iter()
-            .map(|&(rel, action)| {
-                let result = handle(opts, &driver, rel, action);
-                if let Err(e) = &result {
-                    eprintln!("error: {e:#}");
-                }
-                (action, result.is_ok())
-            })
-            .collect()
-    });
+    // Files are driven from plain threads, never rayon workers (see `util::map_on_threads`).
+    let results: Vec<(Action, bool)> = crate::util::map_on_threads(
+        &jobs,
+        opts.jobs.unwrap_or(0),
+        || (),
+        |(), &(rel, action)| {
+            let result = handle(opts, &driver, rel, action);
+            if let Err(e) = &result {
+                eprintln!("error: {e:#}");
+            }
+            (action, result.is_ok())
+        },
+    );
 
     for (action, ok) in results {
         let count = match action {

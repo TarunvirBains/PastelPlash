@@ -184,9 +184,10 @@ pub fn run(opts: &Options, config: &Config, pipeline: &Pipeline) -> Result<()> {
     // Writer thread: stored (uncompressed) entries, like the source packs.
     let output = opts.output.clone();
     let timers_ref = &timers;
-    let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(opts.jobs.unwrap_or(0))
-        .build()?;
+    let workers = match opts.jobs.unwrap_or(0) {
+        0 => std::thread::available_parallelism().map_or(1, |n| n.get()),
+        n => n,
+    };
     let (written, failed) = std::thread::scope(|scope| -> Result<(usize, usize)> {
         let writer = scope.spawn(move || -> Result<(usize, usize)> {
             if let Some(dir) = output.parent() {
@@ -223,30 +224,31 @@ pub fn run(opts: &Options, config: &Config, pipeline: &Pipeline) -> Result<()> {
             Ok((written, failed))
         });
 
-        pool.install(|| {
-            names.par_iter().for_each_init(
-                || zip::ZipArchive::new(File::open(&opts.input).unwrap()).unwrap(),
-                |archive, name| {
-                    let result = handle(archive, name, opts, &driver, &timers);
-                    let msg = match result {
-                        Ok(Some((data, did_process))) => {
-                            if did_process {
-                                processed.fetch_add(1, Ordering::Relaxed);
-                            } else {
-                                copied.fetch_add(1, Ordering::Relaxed);
-                            }
-                            Out::Entry(name.clone(), data)
+        // Files are driven from plain threads, never rayon workers (see `util::map_on_threads`).
+        crate::util::map_on_threads(
+            &names,
+            workers,
+            || zip::ZipArchive::new(File::open(&opts.input).unwrap()).unwrap(),
+            |archive, name| {
+                let result = handle(archive, name, opts, &driver, &timers);
+                let msg = match result {
+                    Ok(Some((data, did_process))) => {
+                        if did_process {
+                            processed.fetch_add(1, Ordering::Relaxed);
+                        } else {
+                            copied.fetch_add(1, Ordering::Relaxed);
                         }
-                        Ok(None) => return,
-                        Err(e) => {
-                            eprintln!("error: {name}: {e:#}");
-                            Out::Failed
-                        }
-                    };
-                    let _ = tx.send(msg);
-                },
-            );
-        });
+                        Out::Entry(name.clone(), data)
+                    }
+                    Ok(None) => return,
+                    Err(e) => {
+                        eprintln!("error: {name}: {e:#}");
+                        Out::Failed
+                    }
+                };
+                let _ = tx.send(msg);
+            },
+        );
         drop(tx);
         writer.join().unwrap()
     })?;
@@ -262,7 +264,7 @@ pub fn run(opts: &Options, config: &Config, pipeline: &Pipeline) -> Result<()> {
     println!(
         "wall {wall:.2}s | summed over {} workers: read {:.2}s, decode {:.2}s, pipeline {:.2}s, \
          encode {:.2}s | writer {:.2}s | in {:.0} MB, out {:.0} MB ({:.0} MB/s in)",
-        pool.current_num_threads(),
+        workers,
         secs(&timers.read),
         secs(&timers.decode),
         secs(&timers.pipeline),
