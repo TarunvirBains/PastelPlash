@@ -17,6 +17,8 @@ wgpu = "30.0.1"
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
+# wgpu's naga, for the golden-hash test's HLSL check (keep the version equal to wgpu's).
+naga = { version = "=30.0.1", features = ["wgsl-in", "hlsl-out"] }
 proptest = "1"
 serde = { version = "1", features = ["derive"] }
 tempfile = "3.27.0"
