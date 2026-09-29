@@ -2,7 +2,27 @@
 name = "pastelplash"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.96"
+description = "Restyle PNG and OTEX texture packs into a painterly watercolor and impressionist look on the GPU"
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/TarunvirBains/PastelPlash"
+readme = "README.md"
+keywords = ["texture-pack", "watercolor", "wgpu", "modding", "restyle"]
+categories = ["command-line-utilities", "multimedia::images", "game-development"]
+# The crate needs its sources, the built-in styles (compiled in) and the sample configs; test
+# fixtures, golden hashes and dev scripts stay in the repository.
+include = [
+    "/src/**",
+    "/styles/**",
+    "/targets/**",
+    "/packs/**",
+    "/reference/**",
+    "/Cargo.toml",
+    "/Cargo.lock",
+    "/README.md",
+    "/LICENSE-MIT",
+    "/LICENSE-APACHE",
+]
 
 [dependencies]
 anyhow = "1.0.104"
