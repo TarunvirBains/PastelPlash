@@ -10,26 +10,33 @@ l_floor = 0.27
 harmonize = 0.1
 neutral_tint = { hue = 105.0, chroma = 0.014, amount = 0.5 }
 
-# Same groups as watercolor (entries merge in order), with stronger SS pulls.
+# The watercolor groups (merged by name), with stronger SS pulls.
 [[palette.groups]]
+name = "red_pink"
 hue_pull = 0.3
 
 [[palette.groups]]
+name = "orange_brown_earth"
 hue_pull = 0.35
 
 [[palette.groups]]
+name = "yellow_olive"
 hue_pull = 0.25
 
 [[palette.groups]]
+name = "green_foliage"
 hue_pull = 0.45
 
 [[palette.groups]]
+name = "cyan_teal"
 hue_pull = 0.3
 
 [[palette.groups]]
+name = "blue_sky_water"
 hue_pull = 0.5
 
 [[palette.groups]]
+name = "violet_magenta"
 hue_pull = 0.3
 
 [value_contrast]
