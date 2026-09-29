@@ -125,6 +125,48 @@ fn rule_coarse_identity_is_kept() {
 }
 
 #[test]
+fn rule_coarse_light_pattern_survives() {
+    // Busy bark with large pale lichen patches: compression and glare calming must keep the
+    // coarse light/dark pattern (the patches), not flatten it into a monotone surface.
+    use pastelplash::report::coarse_l_pattern;
+    let k = contract();
+    let wall = bark(256, 31);
+    let img = image(256, 256, |x, y| {
+        let p = wall.pixels[(y * 256 + x) as usize];
+        let (fx, fy) = (x as f32, y as f32);
+        let lichen = smooth_noise(fx, fy, 3, 256, 32) > 0.62;
+        if lichen {
+            let [r, g, b] = from_oklch(0.8 + 0.08 * (noise(x, y, 33) - 0.5), 0.012, 100.0);
+            [r, g, b, 1.0]
+        } else {
+            p
+        }
+    });
+    for (label, path, config, mood) in style_moods() {
+        let Some(out) = render_mood(&path, &config, Category::World, &mood, &img) else {
+            return;
+        };
+        let (corr, range) = coarse_l_pattern(&img, &out, 16);
+        let style_name = label.split(" [").next().unwrap_or_default();
+        let (_, max_l) = k.identity.coarse_bounds(style_name);
+        // Opt-in light styles lift everything and legitimately shrink the range.
+        let min_range = if max_l > k.identity.coarse_max_lightness {
+            0.2
+        } else {
+            k.identity.coarse_min_pattern_range
+        };
+        assert!(
+            corr >= k.identity.coarse_min_pattern_corr,
+            "{label}: lichen pattern correlation {corr:.2}"
+        );
+        assert!(
+            range >= min_range,
+            "{label}: lichen pattern range kept {range:.2}"
+        );
+    }
+}
+
+#[test]
 fn rule_small_objects_survive() {
     // Busy textures get a large-scale abstraction; it must never erase small salient objects
     // (hooks, tools, bowls painted into a wall). Thin dark sticks and small bright squares on a

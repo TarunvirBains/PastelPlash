@@ -93,6 +93,10 @@ max_group_hue_shift = 20.0
 # within a cell and does not register at this scale.
 coarse_max_color = 0.06
 coarse_max_lightness = 0.2
+# Coarse lightness PATTERN (16x16 cell means): large light/dark patches (lichen, sunlit areas)
+# must survive — correlation with the source grid, and the share of its p10..p90 range kept.
+coarse_min_pattern_corr = 0.9
+coarse_min_pattern_range = 0.45
 
 [identity.styles]
 ss-baseline = 0.15

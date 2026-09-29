@@ -115,6 +115,66 @@ pub fn mean_oklab(img: &crate::image::Image) -> [f32; 3] {
     s.map(|v| (v / w) as f32)
 }
 
+/// The coarse lightness pattern: alpha-weighted mean OKLab L per cell of a `cells`×`cells` grid,
+/// for source and output. Returns (Pearson correlation of the two grids, output's p10..p90 cell
+/// range ÷ source's). Losing large light/dark patches (lichen, sunlit areas) lowers both.
+pub fn coarse_l_pattern(
+    a: &crate::image::Image,
+    b: &crate::image::Image,
+    cells: u32,
+) -> (f32, f32) {
+    let grid = |img: &crate::image::Image| {
+        let (w, h, n) = (img.width as usize, img.height as usize, cells as usize);
+        let mut acc = vec![[0.0f64; 2]; n * n];
+        for y in 0..h {
+            for x in 0..w {
+                let p = img.pixels[y * w + x];
+                let c = &mut acc[(y * n / h) * n + x * n / w];
+                c[0] += (color::srgb_to_oklab([p[0], p[1], p[2]])[0] * p[3]) as f64;
+                c[1] += p[3] as f64;
+            }
+        }
+        acc
+    };
+    let (ga, gb) = (grid(a), grid(b));
+    let pairs: Vec<(f64, f64)> = ga
+        .iter()
+        .zip(&gb)
+        .filter(|(x, y)| x[1] > 0.0 && y[1] > 0.0)
+        .map(|(x, y)| (x[0] / x[1], y[0] / y[1]))
+        .collect();
+    if pairs.len() < 4 {
+        return (1.0, 1.0);
+    }
+    let n = pairs.len() as f64;
+    let (ma, mb) = (
+        pairs.iter().map(|p| p.0).sum::<f64>() / n,
+        pairs.iter().map(|p| p.1).sum::<f64>() / n,
+    );
+    let (mut sab, mut saa, mut sbb) = (0.0, 0.0, 0.0);
+    for (x, y) in &pairs {
+        sab += (x - ma) * (y - mb);
+        saa += (x - ma).powi(2);
+        sbb += (y - mb).powi(2);
+    }
+    let corr = if saa > 1e-12 && sbb > 1e-12 {
+        sab / (saa * sbb).sqrt()
+    } else {
+        1.0
+    };
+    let range = |mut v: Vec<f64>| {
+        v.sort_by(f64::total_cmp);
+        let q = |f: f64| v[((v.len() - 1) as f64 * f).round() as usize];
+        q(0.9) - q(0.1)
+    };
+    let (ra, rb) = (
+        range(pairs.iter().map(|p| p.0).collect()),
+        range(pairs.iter().map(|p| p.1).collect()),
+    );
+    let ratio = if ra > 1e-6 { rb / ra } else { 1.0 };
+    (corr as f32, ratio as f32)
+}
+
 /// Which part of the color difference [`coarse_delta_e`] measures.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CoarsePart {
@@ -332,10 +392,16 @@ pub fn metrics(src: &Path, out: &Path, baseline: Option<&Path>) -> Result<String
         };
         let ((_, c90, cmax), (_, l90, _)) =
             (coarse(CoarsePart::Color), coarse(CoarsePart::Lightness));
+        let (pcorr, prange) = if same {
+            coarse_l_pattern(&ia, &ib, 16)
+        } else {
+            (f32::NAN, f32::NAN)
+        };
+        let l90 = format!("{l90:.3}, L pattern r {pcorr:.2} range {prange:.2}");
         let _ = writeln!(
             text,
             "{:<44} L std 7x7 {:.4}->{:.4}, 25x25 {:.4}->{:.4} | coarse Δab p90 {c90:.3} max \
-             {cmax:.3}, ΔL p90 {l90:.3} | {dark}{base}",
+             {cmax:.3}, ΔL p90 {l90} | {dark}{base}",
             e.rel.file_stem().unwrap_or_default().to_string_lossy(),
             lb[0],
             la[0],

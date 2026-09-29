@@ -69,6 +69,8 @@ pub struct IdentityRules {
     pub max_group_hue_shift: f32,
     pub coarse_max_color: f32,
     pub coarse_max_lightness: f32,
+    pub coarse_min_pattern_corr: f32,
+    pub coarse_min_pattern_range: f32,
     /// Larger bounds for named opt-in styles.
     #[serde(default)]
     pub styles: std::collections::BTreeMap<String, f32>,
