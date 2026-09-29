@@ -599,3 +599,42 @@ pub fn near_black_colors(size: u32, seed: u32) -> Image {
         [r, g, b, 1.0]
     })
 }
+
+/// Near-neutral darks with a faint cast of `hue` (steel and iron plates, slate carvings, a
+/// green-gray door): mottled lightness 0.1-0.4 with darker grooves every 24 texels, chroma about
+/// `chroma` (lightness-relative chroma stays below 0.03: "neutral" to the palette), with small
+/// enamel insets of the same hue (3% of the texels), so the texture is not engine-tinted gray.
+pub fn faint_cast_darks(size: u32, seed: u32, hue: f32, chroma: f32) -> Image {
+    image(size, size, |x, y| {
+        if inset(x, y) {
+            let [r, g, b] = from_oklch(0.45, 0.1, hue);
+            return [r, g, b, 1.0];
+        }
+        let (fx, fy) = (x as f32, y as f32);
+        let groove = if x % 24 < 3 || y % 24 < 3 { 0.55 } else { 1.0 };
+        let l =
+            (0.12 + 0.26 * smooth_noise(fx, fy, 6, size, seed) + 0.03 * noise(x, y, seed)) * groove;
+        let c = chroma * (0.6 + 0.4 * noise(x, y, seed + 1));
+        let [r, g, b] = from_oklch(l.max(0.06), c, hue + 10.0 * (noise(x, y, seed + 2) - 0.5));
+        [r, g, b, 1.0]
+    })
+}
+
+/// A near-black neutral wall (lightness 0.02-0.12, no cast), with soft mottling and small cool
+/// blue-gray insets (3% of the texels), so the texture is not engine-tinted gray.
+pub fn black_wall(size: u32, seed: u32) -> Image {
+    image(size, size, |x, y| {
+        if inset(x, y) {
+            let [r, g, b] = from_oklch(0.35, 0.08, 250.0);
+            return [r, g, b, 1.0];
+        }
+        let l = 0.02 + 0.1 * smooth_noise(x as f32, y as f32, 7, size, seed);
+        let v = color::oklab_to_srgb([l, 0.0, 0.0]).map(|v| v.clamp(0.0, 1.0));
+        [v[0], v[1], v[2], 1.0]
+    })
+}
+
+/// Small square insets, 8 of every 48 texels in each direction (about 3% of the texels).
+fn inset(x: u32, y: u32) -> bool {
+    (30..38).contains(&(x % 48)) && (30..38).contains(&(y % 48))
+}

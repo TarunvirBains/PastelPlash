@@ -198,6 +198,7 @@ impl Planner {
         };
         palette::write(&mut params, lut.as_ref(), &facts, &tr);
         palette::write_cast(&mut params, style, &tr, lut.is_some());
+        let dark_reach = palette::write_dark_floor(&mut params, lut.as_ref(), &tr, &facts);
         delight.write(&mut params, lowres.as_ref());
         grouping.write(&mut params, style);
         kuwahara.write(&mut params);
@@ -222,6 +223,7 @@ impl Planner {
             1.5 * speck.radius,
             speck.clip_radius,
             3.2 * speck.thin_radius,
+            dark_reach,
         ]
         .into_iter()
         .fold(0.0f32, f32::max);

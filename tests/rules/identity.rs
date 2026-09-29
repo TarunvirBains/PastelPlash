@@ -270,7 +270,88 @@ fn rule_world_colors_bring_no_new_hue() {
             return;
         }
     }
+    // Neutral and faintly cool darks keep their family in the world and in pre-rendered rooms:
+    // the umber floor for neutral darks is for warm neighborhoods. Steel doors and iron grids
+    // came out copper, the Forest Temple's navy-violet boss door ochre, the Water Temple's slate
+    // carvings rust, a green-gray door ochre (the umber floor, and the LUT's interpolation
+    // between umber and cool nodes).
+    let matrix = Matrix::full(&[Category::World, Category::Background]);
+    for (label, img) in [
+        ("steel", faint_cast_darks(192, 177, 250.0, 0.006)),
+        ("violet iron", faint_cast_darks(192, 178, 295.0, 0.006)),
+        ("green-gray door", faint_cast_darks(192, 179, 145.0, 0.006)),
+        ("black wall", black_wall(192, 180)),
+    ] {
+        let rendered = matrix.check(&mut report, &img, |case, out| {
+            brings_no_new_hue(label, &img, case, out, min_c, gap)?;
+            neutral_darks_gain_no_warmth(label, &img, out)
+        });
+        if !rendered {
+            return;
+        }
+    }
     report.finish();
+}
+
+/// No near-neutral source texel that comes out dark (below `palette.mud_l`) and whose 9x9 source neighborhood does not lean warm
+/// (`palette.warm_context_*`) comes out warm (`palette.neutral_dark_max_warm_chroma`), beyond
+/// the outlier budget.
+fn neutral_darks_gain_no_warmth(label: &str, img: &Image, out: &Image) -> Result<(), String> {
+    let k = contract();
+    let (w, h) = (img.width as i32, img.height as i32);
+    let src: Vec<[f32; 3]> = img
+        .pixels
+        .iter()
+        .map(|&p| pastelplash::color::srgb_to_oklab([p[0], p[1], p[2]]))
+        .collect();
+    let (mut bad, mut n) = (0usize, 0usize);
+    let mut example = None;
+    for y in 0..h {
+        for x in 0..w {
+            let i = (y * w + x) as usize;
+            let s = src[i];
+            if img.pixels[i][3] < 0.5
+                || !k.palette.near_neutral(s)
+                || lch(out.pixels[i])[0] >= k.palette.mud_l
+            {
+                continue;
+            }
+            let (mut a, mut b, mut m) = (0.0, 0.0, 0.0);
+            for dy in -4..=4 {
+                for dx in -4..=4 {
+                    let j = ((y + dy).clamp(0, h - 1) * w + (x + dx).clamp(0, w - 1)) as usize;
+                    let c = src[j][1].hypot(src[j][2]);
+                    let f = if c > 0.03 { 0.03 / c } else { 1.0 };
+                    a += src[j][1] * f;
+                    b += src[j][2] * f;
+                    m += 1.0;
+                }
+            }
+            if k.palette.warm_leaning([a / m, b / m]) {
+                continue;
+            }
+            n += 1;
+            let o = lch(out.pixels[i]);
+            if k.palette.turned_warm(o) {
+                bad += 1;
+                example.get_or_insert_with(|| {
+                    let s = lch(img.pixels[i]);
+                    format!(
+                        "({x},{y}) LCh {:.2} {:.3} {:.0} -> {:.2} {:.3} {:.0}",
+                        s[0], s[1], s[2], o[0], o[1], o[2]
+                    )
+                });
+            }
+        }
+    }
+    let budget = (n as f32 * k.tolerance.outliers).ceil() as usize;
+    ensure(bad <= budget, || {
+        format!(
+            "{label}: {bad} of {n} neutral darks in a cool or neutral neighborhood turned warm \
+             (budget {budget}); e.g. {}",
+            example.unwrap_or_default()
+        )
+    })
 }
 
 #[test]

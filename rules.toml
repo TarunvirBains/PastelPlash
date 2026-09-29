@@ -26,6 +26,16 @@ min_l = 0.15
 dark_l = 0.3
 dark_min_chroma = 0.015
 colored_darks_exempt = ["actor"]
+# The umber is for warm places. A near-neutral dark (lightness-relative chroma below 0.03) takes
+# the warm umber floor only where its neighborhood leans warm (mean a/b chroma at least
+# warm_context_min_chroma, hue in warm_context_band). In a cool, otherwise hued or neutral
+# neighborhood it keeps its own family: it comes out warm (hue in warm_context_band) with at most
+# neutral_dark_max_warm_chroma, and it need not reach dark_min_chroma (steel stays steel, a
+# black wall stays near-black). A style's `dark_context` stays inside these (its warm band
+# within this one, its neutral threshold at least warm_context_min_chroma).
+warm_context_band = [30.0, 115.0]
+warm_context_min_chroma = 0.003
+neutral_dark_max_warm_chroma = 0.015   # a faint tint (the palette's olive neutral tint on grays), never umber
 # No brown mud: an output darker than mud_l with a hue in mud_hue must not be dull
 # (chroma between neutral and mud_max_chroma).
 mud_l = 0.4

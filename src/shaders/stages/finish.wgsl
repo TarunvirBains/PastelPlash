@@ -204,6 +204,121 @@ fn finish_palette(c: vec4<f32>, src: vec3<f32>, tint_safe: bool) -> vec4<f32> {
     return vec4<f32>(mapped, e.a);
 }
 
+// A source sample counts toward its neighborhood's mean with at most this chroma, so a few
+// saturated flecks don't decide the neighborhood (palette::context_sample).
+const CONTEXT_MAX_CHROMA: f32 = 0.03;
+
+// Mean a/b of the source neighborhood of `p` (xy) and of its near-neutral samples alone (zw): the
+// texel and three rings at ctx_r/4, ctx_r/2 and ctx_r (opaque samples only).
+fn dark_context(p: vec2<i32>) -> vec4<f32> {
+    var sum = vec2<f32>(0.0);
+    var faint = vec2<f32>(0.0);
+    var n = 0.0;
+    var nf = 0.0;
+    for (var k = 0; k < 25; k++) {
+        var q: vec4<f32>;
+        if (k == 0) {
+            q = textureLoad(texD, p, 0);
+        } else {
+            let ring = (k - 1) / 8;
+            let r = P.ctx_r * select(select(1.0, 0.5, ring == 1), 0.25, ring == 0);
+            let ang = (f32((k - 1) % 8) + 0.5 * f32(ring % 2)) * 0.78539816;
+            q = textureLoad(texD, addr(p + vec2<i32>(round(vec2<f32>(cos(ang), sin(ang)) * r))), 0);
+        }
+        if (q.a <= 0.0) { continue; }
+        let lab = srgb_to_oklab(q.rgb);
+        let c = length(lab.yz);
+        let s = select(lab.yz, lab.yz * (CONTEXT_MAX_CHROMA / c), c > CONTEXT_MAX_CHROMA);
+        sum += s;
+        n += 1.0;
+        if (c * max(1.0, 0.55 / (max(lab.x, 0.0) + 0.05)) < 0.03) {
+            faint += s;
+            nf += 1.0;
+        }
+    }
+    return vec4<f32>(sum / max(n, 1.0), faint / max(nf, 1.0));
+}
+
+// True if hue `h` (degrees) lies in [lo, hi] (which may wrap).
+fn in_hue_band(lo: f32, hi: f32, h: f32) -> bool {
+    let span = (hi - lo) - 360.0 * floor((hi - lo) / 360.0);
+    let x = (h - lo) - 360.0 * floor((h - lo) / 360.0);
+    return x <= span;
+}
+
+// Hue of an a/b vector in degrees, 0..360.
+fn ab_hue(ab: vec2<f32>) -> f32 {
+    let h = degrees(atan2(ab.y, ab.x));
+    return select(h, h + 360.0, h < 0.0);
+}
+
+// The dark floor's result: the lab color and floor (lf), and how much the texel is a
+// near-neutral dark that keeps its own family (a cool, otherwise hued or neutral neighborhood):
+// the warm/cool temperature split adds no hue there.
+struct DarkOut { lf: vec4<f32>, own: f32 };
+
+// The colored-shadow floor of dark texels and the neutral share of the shadow tint, per texel
+// (same math as `palette::DarkFloor::apply`): a clearly colored dark keeps its own hue; a
+// near-neutral one takes its source neighborhood's: warm-leaning neighborhoods the warm umber,
+// other hued ones their own hue at most ctx_gain times the chroma of their near-neutral surface
+// (steel stays steel), neutral ones none (a black wall stays near-black). A hard switch per
+// texel: no mix between umber and a cool hue (mud, teal) as a LUT interpolates. `lf` is the
+// mapped lab color and, in w, the floor.
+fn finish_dark_floor(p: vec2<i32>, lf: vec4<f32>, src: vec3<f32>, tint_safe: bool) -> DarkOut {
+    if (!(P.df_on > 0.0) || tint_safe) { return DarkOut(lf, 0.0); }
+    let l_src = max(src.x, 0.0);
+    let c_rel = length(src.yz) * max(1.0, 0.55 / (l_src + 0.05));
+    var lab = lf.xyz;
+    let dark = 1.0 - smoothstep(P.df_below - 0.03, P.df_below + 0.05, lab.x);
+    let tint_w = P.df_tint * (1.0 - smoothstep(0.02, 0.04, c_rel))
+        * (1.0 - smoothstep(0.0, P.df_tint_below, l_src));
+    if (!(dark > 0.0) && !(tint_w > 0.0)) { return DarkOut(lf, 0.0); }
+    let neutral = c_rel < 0.03;
+    // 0: warm, 1: hued, 2: neutral (only near-neutral texels need their neighborhood).
+    var kind = 2;
+    var c_hue = 0.0;
+    var c_chroma = 0.0;
+    if (c_rel < 0.04) {
+        let ctx = dark_context(p);
+        if (length(ctx.xy) >= P.ctx_neutral) {
+            c_hue = ab_hue(ctx.xy);
+            c_chroma = length(ctx.zw);
+            kind = select(1, 0, in_hue_band(P.ctx_warm0, P.ctx_warm1, c_hue));
+        }
+    }
+    let umber = hue_dir(radians(P.df_hue));
+    if (kind == 0 && tint_w > 0.0) {
+        lab = vec3<f32>(lab.x, mix(lab.yz, umber * P.df_tint_chroma, tint_w));
+    }
+    if (!(P.df_chroma > 0.0)) {
+        return DarkOut(vec4<f32>(lab, lf.w), select(0.0, dark, neutral && kind != 0));
+    }
+    var cc = length(lab.yz);
+    var hh = ab_hue(lab.yz);
+    // A dull warm dark in a neutral neighborhood would be mud: it takes the umber floor too.
+    if (neutral && kind == 2 && cc >= 0.01 && in_hue_band(P.ctx_warm0, P.ctx_warm1, hh)) { kind = 0; }
+    let want = P.df_chroma * dark;
+    if (cc < want) {
+        if (!neutral) {
+            cc = want;
+        } else if (kind == 0) {
+            hh = P.df_hue;
+            cc = want;
+        } else if (kind == 1) {
+            let t = min(want, P.ctx_gain * c_chroma);
+            if (cc < t) { hh = c_hue; cc = t; }
+        }
+    }
+    if (P.df_cool_bias > 0.0) {
+        var d = P.df_cool_hue - hh;
+        d = d - 360.0 * round(d / 360.0);
+        hh += P.df_cool_bias * dark * (1.0 - smoothstep(110.0, 160.0, abs(d))) * d;
+    }
+    let own = select(0.0, dark, neutral && kind != 0);
+    return DarkOut(vec4<f32>(lab.x, hue_dir(radians(hh)) * cc, lf.w), own);
+}
+
+
 fn cast_exposure(l: f32) -> f32 {
     if (l <= P.cast_pivot) { return l; }
     return P.cast_pivot + (l - P.cast_pivot) * (1.0 - P.cast_s * (1.0 - P.cast_exposure));
@@ -262,12 +377,12 @@ fn finish_cast(lf: vec4<f32>, src: vec3<f32>, tint_safe: bool) -> vec4<f32> {
 }
 
 // Warm/cool temperature from the residual low-frequency shading.
-fn finish_temperature(gp: vec2<f32>, lab: vec3<f32>, tint_safe: bool) -> vec3<f32> {
-    if (!(P.temp_strength > 0.0 && P.low_w > 0 && !tint_safe)) { return lab; }
+fn finish_temperature(gp: vec2<f32>, lab: vec3<f32>, tint_safe: bool, amount: f32) -> vec3<f32> {
+    if (!(P.temp_strength > 0.0 && P.low_w > 0 && !tint_safe && amount > 0.0)) { return lab; }
     let yb = lowres_sample(gp);
     let t = clamp(log2(max(yb, 1e-4) / max(P.delight_mean, 1e-4)) * P.temp_sens, -1.0, 1.0);
     let h = select(P.temp_cool_hue, P.temp_warm_hue, t > 0.0);
-    return vec3<f32>(lab.x, lab.yz + hue_dir(h) * (P.temp_strength * abs(t)));
+    return vec3<f32>(lab.x, lab.yz + hue_dir(h) * (P.temp_strength * abs(t) * amount));
 }
 
 // Hue distance (radians, 45°) from the accent hue within which a texel counts as cool family.
@@ -574,9 +689,11 @@ fn finish(@builtin(global_invocation_id) gid: vec3<u32>) {
     c = finish_glare(p, c);
     let src = srgb_to_oklab(c.rgb);
     var lf = finish_palette(c, src, tint_safe);
+    let dk = finish_dark_floor(p, lf, src, tint_safe);
+    lf = dk.lf;
     lf = finish_cast(lf, src, tint_safe);
     lf = vec4<f32>(finish_terracotta(lf.xyz, tint_safe), lf.w);
-    lf = vec4<f32>(finish_temperature(gp, lf.xyz, tint_safe), lf.w);
+    lf = vec4<f32>(finish_temperature(gp, lf.xyz, tint_safe, 1.0 - dk.own), lf.w);
     lf = finish_accent(p, lf, tint_safe);
     var lab = lf.xyz;
     lab = finish_strokes(p, lab);

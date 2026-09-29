@@ -48,6 +48,39 @@ pub(super) fn write(p: &mut Params, lut: Option<&LutSpec>, facts: &ImageFacts, t
     p.ceiling_knee = tr.ceiling_knee;
 }
 
+/// Writes the per-texel dark floor (`crate::palette::DarkFloor`: off unless the generated palette
+/// LUT defers it) and returns its reach in texels (the neighborhood radius).
+pub(super) fn write_dark_floor(
+    p: &mut Params,
+    lut: Option<&LutSpec>,
+    tr: &Treatment,
+    facts: &ImageFacts,
+) -> f32 {
+    let Some(LutSpec::Palette { palette, .. }) = lut else {
+        return 0.0;
+    };
+    let Some(f) = crate::palette::DarkFloor::new(palette, tr) else {
+        return 0.0;
+    };
+    let u = facts.upscale;
+    let r = (palette.dark_context.radius * facts.scale).clamp(3.0 * u, 32.0 * u);
+    p.df_on = 1.0;
+    p.df_chroma = f.chroma;
+    p.df_below = f.below;
+    p.df_hue = f.hue;
+    p.df_tint = f.tint;
+    p.df_tint_chroma = f.tint_chroma;
+    p.df_tint_below = f.tint_below;
+    p.df_cool_bias = f.cool_bias;
+    p.df_cool_hue = f.cool_hue;
+    p.ctx_r = r;
+    p.ctx_neutral = f.neutral;
+    p.ctx_gain = f.gain;
+    p.ctx_warm0 = f.warm_band[0];
+    p.ctx_warm1 = f.warm_band[1];
+    r
+}
+
 /// Writes the moonlight cast (applied per texel after the palette LUT; see
 /// `crate::palette::apply_cast`). Off without a palette.
 pub(super) fn write_cast(p: &mut Params, style: &Style, tr: &Treatment, has_lut: bool) {

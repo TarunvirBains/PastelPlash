@@ -162,11 +162,11 @@ Verified by inspecting `OoT_Reloaded_v11.0.0_4K.o2r` (23.4 GB, 11,527 entries):
 
 - *Skyward Sword* reference screenshots (5–10: Faron Woods, Skyloft, a dungeon, an interior).
 - Permission from OoT Reloaded's author before distributing any restyled pack.
-- Possible refinement: apply the dark chroma floor per texel in `finish` (like the moonlight
-  cast) instead of baking it into the palette LUT. Exact per-texel evaluation allows a hard
-  switch (true grays take the umber floor, faint cool casts their own hue, colored darks theirs)
-  without the interpolated mud or teal a 65³ LUT produces between umber and cool nodes. Would
-  let world steel and slate keep their cool family too (actors already do: no umber floor).
+- Done (v7): the dark chroma floor is applied per texel in `finish` (`palette.dark_context`,
+  `palette::DarkFloor`) instead of in the LUT, with a hard switch by the texel's source
+  neighborhood: warm-leaning neighborhoods take the umber floor, other hued ones their own hue
+  (steel and slate stay cool), neutral ones none. No interpolated mud or teal between umber and
+  cool LUT nodes.
 
 ## License
 

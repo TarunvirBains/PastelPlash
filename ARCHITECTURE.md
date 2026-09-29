@@ -50,7 +50,9 @@ T0 upload ─delight→ T1 [─group→ T3 → copy to T1] ─tensor→ T2 ─bl
 ─finish (T4, T1, T2; T0 = the untouched upload)→ T3 → readback
 ```
 
-`finish` runs, per texel: smear, value compression, glare calming, palette LUT, a mood's
+`finish` runs, per texel: smear, value compression, glare calming, palette LUT, the dark
+floor (colored shadows: a near-neutral dark takes its hue from its source neighborhood, a switch
+a LUT can't interpolate), a mood's
 moonlight cast (per texel: it switches on the source's chroma, which a LUT can't interpolate),
 temperature,
 accents, strokes, wet edges, granulation, paper, adaptive contrast, chroma retention, floor and

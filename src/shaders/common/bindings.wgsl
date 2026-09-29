@@ -46,6 +46,10 @@ struct Params {
     tc_amount: f32, tc_hue: f32, tc_mean: f32, tc_gather: f32,
     tc_band0: f32, tc_band1: f32, tc_feather: f32, tc_min_c: f32,
     tc_boost: f32, _pad18: f32, _pad19: f32, _pad20: f32,
+    df_on: f32, df_chroma: f32, df_below: f32, df_hue: f32,
+    df_tint: f32, df_tint_chroma: f32, df_tint_below: f32, df_cool_bias: f32,
+    df_cool_hue: f32, ctx_r: f32, ctx_neutral: f32, ctx_gain: f32,
+    ctx_warm0: f32, ctx_warm1: f32, _pad21: f32, _pad22: f32,
 };
 
 struct Band { y0: i32, y1: i32, _a: i32, _b: i32 };

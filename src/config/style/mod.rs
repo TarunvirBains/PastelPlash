@@ -30,7 +30,7 @@ pub use delight::Delight;
 pub use grouping::Grouping;
 pub use kuwahara::Kuwahara;
 pub use marks::Marks;
-pub use palette::{Cast, HueGroup, Palette, Tint, Warmth, WaterTone};
+pub use palette::{Cast, DarkContext, HueGroup, Palette, Tint, Warmth, WaterTone};
 pub use scale::Scale;
 pub use strokes::Strokes;
 pub use temperature::Temperature;

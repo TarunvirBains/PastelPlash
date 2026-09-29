@@ -209,6 +209,39 @@ impl Default for WaterTone {
     }
 }
 
+/// Where a near-neutral dark takes its colored-shadow hue from (`palette.dark_chroma`), per texel
+/// in `finish` instead of in the LUT: from the dominant hue of its source neighborhood (`radius`
+/// reference texels; each sample's chroma counted up to 0.03, so a few saturated flecks do not
+/// decide it). A neighborhood that leans warm (hue in `warm_band`) takes the shadow tint's warm
+/// umber, as a baked LUT gives every neutral dark; any other hued neighborhood lends its own hue,
+/// at most `gain` times its chroma (steel stays a steel blue-gray, a green-gray door green-gray); a
+/// neutral one (chroma below `neutral`) keeps its darks neutral (a black wall stays near-black).
+/// The switch is exact per texel: no LUT interpolation between umber and cool nodes (mud, teal).
+/// Off (`radius = 0`): the floor is baked into the LUT, umber for every neutral dark.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct DarkContext {
+    /// Neighborhood radius in reference texels (0 = off).
+    pub radius: f32,
+    /// OKLab chroma of the neighborhood's mean a/b below which it counts as neutral.
+    pub neutral: f32,
+    /// OKLCH hue band of a warm-leaning neighborhood (its darks take the umber floor).
+    pub warm_band: [f32; 2],
+    /// A hued (not warm) neighborhood lends its hue at up to this multiple of its chroma.
+    pub gain: f32,
+}
+
+impl Default for DarkContext {
+    fn default() -> Self {
+        Self {
+            radius: 0.0,
+            neutral: 0.003,
+            warm_band: [30.0, 115.0],
+            gain: 2.0,
+        }
+    }
+}
+
 /// OKLCH palette mapping, baked into a 3D LUT (see `src/palette.rs` for the exact order).
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -239,6 +272,8 @@ pub struct Palette {
     /// `dark_cool_hue`, chroma kept (0 = off; darks keep their source hue).
     pub dark_cool_bias: f32,
     pub dark_cool_hue: f32,
+    /// Per-texel colored-shadow hue from the neighborhood (see [`DarkContext`]).
+    pub dark_context: DarkContext,
     /// Targeted earth warmth (scaled per category by the target's `warmth`).
     pub warmth: Warmth,
     /// Shared moonlight cast (moods such as nocturne).
@@ -308,6 +343,7 @@ impl Default for Palette {
             dark_below: 0.45,
             dark_cool_bias: 0.0,
             dark_cool_hue: 255.0,
+            dark_context: DarkContext::default(),
             warmth: Warmth::default(),
             cast: Cast::default(),
             water: WaterTone::default(),
@@ -399,6 +435,10 @@ impl Palette {
                 wt.chroma
             )
         })?;
+        let dc = &p.dark_context;
+        non_negative("palette.dark_context.radius", dc.radius)?;
+        non_negative("palette.dark_context.neutral", dc.neutral)?;
+        non_negative("palette.dark_context.gain", dc.gain)?;
         let k = &p.cast;
         unit("palette.cast.strength", k.strength)?;
         unit("palette.cast.chroma", k.chroma)?;

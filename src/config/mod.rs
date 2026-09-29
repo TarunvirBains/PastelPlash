@@ -25,9 +25,9 @@ pub use pack::{
     BrushworkRule, FluidRule, FluidRuleKind, MarksRule, MoodRule, Pack, Rule, glob_match,
 };
 pub use style::{
-    Abstraction, Cast, Contrast, Delight, Grouping, HueGroup, Kuwahara, Marks, Palette, Scale,
-    Strokes, Style, Temperature, Terracotta, Tiling, Tint, ValueContrast, Warmth, WaterTone,
-    Watercolor,
+    Abstraction, Cast, Contrast, DarkContext, Delight, Grouping, HueGroup, Kuwahara, Marks,
+    Palette, Scale, Strokes, Style, Temperature, Terracotta, Tiling, Tint, ValueContrast, Warmth,
+    WaterTone, Watercolor,
 };
 pub use target::{Exposure, Resolution, Target, Treatment};
 

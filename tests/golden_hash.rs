@@ -690,7 +690,10 @@ fn misc_section() -> Section {
 
     // External .cube (baked from the watercolor palette) plus a little technique.
     let base = load(&repo().join("styles/watercolor.toml"), &target());
-    let lut = Mapping::new(&base.style.palette, &base.target.treatment(Category::World)).bake();
+    // (A standalone .cube carries the whole mapping, the dark floor included, as `bake-lut`.)
+    let lut = Mapping::new(&base.style.palette, &base.target.treatment(Category::World))
+        .inline_darks()
+        .bake();
     lut.save(&dir.path().join("p.cube"), "golden").unwrap();
     let cube = dir.path().join("cube.toml");
     fs::write(

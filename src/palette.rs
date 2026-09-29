@@ -284,6 +284,192 @@ pub fn apply_cast(
     [l2, c3, h3]
 }
 
+/// Each neighborhood sample counts with at most this OKLab chroma toward the neighborhood's mean
+/// a/b ([`DarkFloor`]): a few saturated flecks (embers on a black wall) don't decide its hue.
+pub const CONTEXT_MAX_CHROMA: f32 = 0.03;
+
+/// A neighborhood sample's a/b as it counts toward the mean (chroma clamped).
+pub fn context_sample([a, b]: [f32; 2]) -> [f32; 2] {
+    let c = a.hypot(b);
+    if c > CONTEXT_MAX_CHROMA {
+        [a * CONTEXT_MAX_CHROMA / c, b * CONTEXT_MAX_CHROMA / c]
+    } else {
+        [a, b]
+    }
+}
+
+/// What a near-neutral dark texel's neighborhood lends its colored shadow ([`DarkFloor`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DarkClass {
+    /// Leans warm: the warm umber floor (as a baked LUT gives every neutral dark).
+    Warm,
+    /// Leans toward another hue (cool steel, green-gray, navy): that hue, at most `gain` times
+    /// the neighborhood's chroma.
+    Hued { hue: f32, chroma: f32 },
+    /// Neutral: the dark stays neutral.
+    Neutral,
+}
+
+/// Chroma from which a near-neutral dark that the palette left in the warm band counts as warm
+/// itself (a dull warm dark reads as mud, whatever its neighborhood).
+const WARM_DARK_MIN_CHROMA: f32 = 0.01;
+
+/// The colored-shadow floor of dark texels (`palette.dark_chroma`) and the neutral share of the
+/// shadow tint, applied per texel after the palette LUT (in `finish`; the same math for the CPU
+/// rule tests) when the palette has a `dark_context`. A clearly colored dark keeps its own hue; a
+/// near-neutral one takes its hue from its source neighborhood (a hard switch per texel, so no
+/// mix ever passes between umber and a cool hue: no mud, no teal): warm-leaning neighborhoods
+/// the warm umber, other hued ones their own hue (steel stays steel), neutral ones none.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DarkFloor {
+    /// Chroma floor at full darkness (`dark_chroma` × the target's scale × strength).
+    pub chroma: f32,
+    /// Output lightness below which the floor applies (`dark_below`, feathered).
+    pub below: f32,
+    /// The warm umber (the shadow tint's hue), degrees.
+    pub hue: f32,
+    /// Neutral share of the shadow tint (warm neighborhoods only): amount, chroma, and the
+    /// source lightness it fades out at.
+    pub tint: f32,
+    pub tint_chroma: f32,
+    pub tint_below: f32,
+    /// Optional cool bias on lifted darks (`dark_cool_bias`, `dark_cool_hue`).
+    pub cool_bias: f32,
+    pub cool_hue: f32,
+    /// The neighborhood classes (`dark_context`).
+    pub neutral: f32,
+    pub warm_band: [f32; 2],
+    pub gain: f32,
+}
+
+impl DarkFloor {
+    /// The floor for a palette under a category's treatment; `None` when the LUT bakes it in
+    /// (no `dark_context`, or water) or there is nothing to apply.
+    pub fn new(p: &Palette, tr: &crate::config::Treatment) -> Option<Self> {
+        if !Mapping::new(p, tr).defer_darks {
+            return None;
+        }
+        let s = p.strength.max(0.0);
+        let chroma = p.dark_chroma * tr.dark_chroma * s.min(1.0);
+        let tint = (p.shadow_tint.amount * s).min(1.0) * tr.shadow_tint;
+        if chroma <= 0.0 && tint <= 0.0 {
+            return None;
+        }
+        let dc = &p.dark_context;
+        Some(Self {
+            chroma,
+            below: p.dark_below,
+            hue: p.shadow_tint.hue,
+            tint,
+            tint_chroma: p.shadow_tint.chroma,
+            tint_below: p.shadow_tint.below_input_l.max(1e-3),
+            cool_bias: if chroma > 0.0 {
+                (p.dark_cool_bias * s.min(1.0)).clamp(0.0, 1.0)
+            } else {
+                0.0
+            },
+            cool_hue: p.dark_cool_hue,
+            neutral: dc.neutral,
+            warm_band: dc.warm_band,
+            gain: dc.gain,
+        })
+    }
+
+    /// The class of a neighborhood with mean a/b `ab` (samples through [`context_sample`]);
+    /// `faint` is the chroma of the mean a/b of its near-neutral samples alone (what a hued
+    /// neighborhood lends is bounded by the cast of its neutral surface, not by its colored
+    /// insets).
+    pub fn class(&self, [a, b]: [f32; 2], faint: f32) -> DarkClass {
+        let c = a.hypot(b);
+        if c < self.neutral {
+            return DarkClass::Neutral;
+        }
+        let h = b.atan2(a).to_degrees().rem_euclid(360.0);
+        if crate::color::in_hue_band(h, self.warm_band) {
+            DarkClass::Warm
+        } else {
+            DarkClass::Hued {
+                hue: h,
+                chroma: faint,
+            }
+        }
+    }
+
+    /// `src`: the source texel (OKLab, the color the LUT was sampled with); `lab`: the LUT's
+    /// output (OKLab); `ctx`: the neighborhood's mean a/b and the chroma of its near-neutral
+    /// samples' mean ([`DarkFloor::class`]). Returns the texel with its floor.
+    pub fn apply(&self, src: [f32; 3], lab: [f32; 3], ctx: ([f32; 2], f32)) -> [f32; 3] {
+        let l_src = src[0].max(0.0);
+        let c_rel = src[1].hypot(src[2]) * (0.55 / (l_src + 0.05)).max(1.0);
+        let mut class = self.class(ctx.0, ctx.1);
+        let mut lab = lab;
+        if class == DarkClass::Warm && self.tint > 0.0 {
+            let colored_src = smoothstep(0.02, 0.04, c_rel);
+            let w =
+                self.tint * (1.0 - colored_src) * (1.0 - smoothstep(0.0, self.tint_below, l_src));
+            let v = color::oklch_to_oklab([0.0, self.tint_chroma, self.hue]);
+            lab[1] = lerp(lab[1], v[1], w);
+            lab[2] = lerp(lab[2], v[2], w);
+        }
+        if self.chroma <= 0.0 {
+            return lab;
+        }
+        let [ll, mut cc, mut hh] = color::oklab_to_oklch(lab);
+        let dark = 1.0 - smoothstep(self.below - 0.03, self.below + 0.05, ll);
+        let want = self.chroma * dark;
+        let neutral = c_rel < 0.03;
+        if neutral
+            && class == DarkClass::Neutral
+            && cc >= WARM_DARK_MIN_CHROMA
+            && crate::color::in_hue_band(hh, self.warm_band)
+        {
+            class = DarkClass::Warm;
+        }
+        if cc < want {
+            match (neutral, class) {
+                (false, _) => cc = want,
+                (true, DarkClass::Warm) => {
+                    hh = self.hue;
+                    cc = want;
+                }
+                (true, DarkClass::Hued { hue, chroma }) => {
+                    let t = want.min(self.gain * chroma);
+                    if cc < t {
+                        hh = hue;
+                        cc = t;
+                    }
+                }
+                (true, DarkClass::Neutral) => {}
+            }
+        }
+        if self.cool_bias > 0.0 {
+            let d = hue_diff(hh, self.cool_hue);
+            let t = (self.cool_bias * dark) * (1.0 - smoothstep(110.0, 160.0, d.abs()));
+            hh += t * d;
+        }
+        color::oklch_to_oklab([ll, cc, hh])
+    }
+}
+
+/// The color `finish` paints a texel of source color `rgb` (gamma sRGB) that sits in a
+/// neighborhood of its own color, given the LUT's output for it: the per-texel dark floor, then
+/// the moonlight cast (OKLCH). The CPU rule tests and `dev-map` use it.
+pub fn rendered(
+    p: &Palette,
+    tr: &crate::config::Treatment,
+    rgb: [f32; 3],
+    lut_out: [f32; 3],
+) -> [f32; 3] {
+    let src = color::srgb_to_oklab(rgb);
+    let mut lab = color::srgb_to_oklab(lut_out);
+    if let Some(f) = DarkFloor::new(p, tr) {
+        let own = context_sample([src[1], src[2]]);
+        lab = f.apply(src, lab, (own, own[0].hypot(own[1])));
+    }
+    let s = color::oklab_to_oklch(src);
+    apply_cast(p, tr.cast, [s[0], s[1]], color::oklab_to_oklch(lab))
+}
+
 /// Median OKLab lightness of the opaque texels (a water texture's body; 0 when empty).
 pub fn water_body_l(pixels: &[[f32; 4]]) -> f32 {
     let mut ls: Vec<f32> = pixels
@@ -381,12 +567,15 @@ pub struct Mapping<'a> {
     pub dark_c_scale: f32,
     /// Scales the pull toward the reference water tone (target `reference`).
     pub reference_scale: f32,
+    /// Leave the colored-shadow floor of dark texels and the neutral share of the shadow tint to
+    /// [`DarkFloor`] (per texel, after the LUT) instead of baking them in.
+    pub defer_darks: bool,
 }
 
 impl<'a> Mapping<'a> {
     /// The mapping for a palette under a category's treatment.
     pub fn new(palette: &'a Palette, tr: &crate::config::Treatment) -> Self {
-        Self {
+        let mut m = Self {
             warmth_scale: tr.warmth,
             palette,
             lift_scale: tr.floor_scale,
@@ -395,7 +584,24 @@ impl<'a> Mapping<'a> {
             floor_c_scale: tr.chroma_floor,
             dark_c_scale: tr.dark_chroma,
             reference_scale: tr.reference,
+            defer_darks: false,
+        };
+        m.defer_darks = palette.dark_context.radius > 0.0 && m.water_pull() <= 0.0;
+        m
+    }
+
+    /// The same mapping with the dark floor baked in (a complete `.cube` for external use).
+    pub fn inline_darks(self) -> Self {
+        Self {
+            defer_darks: false,
+            ..self
         }
+    }
+
+    /// The pull toward the reference water tone.
+    fn water_pull(&self) -> f32 {
+        let s = self.palette.strength.max(0.0);
+        (self.palette.water.pull * self.reference_scale * s.min(1.0)).clamp(0.0, 1.0)
     }
 }
 
@@ -562,9 +768,16 @@ impl Mapping<'_> {
         // 6. Shadow tint on originally dark texels.
         let st = &p.shadow_tint;
         let colored_src = smoothstep(0.02, 0.04, c_rel);
+        // (Deferred: only the colored share here; the neutral share depends on the texel's
+        // neighborhood, see `DarkFloor`.)
+        let share = if self.defer_darks {
+            st.colored.clamp(0.0, 1.0) * colored_src
+        } else {
+            lerp(1.0, st.colored.clamp(0.0, 1.0), colored_src)
+        };
         let st_w = (st.amount * s).min(1.0)
             * self.shadow_scale
-            * lerp(1.0, st.colored.clamp(0.0, 1.0), colored_src)
+            * share
             * (1.0 - smoothstep(0.0, st.below_input_l.max(1e-3), l));
         if st_w > 0.0 {
             let v = color::oklch_to_oklab([0.0, st.chroma, st.hue]);
@@ -586,7 +799,7 @@ impl Mapping<'_> {
         // 8. Reference water tone: hue and chroma move toward it as one a/b blend, lightness
         // stays.
         let wt = &p.water;
-        let pull = (wt.pull * self.reference_scale * s.min(1.0)).clamp(0.0, 1.0);
+        let pull = self.water_pull();
         if pull > 0.0 {
             let target_c = cc.clamp(wt.chroma[0], wt.chroma[1]);
             let (sh, ch) = hh.to_radians().sin_cos();
@@ -602,7 +815,7 @@ impl Mapping<'_> {
         // `dark_chroma` — along the source's own hue when it is clearly colored, along the shadow
         // tint's hue when it is (near-)neutral, rotating between them along the shortest arc so
         // no mix ever passes through gray.
-        if p.dark_chroma > 0.0 {
+        if p.dark_chroma > 0.0 && !self.defer_darks {
             // Full strength until just below `dark_below`, fading out just above it.
             let dark = 1.0 - smoothstep(p.dark_below - 0.03, p.dark_below + 0.05, ll);
             let want = p.dark_chroma * self.dark_c_scale * dark * s.min(1.0);
@@ -661,6 +874,7 @@ mod tests {
             floor_c_scale: 1.0,
             dark_c_scale: 1.0,
             reference_scale: 0.0,
+            defer_darks: false,
         }
     }
 

@@ -526,15 +526,15 @@ fn dev_map(args: DevMapArgs) -> anyhow::Result<()> {
             color::oklch_to_srgb_gamut([v[0], v[1], v[2]])
         };
         let src = color::oklab_to_oklch(color::srgb_to_oklab(rgb));
-        // As the GPU does it: the LUT, then the per-texel cast.
-        let cast = |o: [f32; 4]| {
-            let lch = color::oklab_to_oklch(color::srgb_to_oklab([o[0], o[1], o[2]]));
-            pastelplash::palette::apply_cast(&style.palette, tr.cast, [src[0], src[1]], lch)
+        // As the GPU does it: the LUT, then the per-texel dark floor (in a neighborhood of the
+        // same color) and cast.
+        let finish = |o: [f32; 4]| {
+            pastelplash::palette::rendered(&style.palette, &tr, rgb, [o[0], o[1], o[2]])
         };
-        let via = cast(lut.sample(rgb));
+        let via = finish(lut.sample(rgb));
         println!("  LUT: {:.3} {:.3} {:5.1}", via[0], via[1], via[2]);
         let o = m.map(rgb);
-        let out = cast(o);
+        let out = finish(o);
         println!(
             "{:.3} {:.3} {:5.1} -> {:.3} {:.3} {:5.1} (floor {:.3})",
             src[0], src[1], src[2], out[0], out[1], out[2], o[3]
@@ -569,7 +569,11 @@ fn bake_lut(args: BakeLutArgs) -> anyhow::Result<()> {
     let config = Config::load(Some(&args.style), args.target.as_deref(), None)?;
     let tr = config.target.treatment(args.category);
     let style = config.style.for_mood(&args.mood)?;
-    let lut = pastelplash::palette::Mapping::new(&style.palette, &tr).bake();
+    // A standalone `.cube` carries the whole mapping: the dark floor baked in (umber for neutral
+    // darks), as the renderer's neighborhood switch cannot be expressed in a LUT.
+    let lut = pastelplash::palette::Mapping::new(&style.palette, &tr)
+        .inline_darks()
+        .bake();
     let title = format!("{} ({:?}, {})", config.style.name, args.category, args.mood);
     lut.save(&args.output, &title)?;
     println!("wrote {}^3 LUT to {}", lut.size, args.output.display());

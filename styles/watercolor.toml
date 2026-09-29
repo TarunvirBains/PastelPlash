@@ -53,6 +53,11 @@ neutral_tint = { hue = 105.0, chroma = 0.012, amount = 0.3 }
 # Only neutral near-blacks get a tint: SS's measured shadow is warm umber (~70°), not blue.
 shadow_tint = { below_input_l = 0.22, hue = 70.0, chroma = 0.04, amount = 0.6, colored = 0.0 }
 dark_cool_bias = 0.0    # optional cool push on lifted darks; off keeps OoT's own shadow hues
+# The umber is for warm places: a near-neutral dark takes its colored shadow from its neighborhood
+# (per texel, a hard switch). Warm-leaning neighborhoods (bark, earth, wood) give it the umber;
+# cool or other hued ones their own hue, at most twice their chroma (steel, slate and iron stay
+# steel, a navy door stays navy); neutral ones none (a black wall stays near-black).
+dark_context = { radius = 16.0, neutral = 0.003, warm_band = [30.0, 115.0], gain = 2.0 }
 # Targeted earth warmth: earth/olive/khaki hues lean toward SS's golden tan, weighted by chroma
 # (gray stone stays gray). Tuned a little strong: Kokiri Forest's vertex light is greenish.
 warmth = { strength = 0.45, band = [45.0, 100.0], feather = 10.0, hue = 68.0, chroma = 0.079, chroma_boost = 0.4, min_chroma = [0.02, 0.06], lift = 0.0 }

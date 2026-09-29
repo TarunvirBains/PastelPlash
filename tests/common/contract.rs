@@ -144,6 +144,9 @@ pub struct PaletteRules {
     pub dark_min_chroma: f32,
     /// Categories (names as in the pack map) the colored-darks rule does not apply to.
     pub colored_darks_exempt: Vec<String>,
+    pub warm_context_band: [f32; 2],
+    pub warm_context_min_chroma: f32,
+    pub neutral_dark_max_warm_chroma: f32,
     pub mud_relative: Vec<String>,
     pub mud_relative_margin: f32,
     pub mud_relative_hue: f32,
@@ -165,7 +168,25 @@ impl PaletteRules {
         (self.retention_ratio * c).min(self.retention_floor)
     }
 
-    /// True for a dull brownish dark ("mud").
+    /// Whether a neighborhood with mean OKLab a/b `ab` leans warm (its near-neutral darks may
+    /// take the umber floor).
+    pub fn warm_leaning(&self, [a, b]: [f32; 2]) -> bool {
+        let h = b.atan2(a).to_degrees().rem_euclid(360.0);
+        a.hypot(b) >= self.warm_context_min_chroma && in_hue_range(h, self.warm_context_band)
+    }
+
+    /// Whether an OKLab source color is a near-neutral dark candidate (lightness-relative chroma
+    /// below 0.03, as the palette judges "neutral").
+    pub fn near_neutral(&self, [l, a, b]: [f32; 3]) -> bool {
+        a.hypot(b) * (0.55 / (l.max(0.0) + 0.05)).max(1.0) < 0.03
+    }
+
+    /// True for an output that took the warm umber (hue in the warm band, chroma above
+    /// `neutral_dark_max_warm_chroma`), OKLCH.
+    pub fn turned_warm(&self, [_, c, h]: [f32; 3]) -> bool {
+        c > self.neutral_dark_max_warm_chroma && in_hue_range(h, self.warm_context_band)
+    }
+
     /// Whether the colored-darks rule applies to this category.
     pub fn darks_colored(&self, cat: pastelplash::config::Category) -> bool {
         let name = format!("{cat:?}").to_lowercase();
@@ -200,6 +221,7 @@ impl PaletteRules {
         !(widened || own)
     }
 
+    /// True for a dull brownish dark ("mud").
     pub fn is_mud(&self, [l, c, h]: [f32; 3]) -> bool {
         l < self.mud_l && c >= 0.012 && c < self.mud_max_chroma && in_hue_range(h, self.mud_hue)
     }

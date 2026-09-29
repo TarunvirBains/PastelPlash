@@ -99,6 +99,11 @@ pub fn hue_diff(from: f32, to: f32) -> f32 {
     (to - from + 540.0).rem_euclid(360.0) - 180.0
 }
 
+/// True if hue `h` (degrees) lies in the band `[from, to]` (which may wrap).
+pub fn in_hue_band(h: f32, [from, to]: [f32; 2]) -> bool {
+    (h - from).rem_euclid(360.0) <= (to - from).rem_euclid(360.0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

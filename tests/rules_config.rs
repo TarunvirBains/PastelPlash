@@ -55,16 +55,29 @@ fn luts() -> &'static [(String, Style, Category, Lut3d)] {
     })
 }
 
-/// The rendered palette color: the LUT, then the per-texel moonlight cast (as `finish` does).
+/// Each style × mood × (world, background, actor): the LUTs the steel rule is checked on.
+fn steel_luts() -> &'static [(String, Style, Category, Lut3d)] {
+    static L: OnceLock<Vec<(String, Style, Category, Lut3d)>> = OnceLock::new();
+    L.get_or_init(|| {
+        let mut v: Vec<_> = luts().to_vec();
+        for (label, style) in resolved() {
+            let cat = Category::Background;
+            let lut = Mapping::new(&style.palette, &target().treatment(cat)).bake();
+            v.push((format!("{label} {cat:?}"), style.clone(), cat, lut));
+        }
+        v
+    })
+}
+
+/// The rendered palette color: the LUT, then the per-texel dark floor (in a neighborhood of the
+/// texel's own color) and moonlight cast (as `finish` does).
 fn mapped_lch(style: &Style, cat: Category, lut: &Lut3d, rgb: [f32; 3]) -> [f32; 3] {
     let o = lut.sample(rgb);
-    let s = lch([rgb[0], rgb[1], rgb[2], 1.0]);
-    let scale = target().treatment(cat).cast;
-    pastelplash::palette::apply_cast(
+    pastelplash::palette::rendered(
         &style.palette,
-        scale,
-        [s[0], s[1]],
-        lch([o[0], o[1], o[2], 1.0]),
+        &target().treatment(cat),
+        rgb,
+        [o[0], o[1], o[2]],
     )
 }
 
@@ -149,6 +162,27 @@ fn rule_styles_stay_within_the_contract() {
         let vc = &s.value_contrast;
         for (k, v) in [("fine", vc.fine), ("mid", vc.mid), ("coarse", vc.coarse)] {
             assert!((0.0..=1.0).contains(&v), "{name}: value_contrast.{k} {v}");
+        }
+        // The umber is for warm neighborhoods only, as the contract defines them.
+        let dc = &p.dark_context;
+        if dc.radius > 0.0 {
+            let [w0, w1] = c.palette.warm_context_band;
+            let span = (w1 - w0).rem_euclid(360.0);
+            let inside = |h: f32| (h - w0).rem_euclid(360.0) <= span;
+            assert!(
+                inside(dc.warm_band[0])
+                    && inside(dc.warm_band[1])
+                    && (dc.warm_band[1] - w0).rem_euclid(360.0)
+                        >= (dc.warm_band[0] - w0).rem_euclid(360.0),
+                "{name}: dark_context.warm_band {:?} outside the contract's {:?}",
+                dc.warm_band,
+                c.palette.warm_context_band
+            );
+            assert!(
+                dc.neutral >= c.palette.warm_context_min_chroma,
+                "{name}: dark_context.neutral {}",
+                dc.neutral
+            );
         }
     }
 }
@@ -573,7 +607,11 @@ proptest! {
                 "{}: {:?} -> L {} (crushed black)", name, [r, g, b], l);
             // Near-blacks in a mood that fades them just go darker (rule_near_black_colors_just_go_darker).
             let faded = l_src < k.black_fade_l(name);
-            if l < k.palette.dark_l && k.palette.darks_colored(*cat) && !faded {
+            // A near-neutral dark keeps its own family unless it leans warm (here the texel is its
+            // own neighborhood): steel stays steel, black stays near-black.
+            let src = color::srgb_to_oklab([r, g, b]);
+            let own_family = k.palette.near_neutral(src) && !k.palette.warm_leaning([src[1], src[2]]);
+            if l < k.palette.dark_l && k.palette.darks_colored(*cat) && !faded && !own_family {
                 prop_assert!(c >= k.palette.dark_min_chroma - 1e-3,
                     "{}: {:?} -> L {} C {} h {} (neutral dark)", name, [r, g, b], l, c, h);
             }
@@ -591,18 +629,17 @@ proptest! {
     }
 
     #[test]
-    fn rule_cool_actor_darks_keep_their_hue_family(l in 0.12f32..0.4, c in 0.006f32..0.03, h in 0.0f32..1.0) {
-        // Steel and iron on props and characters (near-neutral, faintly cool darks) stay steel:
-        // a colored output keeps the source's cool hue family, never brown or teal.
+    fn rule_cool_darks_keep_their_hue_family(l in 0.12f32..0.4, c in 0.006f32..0.03, h in 0.0f32..1.0) {
+        // Steel and iron (near-neutral, faintly cool darks) stay steel, on props and characters
+        // and in the world and pre-rendered rooms alike: a colored output keeps the source's cool
+        // hue family, never brown or teal. (Steel doors, iron grids and the Water Temple's slate
+        // carvings came out copper and rust: the umber floor for neutral darks, in the LUT.)
         let k = contract();
         let [h0, h1] = k.actor.cool_dark_hue;
         let rgb = from_oklch(l, c, h0 + h * (h1 - h0));
         let [_, c_src, h_src] = lch([rgb[0], rgb[1], rgb[2], 1.0]);
         prop_assume!(c_src >= 0.006 && (h0..=h1).contains(&h_src));
-        for (name, style, cat, lut) in luts() {
-            if *cat != Category::Actor {
-                continue;
-            }
+        for (name, style, cat, lut) in steel_luts() {
             let [lo, co, ho] = mapped_lch(style, *cat, lut, rgb);
             if co >= 0.012 {
                 let d = color::hue_diff(h_src, ho).abs();
