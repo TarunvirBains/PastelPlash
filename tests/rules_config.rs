@@ -308,7 +308,7 @@ fn moods_inherit_everything_they_do_not_override() {
             let mut overridden = Vec::new();
             leaves(over, "", &mut overridden);
             let over_keys: Vec<&String> = overridden.iter().map(|(k, _)| k).collect();
-            let derived = pastelplash::config::layers::merge(&raw, over, 1.0);
+            let derived = pastelplash::config::layers::merge(&raw, over, 1.0).unwrap();
             let mut derived_leaves = Vec::new();
             leaves(&derived, "", &mut derived_leaves);
             for (key, value) in &base_leaves {

@@ -7,14 +7,20 @@
 //! declares for it) and are blended over the resolved style at their strength.
 //!
 //! [`merge`] at strength `s` blends every value `over` sets toward it: numbers (and number
-//! arrays of equal length, such as tone curves) are interpolated, tables and arrays of tables
-//! are blended entry by entry, and anything else switches at `s = 0.5`. Keys only in `over`
-//! appear from `s = 0.5` on. Blending in parameter space keeps a partial mood a valid style (a
-//! blend of two monotone tone curves on the same inputs is monotone).
+//! arrays of equal length, such as tone curves) are interpolated, tables are blended key by key,
+//! and anything else switches at `s = 0.5`. Keys only in `over` appear from `s = 0.5` on.
+//! Blending in parameter space keeps a partial mood a valid style (a blend of two monotone tone
+//! curves on the same inputs is monotone).
+//!
+//! **Arrays of tables merge by `name`** (e.g. `[[palette.groups]]`): an entry blends with the
+//! base entry of the same name, entries with new names are added (from `s = 0.5` on) and the
+//! base's other entries stay, so a layer may declare just the groups it changes. Unnamed
+//! entries merge by position only when both arrays have the same length; anything else is an
+//! error rather than a silent replacement.
 
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use toml::{Table, Value};
 
 fn number(v: &Value) -> Option<f64> {
@@ -25,13 +31,30 @@ fn number(v: &Value) -> Option<f64> {
     }
 }
 
-/// Blends `over` into `base` at strength `s` (see the module docs).
-fn blend(base: &Value, over: &Value, s: f64) -> Value {
-    match (base, over) {
-        (Value::Table(b), Value::Table(o)) => Value::Table(merge(b, o, s)),
-        (Value::Array(b), Value::Array(o)) if b.len() == o.len() => {
-            Value::Array(b.iter().zip(o).map(|(b, o)| blend(b, o, s)).collect())
+/// The `name` of an array-of-tables entry.
+fn entry_name(v: &Value) -> Option<&str> {
+    v.as_table()?.get("name")?.as_str()
+}
+
+fn is_table_array(a: &[Value]) -> bool {
+    !a.is_empty() && a.iter().all(Value::is_table)
+}
+
+/// Blends `over` into `base` at strength `s` (see the module docs); `key` names the value in
+/// errors.
+fn blend(key: &str, base: &Value, over: &Value, s: f64) -> Result<Value> {
+    Ok(match (base, over) {
+        (Value::Table(b), Value::Table(o)) => Value::Table(merge_at(key, b, o, s)?),
+        (Value::Array(b), Value::Array(o)) if is_table_array(b) && is_table_array(o) => {
+            Value::Array(merge_entries(key, b, o, s)?)
         }
+        (Value::Array(b), Value::Array(o)) if b.len() == o.len() => Value::Array(
+            b.iter()
+                .zip(o)
+                .enumerate()
+                .map(|(i, (b, o))| blend(&format!("{key}[{i}]"), b, o, s))
+                .collect::<Result<_>>()?,
+        ),
         (Value::Integer(b), Value::Integer(o)) => {
             Value::Integer((*b as f64 + s * (*o - *b) as f64).round() as i64)
         }
@@ -40,18 +63,66 @@ fn blend(base: &Value, over: &Value, s: f64) -> Value {
             _ if s >= 0.5 => over.clone(),
             _ => base.clone(),
         },
+    })
+}
+
+/// Arrays of tables: by `name`, or by position for unnamed entries of equal count.
+fn merge_entries(key: &str, base: &[Value], over: &[Value], s: f64) -> Result<Vec<Value>> {
+    let names = |a: &[Value]| -> Option<Vec<String>> {
+        a.iter().map(|v| entry_name(v).map(String::from)).collect()
+    };
+    let unnamed = |a: &[Value]| a.iter().all(|v| entry_name(v).is_none());
+    match (names(base), names(over)) {
+        (Some(bn), Some(on)) => {
+            for (list, which) in [(&bn, "base"), (&on, "overlay")] {
+                for (i, n) in list.iter().enumerate() {
+                    if list[..i].contains(n) {
+                        bail!("`{key}`: {which} has two entries named {n:?}");
+                    }
+                }
+            }
+            let mut out = Vec::with_capacity(base.len());
+            for (b, n) in base.iter().zip(&bn) {
+                out.push(match on.iter().position(|m| m == n) {
+                    Some(j) => blend(&format!("{key}.{n}"), b, &over[j], s)?,
+                    None => b.clone(),
+                });
+            }
+            if s >= 0.5 {
+                for (o, n) in over.iter().zip(&on) {
+                    if !bn.contains(n) {
+                        out.push(o.clone());
+                    }
+                }
+            }
+            Ok(out)
+        }
+        _ if unnamed(over) && base.len() == over.len() => base
+            .iter()
+            .zip(over)
+            .enumerate()
+            .map(|(i, (b, o))| blend(&format!("{key}[{i}]"), b, o, s))
+            .collect(),
+        _ => bail!(
+            "`{key}`: entries of an array of tables merge by `name`; name every entry (or, \
+             unnamed, give the same number of entries as the layer below: {} vs {})",
+            base.len(),
+            over.len()
+        ),
     }
 }
 
-/// Merges layer `over` into `base` at strength `s` (1 for a layer of a style, the mood's
-/// strength for a mood). Keys only in `over` appear from `s = 0.5` on (there is no base value
-/// to interpolate from, so styles should set every key a mood overrides).
-pub fn merge(base: &Table, over: &Table, s: f64) -> Table {
+fn merge_at(prefix: &str, base: &Table, over: &Table, s: f64) -> Result<Table> {
     let mut out = base.clone();
     for (k, o) in over {
+        let key = if prefix.is_empty() {
+            k.clone()
+        } else {
+            format!("{prefix}.{k}")
+        };
         match base.get(k) {
             Some(b) => {
-                out.insert(k.clone(), blend(b, o, s));
+                out.insert(k.clone(), blend(&key, b, o, s)?);
             }
             None if s >= 0.5 => {
                 out.insert(k.clone(), o.clone());
@@ -59,7 +130,14 @@ pub fn merge(base: &Table, over: &Table, s: f64) -> Table {
             None => {}
         }
     }
-    out
+    Ok(out)
+}
+
+/// Merges layer `over` into `base` at strength `s` (1 for a layer of a style, the mood's
+/// strength for a mood). Keys only in `over` appear from `s = 0.5` on (there is no base value
+/// to interpolate from, so styles should set every key a mood overrides).
+pub fn merge(base: &Table, over: &Table, s: f64) -> Result<Table> {
+    merge_at("", base, over, s)
 }
 
 /// An ordered stack of style layers: the first is the base, each later one an overlay merged
@@ -85,12 +163,12 @@ impl StyleStack {
     }
 
     /// The merged table (empty for an empty stack).
-    pub fn resolve(&self) -> Table {
+    pub fn resolve(&self) -> Result<Table> {
         let mut layers = self.layers.iter();
         let Some(first) = layers.next() else {
-            return Table::new();
+            return Ok(Table::new());
         };
-        layers.fold(first.clone(), |acc, layer| merge(&acc, layer, 1.0))
+        layers.try_fold(first.clone(), |acc, layer| merge(&acc, layer, 1.0))
     }
 }
 
@@ -134,7 +212,9 @@ fn load_at(path: &Path, depth: usize, read: &dyn Fn(&Path) -> Result<String>) ->
         stack.push(load_at(&dir.join(b), depth + 1, read)?);
     }
     stack.push(raw);
-    Ok(stack.resolve())
+    stack
+        .resolve()
+        .with_context(|| format!("merging the layers of {}", path.display()))
 }
 
 #[cfg(test)]
@@ -149,7 +229,7 @@ mod tests {
     fn numbers_and_curves_interpolate() {
         let base = t("a = 1.0\nn = 10\ncurve = [[0, 0.5], [1, 1.0]]\n[x]\nb = 0.0\nc = 'keep'");
         let over = t("a = 0.0\nn = 20\ncurve = [[0, 0.3], [1, 0.8]]\n[x]\nb = 1.0");
-        let half = merge(&base, &over, 0.5);
+        let half = merge(&base, &over, 0.5).unwrap();
         assert_eq!(half["a"].as_float(), Some(0.5));
         assert_eq!(half["n"].as_integer(), Some(15));
         assert_eq!(
@@ -158,8 +238,8 @@ mod tests {
         );
         assert_eq!(half["x"]["b"].as_float(), Some(0.5));
         assert_eq!(half["x"]["c"].as_str(), Some("keep"));
-        assert_eq!(merge(&base, &over, 0.0), base);
-        let full = merge(&base, &over, 1.0);
+        assert_eq!(merge(&base, &over, 0.0).unwrap(), base);
+        let full = merge(&base, &over, 1.0).unwrap();
         assert_eq!(full["a"].as_float(), Some(0.0));
     }
 
@@ -167,10 +247,13 @@ mod tests {
     fn non_numbers_switch_at_half() {
         let base = t("s = 'a'\nlist = [1, 2]");
         let over = t("s = 'b'\nlist = [1, 2, 3]");
-        assert_eq!(merge(&base, &over, 0.4)["s"].as_str(), Some("a"));
-        assert_eq!(merge(&base, &over, 0.6)["s"].as_str(), Some("b"));
+        assert_eq!(merge(&base, &over, 0.4).unwrap()["s"].as_str(), Some("a"));
+        assert_eq!(merge(&base, &over, 0.6).unwrap()["s"].as_str(), Some("b"));
         assert_eq!(
-            merge(&base, &over, 0.6)["list"].as_array().unwrap().len(),
+            merge(&base, &over, 0.6).unwrap()["list"]
+                .as_array()
+                .unwrap()
+                .len(),
             3
         );
     }
@@ -178,14 +261,61 @@ mod tests {
     #[test]
     fn a_stack_folds_its_layers_in_order() {
         let mut stack = StyleStack::new();
-        assert_eq!(stack.resolve(), Table::new());
+        assert_eq!(stack.resolve().unwrap(), Table::new());
         stack.push(t("a = 1.0\nb = 1.0"));
         stack.push(t("b = 2.0\nc = 2.0"));
         stack.push(t("c = 3.0"));
-        let r = stack.resolve();
+        let r = stack.resolve().unwrap();
         assert_eq!(
             (r["a"].as_float(), r["b"].as_float(), r["c"].as_float()),
             (Some(1.0), Some(2.0), Some(3.0))
         );
+    }
+
+    #[test]
+    fn arrays_of_tables_merge_by_name() {
+        let base =
+            t("[[g]]\nname = 'a'\nv = 1.0\n[[g]]\nname = 'b'\nv = 2.0\n[[g]]\nname = 'c'\nv = 3.0");
+        // One layer changes one entry: the others stay, in order.
+        let one = merge(&base, &t("[[g]]\nname = 'b'\nv = 4.0"), 1.0).unwrap();
+        let v: Vec<f64> = one["g"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e["v"].as_float().unwrap())
+            .collect();
+        assert_eq!(v, [1.0, 4.0, 3.0]);
+        // New names are added from half strength on.
+        let add = t("[[g]]\nname = 'd'\nv = 5.0");
+        assert_eq!(
+            merge(&base, &add, 0.4).unwrap()["g"]
+                .as_array()
+                .unwrap()
+                .len(),
+            3
+        );
+        assert_eq!(
+            merge(&base, &add, 0.6).unwrap()["g"]
+                .as_array()
+                .unwrap()
+                .len(),
+            4
+        );
+        // Unnamed entries of equal count merge by position.
+        let pos = merge(
+            &base,
+            &t("[[g]]\nv = 0.0\n[[g]]\nv = 0.0\n[[g]]\nv = 0.0"),
+            0.5,
+        )
+        .unwrap();
+        assert_eq!(pos["g"][2]["v"].as_float(), Some(1.5));
+        assert_eq!(pos["g"][2]["name"].as_str(), Some("c"));
+        // Anything else is an error, never a silent replacement.
+        let err = merge(&base, &t("[[g]]\nv = 0.0"), 1.0)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("`g`") && err.contains("name"), "{err}");
+        let dup = t("[[g]]\nname = 'a'\n[[g]]\nname = 'a'");
+        assert!(merge(&base, &dup, 1.0).is_err());
     }
 }

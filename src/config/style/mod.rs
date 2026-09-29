@@ -123,7 +123,8 @@ impl Style {
                 .raw
                 .as_ref()
                 .context("style was not loaded from TOML, so it has no moods")?;
-            let mut table = layers::merge(raw, over, mood.strength.min(1.0) as f64);
+            let mut table = layers::merge(raw, over, mood.strength.min(1.0) as f64)
+                .with_context(|| format!("mood {:?}", mood.name))?;
             table.remove("moods");
             let mut derived: Style = toml::Value::Table(table)
                 .try_into()
