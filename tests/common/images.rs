@@ -301,6 +301,19 @@ pub fn moss_on_wood(size: u32, seed: u32) -> Image {
     })
 }
 
+/// Olive moss: mottled olive-green (hues across `hue`), mid-dark, like OoT Reloaded's mossy ground
+/// and Deku Tree moss.
+pub fn olive_moss(size: u32, seed: u32, hue: [f32; 2]) -> Image {
+    image(size, size, |x, y| {
+        let (fx, fy) = (x as f32, y as f32);
+        let t = smooth_noise(fx, fy, 6, size, seed);
+        let n = noise(x, y, seed + 1);
+        let h = hue[0] + (hue[1] - hue[0]) * smooth_noise(fx, fy, 4, size, seed + 2);
+        let [r, g, b] = from_oklch(0.34 + 0.16 * t + 0.04 * n, 0.05 + 0.02 * t, h);
+        [r, g, b, 1.0]
+    })
+}
+
 /// Near-black and near-neutral darks with faint casts of every hue (crushed shadows, fades to
 /// black).
 pub fn near_neutral_darks(size: u32, seed: u32) -> Image {

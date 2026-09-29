@@ -55,7 +55,7 @@ shadow_tint = { below_input_l = 0.22, hue = 70.0, chroma = 0.04, amount = 0.6, c
 dark_cool_bias = 0.0    # optional cool push on lifted darks; off keeps OoT's own shadow hues
 # Targeted earth warmth: earth/olive/khaki hues lean toward SS's golden tan, weighted by chroma
 # (gray stone stays gray). Tuned a little strong: Kokiri Forest's vertex light is greenish.
-warmth = { strength = 0.45, band = [50.0, 115.0], feather = 10.0, hue = 68.0, chroma = 0.079, chroma_boost = 0.4, min_chroma = [0.02, 0.06], lift = 0.0 }
+warmth = { strength = 0.45, band = [45.0, 100.0], feather = 10.0, hue = 68.0, chroma = 0.079, chroma_boost = 0.4, min_chroma = [0.02, 0.06], lift = 0.0 }
 # Shared moonlight cast: off in the base look; the nocturne mood turns it on (see below).
 cast = { strength = 0.0, hue = 275.0, tint = 0.02, tint_full_l = 0.6, exposure = 0.7, chroma = 0.85, dark_cap = 0.09, dark_min = 0.017, dark_chroma = 0.046, warm_band = [35.0, 105.0] }
 hue_feather = 10

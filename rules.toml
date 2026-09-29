@@ -103,6 +103,10 @@ coarse_min_pattern_range = 0.45
 # hue difference between the two keeps at least family_min_separation of the source's.
 family_share_max_change = 0.1
 family_min_separation = 0.7
+# Olive moss is not warmed into brown: a moss texture (hues in moss_hue) moves toward the warm
+# earth hues by at most moss_max_warm_shift degrees on average (earth warmth targets earth).
+moss_hue = [96.0, 120.0]
+moss_max_warm_shift = 6.0
 
 # Pre-rendered backgrounds (finished paintings with the designers' lighting): the room's exposure
 # stays — alpha-weighted mean L within background_max_mean_l of the source — and its coarse

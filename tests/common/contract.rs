@@ -70,6 +70,8 @@ pub struct IdentityRules {
     pub coarse_min_pattern_range: f32,
     pub family_share_max_change: f32,
     pub family_min_separation: f32,
+    pub moss_hue: [f32; 2],
+    pub moss_max_warm_shift: f32,
     pub background_max_mean_l: f32,
     pub background_min_pattern_range: f32,
     /// Larger bounds for named opt-in styles.

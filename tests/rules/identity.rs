@@ -214,3 +214,31 @@ fn rule_hue_families_survive() {
         report.finish();
     }
 }
+
+#[test]
+fn rule_moss_is_not_warmed_into_brown() {
+    // Earth warmth targets earth: olive moss (the Deku Tree's walls, Kokiri Forest's mossy
+    // ground) keeps its green-olive hue; on average it moves toward the warm earth hues by at most
+    // the contract's bound.
+    let k = contract();
+    let img = olive_moss(192, 101, k.identity.moss_hue);
+    let mut report = Report::new("moss is not warmed into brown");
+    let rendered = Matrix::full(&[Category::World]).check(&mut report, &img, |_, out| {
+        let (mut sum, mut n) = (0.0f32, 0.0f32);
+        for (p, q) in img.pixels.iter().zip(&out.pixels) {
+            let ([_, _, h0], [_, c1, h1]) = (lch(*p), lch(*q));
+            if c1 < 0.03 {
+                continue;
+            }
+            sum += pastelplash::color::hue_diff(h0, h1);
+            n += 1.0;
+        }
+        let shift = sum / n.max(1.0);
+        ensure(shift >= -k.identity.moss_max_warm_shift, || {
+            format!("moss hue moved {shift:.1} degrees toward the warm earth hues")
+        })
+    });
+    if rendered {
+        report.finish();
+    }
+}
