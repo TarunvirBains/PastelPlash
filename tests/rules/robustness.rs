@@ -110,6 +110,7 @@ fn rule_neutral_config_is_identity_without_a_gpu() {
         category: Category::World,
         mood: Default::default(),
         config: &config,
+        upscale: 1.0,
     };
     pipeline.run(&mut img, &ctx).unwrap();
     assert_eq!(img, before);
@@ -139,6 +140,7 @@ fn rule_chunked_processing_matches_whole_image() {
             category: Category::World,
             mood: Default::default(),
             config: &config,
+            upscale: 1.0,
         };
         stage.apply(&mut out, &ctx).unwrap();
         out

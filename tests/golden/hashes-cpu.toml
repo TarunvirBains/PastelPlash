@@ -2,7 +2,7 @@
 
 [config]
 "pack/oot-reloaded" = "9fc5a899c2942d1f"
-"target/soh-celshade" = "fdac62f4939727ff"
+"target/soh-celshade" = "8f3f883789b91db4"
 
 [luts]
 "impressionist/base/actor" = "19dc49a31f971c12"

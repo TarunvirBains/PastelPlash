@@ -15,6 +15,9 @@ pub struct FileContext<'a> {
     /// The mood the pack map (or an override) assigns to this file.
     pub mood: Mood,
     pub config: &'a Config,
+    /// Texels of the image per texel of the source file: above 1 when the image was enlarged for
+    /// an output resolution floor (paint marks keep their size relative to the source content).
+    pub upscale: f32,
 }
 
 /// One processing step. Stages run on worker threads, so they must be `Send + Sync`; GPU stages

@@ -47,6 +47,7 @@ pub fn render_mood(
         category,
         mood: mood.clone(),
         config,
+        upscale: 1.0,
     };
     stage.apply(&mut out, &ctx).unwrap();
     Some(out)

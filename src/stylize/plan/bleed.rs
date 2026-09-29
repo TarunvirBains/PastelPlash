@@ -16,7 +16,7 @@ pub(super) fn plan(style: &Style, facts: &ImageFacts) -> Bleed {
     let wc = &style.watercolor;
     Bleed {
         amount: wc.bleed,
-        radius: (wc.bleed_radius * facts.scale).clamp(1.0, 48.0),
+        radius: (wc.bleed_radius * facts.scale).clamp(facts.upscale, 48.0 * facts.upscale),
         range: wc.bleed_range,
     }
 }

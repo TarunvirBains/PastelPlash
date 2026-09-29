@@ -25,7 +25,7 @@ pub(super) fn plan(style: &Style, tr: &Treatment, facts: &ImageFacts, has_lut: b
         } else {
             0.0
         },
-        radius: (pal.accent_radius * facts.scale).max(1.0),
+        radius: (pal.accent_radius * facts.scale).max(facts.upscale),
         softness: pal.accent_softness,
         min_depth: pal.accent_min_depth,
         min_l: pal.accent_min_l,

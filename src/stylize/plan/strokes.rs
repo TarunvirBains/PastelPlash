@@ -23,15 +23,15 @@ pub(super) fn plan(
     busy: f32,
     brushwork: f32,
 ) -> Strokes {
-    let f = facts.scale;
+    let (f, u) = (facts.scale, facts.upscale);
     let st = &style.strokes;
     let ab = &style.abstraction;
     Strokes {
         strength: st.strength * tr.strokes * brushwork,
         // Chroma variation never above the style's own (more would push vivid colors out of gamut).
         chroma: st.chroma * (tr.strokes * brushwork).min(1.0),
-        len: (st.length * f * tr.stroke_scale * (1.0 + busy * (ab.stroke_scale - 1.0))).max(1.0),
-        width: (st.width * f * tr.stroke_scale).max(0.75),
+        len: (st.length * f * tr.stroke_scale * (1.0 + busy * (ab.stroke_scale - 1.0))).max(u),
+        width: (st.width * f * tr.stroke_scale).max(0.75 * u),
         smear: st.smear * tr.strokes,
     }
 }

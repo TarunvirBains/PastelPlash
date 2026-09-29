@@ -17,6 +17,7 @@ pub mod mood;
 pub mod palette;
 pub mod pipeline;
 pub mod png_io;
+pub mod preflight;
 pub mod process;
 pub mod report;
 pub mod resample;

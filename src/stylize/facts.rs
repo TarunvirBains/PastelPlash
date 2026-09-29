@@ -14,6 +14,10 @@ pub(super) struct ImageFacts {
     pub gm: f32,
     /// Size factor: reference texels → texels of this image.
     pub scale: f32,
+    /// Texels of this image per source texel (above 1 when enlarged for a resolution floor).
+    /// Texel-size limits (minimum and maximum radii) scale with it, so the painting keeps its
+    /// relation to the source content, only finer.
+    pub upscale: f32,
     /// Seam-to-interior discontinuity per axis.
     pub seam_ratios: [f32; 2],
     /// Axes that wrap (seamless tiling).
@@ -41,10 +45,14 @@ impl ImageFacts {
             .source_scale
             .or(ctx.config.pack.source_scale)
             .or(style.scale.source_scale);
-        let scale = match source_scale {
-            Some(s) => s / style.scale.reference_source_scale.max(1e-3),
-            None => (gm / style.scale.reference_size.max(1.0)).powf(style.scale.exponent),
-        };
+        // An enlarged image is sized like its source, then scaled up by the enlargement.
+        let upscale = ctx.upscale.max(1.0);
+        let scale = upscale
+            * match source_scale {
+                Some(s) => s / style.scale.reference_source_scale.max(1e-3),
+                None => ((gm / upscale) / style.scale.reference_size.max(1.0))
+                    .powf(style.scale.exponent),
+            };
         let seam_ratios = [
             analysis::seam_ratio(image, false),
             analysis::seam_ratio(image, true),
@@ -69,6 +77,7 @@ impl ImageFacts {
             h,
             gm,
             scale,
+            upscale,
             seam_ratios,
             wrap,
             chroma_p99,

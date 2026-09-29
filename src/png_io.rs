@@ -14,6 +14,17 @@ pub fn read(path: &Path) -> Result<Image> {
     decode(BufReader::new(file)).with_context(|| format!("decoding {}", path.display()))
 }
 
+/// Width and height from a PNG file's header (`None` if it is not a PNG).
+pub fn dimensions(path: &Path) -> Option<(u32, u32)> {
+    let mut head = [0u8; 24];
+    std::io::Read::read_exact(&mut File::open(path).ok()?, &mut head).ok()?;
+    if head[..8] != [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A] || &head[12..16] != b"IHDR" {
+        return None;
+    }
+    let be = |o: usize| u32::from_be_bytes(head[o..o + 4].try_into().unwrap());
+    Some((be(16), be(20)))
+}
+
 pub fn write(image: &Image, path: &Path) -> Result<()> {
     let file = File::create(path).with_context(|| format!("creating {}", path.display()))?;
     let mut out = BufWriter::new(file);

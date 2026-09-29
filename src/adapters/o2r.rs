@@ -77,14 +77,32 @@ pub fn decode(bytes: &[u8]) -> Option<(Otex, Image)> {
     Some((otex, image))
 }
 
-/// Re-encodes pixels with the original header (the size must not have changed).
+/// Re-encodes pixels with the original header. A texture enlarged by an integer factor (the
+/// same on both sides) gets its header rescaled: width and height, the two HD scale factors at
+/// `0x50`/`0x54` (multiplied by the same factor, or the game samples the wrong part of it) and
+/// the data size.
 pub fn encode(otex: &Otex, image: &Image) -> Result<Vec<u8>> {
+    let k = image.width / otex.width.max(1);
     ensure!(
-        (image.width, image.height) == (otex.width, otex.height),
-        "texture size changed"
+        k >= 1 && (image.width, image.height) == (otex.width * k, otex.height * k),
+        "texture size changed from {}x{} to {}x{} (only an integer enlargement is allowed)",
+        otex.width,
+        otex.height,
+        image.width,
+        image.height
     );
     let mut out = Vec::with_capacity(HEADER + image.pixels.len() * 4);
     out.extend_from_slice(&otex.header);
+    if k > 1 {
+        let put = |out: &mut Vec<u8>, off: usize, b: [u8; 4]| out[off..off + 4].copy_from_slice(&b);
+        let scaled = |off: usize| f32::from_le_bytes(otex.header[off..off + 4].try_into().unwrap());
+        put(&mut out, 0x44, image.width.to_le_bytes());
+        put(&mut out, 0x48, image.height.to_le_bytes());
+        put(&mut out, 0x50, (scaled(0x50) * k as f32).to_le_bytes());
+        put(&mut out, 0x54, (scaled(0x54) * k as f32).to_le_bytes());
+        let size = u32::try_from(image.pixels.len() * 4).context("texture too large for OTEX")?;
+        put(&mut out, 0x58, size.to_le_bytes());
+    }
     for p in &image.pixels {
         out.extend(p.map(|v| (v.clamp(0.0, 1.0) * 255.0).round() as u8));
     }
@@ -155,6 +173,9 @@ pub fn run(opts: &Options, config: &Config, pipeline: &Pipeline) -> Result<()> {
         category: opts.category,
         mood: opts.mood.clone(),
     };
+    let est = estimate(opts, &names, &driver)?;
+    println!("{}", est.summary());
+    crate::preflight::check_disk(&opts.output, est.bytes)?;
     let timers = Timers::default();
     let processed = AtomicUsize::new(0);
     let copied = AtomicUsize::new(0);
@@ -255,6 +276,53 @@ pub fn run(opts: &Options, config: &Config, pipeline: &Pipeline) -> Result<()> {
         bail!("{failed} entries failed");
     }
     Ok(())
+}
+
+/// Width and height of a raw OTEX texture from its header, or `None` for other resources.
+fn texture_size(header: &[u8]) -> Option<(u32, u32)> {
+    if header.len() < HEADER || &header[4..8] != b"XETO" || u32_at(header, 0x4C) & 1 == 0 {
+        return None;
+    }
+    let (w, h) = (u32_at(header, 0x44), u32_at(header, 0x48));
+    (u64::from(u32_at(header, 0x58)) == u64::from(w) * u64::from(h) * 4 && w * h > 0)
+        .then_some((w, h))
+}
+
+/// What a run will write, from the entry headers alone (enlarged textures counted at their
+/// output size).
+fn estimate(
+    opts: &Options,
+    names: &[String],
+    driver: &Driver,
+) -> Result<crate::preflight::Estimate> {
+    let mut archive = zip::ZipArchive::new(
+        File::open(&opts.input).with_context(|| format!("opening {}", opts.input.display()))?,
+    )?;
+    let mut est = crate::preflight::Estimate::default();
+    let mut head = vec![0u8; HEADER];
+    for name in names {
+        let mut entry = archive.by_name(name)?;
+        let size = entry.size();
+        let texture = match driver.category(Path::new(name)) {
+            Some(c) if entry.read_exact(&mut head).is_ok() => texture_size(&head).map(|d| (c, d)),
+            _ => None,
+        };
+        match texture {
+            Some((c, (w, h))) => {
+                let (k, internal) = driver.resolution_plan(c, w, h);
+                let (w, h) = (u64::from(w), u64::from(h));
+                let (k, internal) = (u64::from(k), u64::from(internal));
+                est.add(
+                    HEADER as u64 + w * h * 4 * k * k,
+                    k as u32,
+                    w * h * internal * internal,
+                );
+            }
+            None if opts.complete => est.add(size, 1, 0),
+            None => {}
+        }
+    }
+    Ok(est)
 }
 
 /// Exports matching textures as PNGs under `out_dir`, keeping their archive paths (plus
@@ -385,6 +453,36 @@ mod tests {
         assert_eq!(encode(&o, &img).unwrap(), bytes);
         let (_, gray) = decode(&otex(6, 2, 3, &px)).unwrap();
         assert_eq!(gray.tint_safe, Some(true));
+    }
+
+    #[test]
+    fn an_enlarged_texture_gets_a_consistent_header() {
+        let px: Vec<u8> = (0..2 * 3 * 4).map(|i| (i * 37 % 256) as u8).collect();
+        let mut bytes = otex(6, 2, 3, &px);
+        bytes[0x54..0x58].copy_from_slice(&16.0f32.to_le_bytes());
+        let (o, img) = decode(&bytes).unwrap();
+        let big = crate::resample::upsample(&img, 4, [false; 2]);
+        let out = encode(&o, &big).unwrap();
+        let f32_at = |off: usize| f32::from_le_bytes(out[off..off + 4].try_into().unwrap());
+        assert_eq!((u32_at(&out, 0x44), u32_at(&out, 0x48)), (8, 12));
+        assert_eq!((f32_at(0x50), f32_at(0x54)), (256.0, 64.0));
+        assert_eq!(u32_at(&out, 0x58), 8 * 12 * 4);
+        assert_eq!(out.len(), HEADER + 8 * 12 * 4);
+        // Everything else in the header is carried over.
+        for (i, (a, b)) in out[..HEADER].iter().zip(&bytes[..HEADER]).enumerate() {
+            if !(0x44..0x5C).contains(&i) || (0x4C..0x50).contains(&i) {
+                assert_eq!(a, b, "header byte {i:#x}");
+            }
+        }
+        // It decodes again as the enlarged texture.
+        let (o2, again) = decode(&out).unwrap();
+        assert_eq!((o2.width, o2.height, o2.format), (8, 12, 6));
+        assert_eq!(again.tint_safe, Some(true));
+        // Anything but an integer enlargement of both sides is refused.
+        let mut odd = big.clone();
+        odd.width = 6;
+        odd.pixels.truncate(6 * 12);
+        assert!(encode(&o, &odd).is_err());
     }
 
     #[test]

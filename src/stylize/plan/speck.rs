@@ -20,18 +20,18 @@ pub(super) struct Speck {
 
 /// World and background textures only: actors' small dots are eyes, rivets and studs.
 pub(super) fn plan(style: &Style, ctx: &FileContext, facts: &ImageFacts) -> Speck {
-    let mk = &style.marks;
+    let (mk, u) = (&style.marks, facts.upscale);
     let on =
         mk.speck_radius > 0.0 && matches!(ctx.category, Category::World | Category::Background);
     Speck {
         radius: if on {
-            (mk.speck_radius * facts.scale).clamp(2.5, 6.0)
+            (mk.speck_radius * facts.scale).clamp(2.5 * u, 6.0 * u)
         } else {
             0.0
         },
         depth: mk.speck_depth,
-        clip_radius: (6.0 * facts.scale).clamp(6.0, 24.0),
-        thin_radius: (2.5 * facts.scale).clamp(2.0, 8.0),
+        clip_radius: (6.0 * facts.scale).clamp(6.0 * u, 24.0 * u),
+        thin_radius: (2.5 * facts.scale).clamp(2.0 * u, 8.0 * u),
         // World and background only: actors are banded by the cel shader, fluids and skies have
         // no handles.
         thin_amount: if matches!(ctx.category, Category::World | Category::Background) {

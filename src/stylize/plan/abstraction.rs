@@ -36,7 +36,7 @@ pub(super) fn plan(
     on: bool,
     gate: f32,
 ) -> Abstraction {
-    let (f, gm) = (facts.scale, facts.gm);
+    let (f, gm, u) = (facts.scale, facts.gm, facts.upscale);
     let ab = &style.abstraction;
     let k = &style.kuwahara;
     let busy = if on {
@@ -49,19 +49,19 @@ pub(super) fn plan(
         radius_coarse: if busy > 0.0 {
             (ab.radius * f)
                 .max(ab.min_frac * gm)
-                .clamp(k.min_radius, k.max_radius)
+                .clamp(k.min_radius * u, k.max_radius * u)
         } else {
             0.0
         },
         highlight_radius: (ab.highlight_radius * f)
             .max(2.0 * ab.min_frac * gm)
-            .max(2.0),
+            .max(2.0 * u),
         mean_lab: if busy > 0.0 {
             crate::report::mean_oklab(image)
         } else {
             [0.5, 0.0, 0.0]
         },
-        edge_coarse_step: (style.watercolor.edge_width * f * ab.edge_scale).max(2.0),
+        edge_coarse_step: (style.watercolor.edge_width * f * ab.edge_scale).max(2.0 * u),
         edge_soften: ab.edge_soften,
         highlight_calm: ab.highlight_calm,
         chroma_retain: ab.chroma_retain,

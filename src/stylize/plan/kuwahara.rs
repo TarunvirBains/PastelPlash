@@ -22,8 +22,8 @@ pub(super) fn marks(
     let mk = &style.marks;
     // Fluids are not ground grit: their marks stay small (caustics would turn into cells).
     if mk.tiling_multiplier != 1.0 && (wrap[0] || wrap[1]) && !ctx.category.is_fluid() {
-        let fine = facts.l_std(image, (3.0 * f).max(1.0));
-        let mid = facts.l_std(image, (12.0 * f).max(2.0));
+        let fine = facts.l_std(image, (3.0 * f).max(facts.upscale));
+        let mid = facts.l_std(image, (12.0 * f).max(2.0 * facts.upscale));
         speckle = fine / mid.max(1e-6);
         let w = smoothstep(mk.speckle[0], mk.speckle[1], speckle);
         marks_scale *= 1.0 + (mk.tiling_multiplier - 1.0) * w;
@@ -51,21 +51,22 @@ pub(super) fn plan(
     marks_scale: f32,
     busy: f32,
 ) -> Kuwahara {
-    let f = facts.scale;
+    let (f, u) = (facts.scale, facts.upscale);
     let k = &style.kuwahara;
     // Paint-mark size: the style's marks.size (or kuwahara.radius), per category and per
     // pack-map rule (e.g. larger dabs on ground textures that tile many times).
     let mark = style.marks.size.unwrap_or(k.radius);
     let radius = if mark > 0.0 && k.strength > 0.0 {
-        (mark * f * tr.radius_scale * marks_scale).clamp(k.min_radius, k.max_radius)
+        (mark * f * tr.radius_scale * marks_scale).clamp(k.min_radius * u, k.max_radius * u)
     } else {
         0.0
     };
-    let tensor_sigma = (k.tensor_sigma * f).clamp(0.5, 16.0);
+    let tensor_sigma = (k.tensor_sigma * f).clamp(0.5 * u, 16.0 * u);
     let flow = style.abstraction.flow_scale;
     Kuwahara {
         radius,
-        tensor_sigma: (tensor_sigma * (1.0 + busy * (flow - 1.0).max(0.0))).clamp(0.5, 32.0),
+        tensor_sigma: (tensor_sigma * (1.0 + busy * (flow - 1.0).max(0.0)))
+            .clamp(0.5 * u, 32.0 * u),
         sharpness: k.sharpness,
         hardness: k.hardness,
         anisotropy: k.anisotropy.max(1e-3),

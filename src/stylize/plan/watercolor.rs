@@ -17,12 +17,12 @@ pub(super) struct Watercolor {
 }
 
 pub(super) fn plan(style: &Style, tr: &Treatment, facts: &ImageFacts) -> Watercolor {
-    let f = facts.scale;
+    let (f, u) = (facts.scale, facts.upscale);
     let wc = &style.watercolor;
     Watercolor {
-        edge_step: (wc.edge_width * f).max(1.0),
-        gran_px: (wc.granulation_scale * f).max(0.75),
-        paper_px: (wc.paper_scale * f).max(0.75),
+        edge_step: (wc.edge_width * f).max(u),
+        gran_px: (wc.granulation_scale * f).max(0.75 * u),
+        paper_px: (wc.paper_scale * f).max(0.75 * u),
         paper: wc.paper_grain * tr.paper,
         paper_tint: wc.paper_tint * tr.paper,
         edge_dark: wc.edge_darkening * tr.wet_edges,

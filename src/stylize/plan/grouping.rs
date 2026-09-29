@@ -91,7 +91,7 @@ pub(super) fn plan(
         amount: grp,
         masses,
         sigma,
-        radius: (gr.radius * facts.gm).max(1.0),
+        radius: (gr.radius * facts.gm).max(facts.upscale),
         note,
     }
 }

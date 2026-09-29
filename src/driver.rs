@@ -75,15 +75,86 @@ impl Driver<'_> {
         mood
     }
 
-    /// Runs the pipeline on a file's image (as its material: see [`Driver::material`]).
+    /// Runs the pipeline on a file's image (as its material: see [`Driver::material`]). Below the
+    /// target's resolution floor the image is enlarged (Lanczos) to the internal size, restyled
+    /// there and area-averaged down to the output size, so `image` may come back larger (by an
+    /// integer factor on both sides: [`Driver::resolution_plan`]).
     pub fn run(&self, image: &mut Image, rel: &Path, category: Category) -> Result<()> {
         let category = self.material(image, rel, category);
-        let ctx = FileContext {
+        let (out, internal) = self
+            .config
+            .target
+            .resolution(category)
+            .plan(image.width, image.height);
+        let mut ctx = FileContext {
             rel,
             category,
             mood: self.mood(rel),
             config: self.config,
+            upscale: 1.0,
         };
-        self.pipeline.run(image, &ctx)
+        if internal <= 1 {
+            return self.pipeline.run(image, &ctx);
+        }
+        let texels = u64::from(image.width * internal) * u64::from(image.height * internal);
+        let _budget = MEMORY.acquire(texels);
+        let wrap = self.wrap(image, category);
+        let mut big = crate::resample::upsample(image, internal, wrap);
+        ctx.upscale = internal as f32;
+        self.pipeline.run(&mut big, &ctx)?;
+        *image = crate::resample::downsample(&big, internal / out);
+        Ok(())
+    }
+
+    /// (output factor, internal factor) by which [`Driver::run`] enlarges a `w`×`h` file of this
+    /// category ((1, 1) = neither).
+    pub fn resolution_plan(&self, category: Category, w: u32, h: u32) -> (u32, u32) {
+        self.config.target.resolution(category).plan(w, h)
+    }
+
+    /// The axes along which an image tiles (as the stylize stage decides it), for wrap-around
+    /// resampling.
+    fn wrap(&self, image: &Image, category: Category) -> [bool; 2] {
+        if !category.may_tile() {
+            return [false; 2];
+        }
+        let threshold = self.config.style.tiling.threshold;
+        [false, true].map(|t| crate::analysis::seam_ratio(image, t) <= threshold)
+    }
+}
+
+/// Bounds the enlarged images in flight (texels across all workers): a pre-rendered background
+/// restyled at 2× a 4× floor is tens of millions of texels, several of them at once would exhaust
+/// memory. A single image larger than the budget still runs, alone.
+const MEMORY_TEXELS: u64 = 160 << 20;
+
+static MEMORY: Budget = Budget {
+    used: std::sync::Mutex::new(0),
+    cv: std::sync::Condvar::new(),
+};
+
+struct Budget {
+    used: std::sync::Mutex<u64>,
+    cv: std::sync::Condvar,
+}
+
+struct BudgetGuard(u64);
+
+impl Budget {
+    fn acquire(&'static self, texels: u64) -> BudgetGuard {
+        let want = texels.min(MEMORY_TEXELS);
+        let mut used = self.used.lock().unwrap();
+        while *used + want > MEMORY_TEXELS {
+            used = self.cv.wait(used).unwrap();
+        }
+        *used += want;
+        BudgetGuard(want)
+    }
+}
+
+impl Drop for BudgetGuard {
+    fn drop(&mut self) {
+        *MEMORY.used.lock().unwrap() -= self.0;
+        MEMORY.cv.notify_all();
     }
 }

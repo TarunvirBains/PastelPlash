@@ -104,6 +104,9 @@ pub fn run(opts: &Options, config: &Config, pipeline: &Pipeline) -> Result<Summa
             Some((entry.rel.as_path(), action))
         })
         .collect();
+    let est = estimate(opts, &driver, &jobs);
+    println!("{}", est.summary());
+    crate::preflight::check_disk(&opts.output, est.bytes)?;
 
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(opts.jobs.unwrap_or(0))
@@ -166,4 +169,30 @@ fn handle(opts: &Options, driver: &Driver, rel: &Path, action: Action) -> Result
             .map(drop)
             .with_context(|| format!("copying {} to {}", src.display(), dst.display())),
     }
+}
+
+/// What a run will write: sources at their size, enlarged PNGs by the square of their factor
+/// (compressed size scales about with the texel count).
+fn estimate(
+    opts: &Options,
+    driver: &Driver,
+    jobs: &[(&Path, Action)],
+) -> crate::preflight::Estimate {
+    let mut est = crate::preflight::Estimate::default();
+    for &(rel, action) in jobs {
+        let src = opts.input.join(rel);
+        let len = fs::metadata(&src).map_or(0, |m| m.len());
+        match (action, png_io::dimensions(&src)) {
+            (Action::Process(c), Some((w, h))) => {
+                let (k, internal) = driver.resolution_plan(c, w, h);
+                est.add(
+                    len * u64::from(k * k),
+                    k,
+                    u64::from(w) * u64::from(h) * u64::from(internal * internal),
+                );
+            }
+            _ => est.add(len, 1, 0),
+        }
+    }
+    est
 }

@@ -28,7 +28,7 @@ pub use style::{
     Abstraction, Cast, Contrast, Delight, Grouping, HueGroup, Kuwahara, Marks, Palette, Scale,
     Strokes, Style, Temperature, Tiling, Tint, ValueContrast, Warmth, WaterTone, Watercolor,
 };
-pub use target::{Exposure, Target, Treatment};
+pub use target::{Exposure, Resolution, Target, Treatment};
 
 /// All three layers, loaded from optional files.
 #[derive(Debug, Clone, Default, PartialEq)]

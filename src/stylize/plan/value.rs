@@ -15,7 +15,7 @@ pub(super) fn contrast_on(style: &Style, tr: &Treatment) -> bool {
 /// the spread is above the style's trigger (feathered ±15%). Shared by adaptive contrast,
 /// abstraction and grouping.
 pub(super) fn spread_gate(image: &Image, style: &Style, facts: &ImageFacts) -> (f32, f32) {
-    let r_mid = (style.value_contrast.radius_mid * facts.scale).max(2.0);
+    let r_mid = (style.value_contrast.radius_mid * facts.scale).max(2.0 * facts.upscale);
     let ct = &style.contrast;
     let s = facts.l_std(image, r_mid);
     (
@@ -50,7 +50,7 @@ pub(super) fn plan(
     spread: f32,
     gate: f32,
 ) -> Value {
-    let (f, gm) = (facts.scale, facts.gm);
+    let (f, gm, u) = (facts.scale, facts.gm, facts.upscale);
     let vc = &style.value_contrast;
     let ct = &style.contrast;
     let adapt = if contrast_on {
@@ -70,13 +70,13 @@ pub(super) fn plan(
         mid: vc.mid * tr.value_contrast,
         coarse: vc.coarse * tr.value_contrast,
         chroma: vc.chroma,
-        r_fine: (vc.radius_fine * f).max(1.0),
-        r_mid: (vc.radius_mid * f).max(2.0),
-        r_coarse: (vc.radius_coarse * f).max(4.0),
+        r_fine: (vc.radius_fine * f).max(u),
+        r_mid: (vc.radius_mid * f).max(2.0 * u),
+        r_coarse: (vc.radius_coarse * f).max(4.0 * u),
         range: vc.range,
         amp: 1.0 - (1.0 - amp) * tr.value_contrast.min(1.0),
         spread,
-        pivot_r: (ct.pattern_radius * gm).max(2.0),
+        pivot_r: (ct.pattern_radius * gm).max(2.0 * u),
     }
 }
 
