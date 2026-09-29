@@ -120,6 +120,13 @@ pub struct PaletteRules {
     pub min_l: f32,
     pub dark_l: f32,
     pub dark_min_chroma: f32,
+    /// Categories (names as in the pack map) the colored-darks rule does not apply to.
+    pub colored_darks_exempt: Vec<String>,
+    pub mud_relative: Vec<String>,
+    pub mud_relative_margin: f32,
+    pub mud_relative_hue: f32,
+    pub mud_relative_max_dc: f32,
+    pub mud_relative_max_dh: f32,
     pub mud_l: f32,
     pub mud_hue: [f32; 2],
     pub mud_max_chroma: f32,
@@ -137,6 +144,40 @@ impl PaletteRules {
     }
 
     /// True for a dull brownish dark ("mud").
+    /// Whether the colored-darks rule applies to this category.
+    pub fn darks_colored(&self, cat: pastelplash::config::Category) -> bool {
+        let name = format!("{cat:?}").to_lowercase();
+        !self.colored_darks_exempt.contains(&name)
+    }
+
+    /// Whether mapping `src` to `out` (OKLCH) introduces brown mud for this category. For the
+    /// `mud_relative` categories (actors) an output in the mud band is allowed when the source
+    /// was already there (widened band) or the output is the source's own color.
+    pub fn introduces_mud(
+        &self,
+        cat: pastelplash::config::Category,
+        src: [f32; 3],
+        out: [f32; 3],
+    ) -> bool {
+        if !self.is_mud(out) {
+            return false;
+        }
+        let name = format!("{cat:?}").to_lowercase();
+        if !self.mud_relative.contains(&name) {
+            return true;
+        }
+        let [l, c, h] = src;
+        let m = self.mud_relative_margin;
+        let [h0, h1] = self.mud_hue;
+        let widened = l < self.mud_l + m
+            && c >= 0.012 - m
+            && c < self.mud_max_chroma + m
+            && in_hue_range(h, [h0 - self.mud_relative_hue, h1 + self.mud_relative_hue]);
+        let own = (out[1] - c).abs() <= self.mud_relative_max_dc
+            && pastelplash::color::hue_diff(h, out[2]).abs() <= self.mud_relative_max_dh;
+        !(widened || own)
+    }
+
     pub fn is_mud(&self, [l, c, h]: [f32; 3]) -> bool {
         l < self.mud_l && c >= 0.012 && c < self.mud_max_chroma && in_hue_range(h, self.mud_hue)
     }
@@ -225,6 +266,9 @@ pub struct ActorRules {
     pub max_patch_l: f32,
     pub max_brushwork: f32,
     pub max_local_hue_change: f32,
+    pub cool_dark_hue: [f32; 2],
+    pub cool_dark_family: [f32; 2],
+    pub max_cool_dark_hue_shift: f32,
     pub max_tint_safe_gray: f32,
     pub max_tint_safe_l: f32,
     pub tint_safe_min_structure: f32,

@@ -118,6 +118,15 @@ fn compress(l: f32, lo: f32, floor: f32, ceiling: f32, knee_frac: f32) -> f32 {
     }
 }
 
+/// How much a source reads as a cool cast (steel, slate, blue-gray stone): 0..1. A hue in the
+/// cool family (fading in over 140-165 degrees, out over 285-310) with a measurable chroma
+/// (fading in over 0.004-0.009 OKLab C). The olive neutral tint fades out for it, so steel stays
+/// a cool gray instead of turning greenish or brown.
+pub fn cool_cast(h: f32, c: f32) -> f32 {
+    let h = h.rem_euclid(360.0);
+    smoothstep(140.0, 165.0, h) * (1.0 - smoothstep(285.0, 310.0, h)) * smoothstep(0.004, 0.009, c)
+}
+
 /// Weight of the earth warmth for a source hue and chroma: zero at and outside the band edges,
 /// fading in over `feather` degrees inside the band, times a chroma fade-in.
 pub fn warmth_weight(w: &crate::config::Warmth, h: f32, c: f32) -> f32 {
@@ -453,9 +462,9 @@ impl Mapping<'_> {
         }
         let chromatic = color::oklch_to_oklab([l3, c2, h2]);
 
-        // 5. Neutral path.
+        // 5. Neutral path. A cool cast (steel) keeps its own faint hue: no olive tint.
         let nt = &p.neutral_tint;
-        let n_amount = (nt.amount * s).min(1.0);
+        let n_amount = (nt.amount * s).min(1.0) * (1.0 - cool_cast(h, c));
         let n_vec = color::oklch_to_oklab([0.0, nt.chroma, nt.hue]);
         let neutral = [
             l3,

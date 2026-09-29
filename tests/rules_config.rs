@@ -539,7 +539,8 @@ fn rule_hued_near_black_darks_keep_their_hue() {
         for (name, style, cat, lut) in luts() {
             let out = mapped_lch(style, *cat, lut, rgb);
             assert!(
-                !k.palette.is_mud(out),
+                !k.palette
+                    .introduces_mud(*cat, lch([rgb[0], rgb[1], rgb[2], 1.0]), out),
                 "{name}: {rgb:?} -> {out:?} (brown mud)"
             );
             if out[1] >= 0.02 {
@@ -563,7 +564,7 @@ proptest! {
             let [l, c, h] = mapped_lch(style, *cat, lut, [r, g, b]);
             prop_assert!(l >= k.palette.min_l - k.tolerance.lightness,
                 "{}: {:?} -> L {} (crushed black)", name, [r, g, b], l);
-            if l < k.palette.dark_l {
+            if l < k.palette.dark_l && k.palette.darks_colored(*cat) {
                 prop_assert!(c >= k.palette.dark_min_chroma - 1e-3,
                     "{}: {:?} -> L {} C {} h {} (neutral dark)", name, [r, g, b], l, c, h);
             }
@@ -575,7 +576,30 @@ proptest! {
         let k = contract();
         for (name, style, cat, lut) in luts() {
             let out = mapped_lch(style, *cat, lut, [r, g, b]);
-            prop_assert!(!k.palette.is_mud(out), "{}: {:?} -> {:?} (brown mud)", name, [r, g, b], out);
+            let src = lch([r, g, b, 1.0]);
+            prop_assert!(!k.palette.introduces_mud(*cat, src, out), "{}: {:?} -> {:?} (brown mud)", name, [r, g, b], out);
+        }
+    }
+
+    #[test]
+    fn rule_cool_actor_darks_keep_their_hue_family(l in 0.12f32..0.4, c in 0.006f32..0.03, h in 0.0f32..1.0) {
+        // Steel and iron on props and characters (near-neutral, faintly cool darks) stay steel:
+        // a colored output keeps the source's cool hue family, never brown or teal.
+        let k = contract();
+        let [h0, h1] = k.actor.cool_dark_hue;
+        let rgb = from_oklch(l, c, h0 + h * (h1 - h0));
+        let [_, c_src, h_src] = lch([rgb[0], rgb[1], rgb[2], 1.0]);
+        prop_assume!(c_src >= 0.006 && (h0..=h1).contains(&h_src));
+        for (name, style, cat, lut) in luts() {
+            if *cat != Category::Actor {
+                continue;
+            }
+            let [lo, co, ho] = mapped_lch(style, *cat, lut, rgb);
+            if co >= 0.012 {
+                let d = color::hue_diff(h_src, ho).abs();
+                prop_assert!(d <= k.actor.max_cool_dark_hue_shift || in_hue_range(ho, k.actor.cool_dark_family),
+                    "{}: L {} C {} h {} -> L {} C {} h {} (left the cool family)", name, l, c_src, h_src, lo, co, ho);
+            }
         }
     }
 

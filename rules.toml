@@ -20,14 +20,27 @@ max_floor_margin = 0.08
 # No crushed black: nothing (except accent darks) maps darker than this.
 min_l = 0.15
 # Darks are colored: any output darker than dark_l carries at least dark_min_chroma
-# (never neutral near-black). Tint-safe textures (lightness only) are exempt.
+# (never neutral near-black). Tint-safe textures (lightness only) are exempt, and so are the
+# colored_darks_exempt categories: actors, whose shading the cel shader supplies (their
+# near-neutral darks, steel and iron, keep their own faint hue instead of an umber floor).
 dark_l = 0.3
 dark_min_chroma = 0.015
+colored_darks_exempt = ["actor"]
 # No brown mud: an output darker than mud_l with a hue in mud_hue must not be dull
 # (chroma between neutral and mud_max_chroma).
 mud_l = 0.4
 mud_hue = [40.0, 100.0]
 mud_max_chroma = 0.035
+# Actors keep their own painted colors, so for them the rule is relative: they introduce no mud. An
+# actor output may sit in the mud band only if its source was already in it (the band widened by
+# mud_relative_margin in chroma and lightness, and by mud_relative_hue degrees) or the output is
+# the source's own color (chroma within mud_relative_max_dc, hue within mud_relative_max_dh): dull
+# leather stays dull leather, Link's green or skin never turns to mud.
+mud_relative = ["actor"]
+mud_relative_margin = 0.01
+mud_relative_hue = 10.0
+mud_relative_max_dc = 0.01
+mud_relative_max_dh = 15.0
 # Pastel is not gray: a clearly colored source (chroma ≥ retention_min_source_chroma) keeps at
 # least min(retention_ratio × its chroma, retention_floor).
 retention_min_source_chroma = 0.05
@@ -172,6 +185,12 @@ max_brushwork = 3.0
 # No new hue: a colored actor texel stays within max_local_hue_change degrees of its 9x9 source
 # neighborhood's mean hue (where that neighborhood is clearly colored).
 max_local_hue_change = 45.0
+# Near-neutral cool actor darks (steel, iron: hue in cool_dark_hue, faint chroma) keep their hue
+# family: a colored output (C >= 0.012) stays in cool_dark_family (blue-gray to violet: no brown,
+# no teal or green) or within max_cool_dark_hue_shift degrees of its source.
+cool_dark_hue = [180.0, 260.0]
+cool_dark_family = [185.0, 300.0]
+max_cool_dark_hue_shift = 40.0
 # Engine-tinted (tint-safe) actor textures may be raised to a median gray of at most
 # max_tint_safe_gray and never above max_tint_safe_l (the tint provides the headroom, so they may
 # exceed the actor ceiling); their folds stay (16x16 cell correlation with the source at least
