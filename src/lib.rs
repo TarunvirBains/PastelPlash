@@ -17,4 +17,5 @@ pub mod png_io;
 pub mod process;
 pub mod report;
 pub mod stylize;
+pub mod util;
 pub mod walk;

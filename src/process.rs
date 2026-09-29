@@ -10,6 +10,7 @@ use rayon::prelude::*;
 use crate::config::{Category, Config, Mood};
 use crate::pipeline::{FileContext, Pipeline};
 use crate::png_io;
+use crate::util::ms;
 use crate::walk::{self, SkipReason, WalkOptions};
 
 #[derive(Debug, Clone, Default)]
@@ -130,10 +131,6 @@ pub fn run(opts: &Options, config: &Config, pipeline: &Pipeline) -> Result<Summa
     }
     summary.elapsed = start.elapsed();
     Ok(summary)
-}
-
-fn ms(d: Duration) -> String {
-    format!("{:.0}ms", d.as_secs_f64() * 1000.0)
 }
 
 fn handle(

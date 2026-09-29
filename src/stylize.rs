@@ -33,6 +33,7 @@ use crate::image::Image;
 use crate::lut::Lut3d;
 use crate::palette::{Mapping, smoothstep};
 use crate::pipeline::{FileContext, Stage};
+use crate::util::ms;
 
 const SHADER: &str = include_str!("shaders/stylize.wgsl");
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba32Float;
@@ -1002,10 +1003,6 @@ impl Stage for Stylize {
         );
         Ok(())
     }
-}
-
-pub fn ms(d: Duration) -> String {
-    format!("{:.0}ms", d.as_secs_f64() * 1000.0)
 }
 
 impl Stylize {
