@@ -7,6 +7,17 @@
 # shading.
 name = "soh-celshade"
 
+# Output resolution floor (the game is played at up to 4K): textures whose long side is below 1024
+# are written larger (at most 4x, a power of two), restyled at 2x the output size and averaged
+# down, so small textures no longer show their texel grid. SoH samples an enlarged texture
+# correctly when the OTEX header's HD scale factors grow with it (the .o2r adapter does that;
+# verified in-game). floor = 0 turns it off; lower it to save disk space and video memory.
+[resolution]
+floor = 1024
+max_factor = 4
+power_of_two = true
+internal = 2
+
 [categories.actor]
 strokes = 2.5            # solid things read painted: brushwork comparable to the world's (faces lighter: pack map)
 delight = 0.2
@@ -55,6 +66,9 @@ radius_scale = 0.8
 # colored shadow), then bring mids and lights down with a monotone curve so the room's mean
 # lightness (its exposure) matches the source.
 exposure = { preserve_mean = true, protect = [0.15, 0.75] }
+# Pre-rendered rooms fill the screen: about 3840 wide (Link's house 1280x960 -> 3840x2880,
+# verified in-game), any integer factor up to 4.
+resolution = { floor = 3840, max_factor = 4, power_of_two = false, internal = 2 }
 
 [categories.skybox]
 delight = 0.0

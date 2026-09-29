@@ -9,7 +9,10 @@ intent and phases in [PLAN.md](PLAN.md).
 ```
 src/
   main.rs                 CLI (clap)
-  driver.rs               per-file flow shared by every front end: classify → material → mood → run
+  driver.rs               per-file flow shared by every front end: classify → material → mood →
+                          resolution floor (enlarge, run, average down) → run
+  resample.rs             Lanczos-3 integer upsample, area downsample (alpha-aware)
+  preflight.rs            output size estimate and free-disk-space check before a run
   fluid.rs                fluid detection (water, lava) from the pixels, on a thumbnail
   process.rs              front end: PNG folder in, PNG folder out
   adapters/o2r.rs         front end: libultraship .o2r archives (the only place OTEX exists)

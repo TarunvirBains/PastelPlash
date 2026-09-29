@@ -18,6 +18,7 @@ pub struct Contract {
     pub actor: ActorRules,
     pub identity: IdentityRules,
     pub fluid: FluidRules,
+    pub resolution: ResolutionRules,
     /// Per-mood allowances (keyed by mood name).
     #[serde(default)]
     pub moods: std::collections::BTreeMap<String, MoodRules>,
@@ -312,4 +313,13 @@ pub fn contract() -> &'static Contract {
 /// True if `h` lies in the (possibly wrapping) hue range.
 pub fn in_hue_range(h: f32, [from, to]: [f32; 2]) -> bool {
     (h - from).rem_euclid(360.0) <= (to - from).rem_euclid(360.0)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ResolutionRules {
+    pub min_floor: u32,
+    pub max_factor: u32,
+    pub max_blockiness: f32,
+    pub max_coarse_delta_e: f32,
 }

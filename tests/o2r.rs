@@ -126,7 +126,7 @@ fn neutral_config_complete_pack_is_byte_identical() {
 }
 
 #[test]
-fn mod_contains_only_selected_restyled_textures_with_original_headers() {
+fn mod_contains_only_selected_restyled_textures_with_consistent_headers() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let config = pack_config(
         Some(&root.join(format!(
@@ -163,11 +163,26 @@ fn mod_contains_only_selected_restyled_textures_with_original_headers() {
             "alt/scenes/shared/spot04_scene/grass",
         ]
     );
+    // Below the target's resolution floor every texture is written 4x larger with a consistent
+    // header: dimensions, the HD scale factors at 0x50/0x54 and the data size scaled, the rest
+    // carried over.
     let src: Vec<(&str, Vec<u8>)> = sample();
+    let u32_at = |b: &[u8], o: usize| u32::from_le_bytes(b[o..o + 4].try_into().unwrap());
+    let f32_at = |b: &[u8], o: usize| f32::from_le_bytes(b[o..o + 4].try_into().unwrap());
     for (name, data) in &out {
         let orig = &src.iter().find(|(n, _)| n == name).unwrap().1;
-        assert_eq!(data.len(), orig.len(), "{name}: size");
-        assert_eq!(data[..0x5C], orig[..0x5C], "{name}: header");
-        assert_ne!(data[0x5C..], orig[0x5C..], "{name}: pixels unchanged");
+        let (w, h, k) = (u32_at(orig, 0x44), u32_at(orig, 0x48), 4);
+        let size = w * h * k * k * 4;
+        assert_eq!(
+            (u32_at(data, 0x44), u32_at(data, 0x48)),
+            (w * k, h * k),
+            "{name}: size"
+        );
+        assert_eq!(f32_at(data, 0x50), f32_at(orig, 0x50) * k as f32, "{name}");
+        assert_eq!(f32_at(data, 0x54), f32_at(orig, 0x54) * k as f32, "{name}");
+        assert_eq!(u32_at(data, 0x58), size, "{name}: data size");
+        assert_eq!(data.len(), 0x5C + size as usize, "{name}: length");
+        assert_eq!(data[..0x44], orig[..0x44], "{name}: header");
+        assert_eq!(data[0x4C..0x50], orig[0x4C..0x50], "{name}: flags");
     }
 }

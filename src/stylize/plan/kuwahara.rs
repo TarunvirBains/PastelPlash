@@ -22,8 +22,8 @@ pub(super) fn marks(
     let mk = &style.marks;
     // Fluids are not ground grit: their marks stay small (caustics would turn into cells).
     if mk.tiling_multiplier != 1.0 && (wrap[0] || wrap[1]) && !ctx.category.is_fluid() {
-        let fine = facts.l_std(image, (3.0 * f).max(facts.upscale));
-        let mid = facts.l_std(image, (12.0 * f).max(2.0 * facts.upscale));
+        let fine = facts.l_std(image, ctx, (3.0 * f).max(facts.upscale));
+        let mid = facts.l_std(image, ctx, (12.0 * f).max(2.0 * facts.upscale));
         speckle = fine / mid.max(1e-6);
         let w = smoothstep(mk.speckle[0], mk.speckle[1], speckle);
         marks_scale *= 1.0 + (mk.tiling_multiplier - 1.0) * w;

@@ -91,8 +91,12 @@ impl ImageFacts {
         analysis::lowres_luminance(image, style.delight.radius * self.gm, self.wrap)
     }
 
-    /// Median lightness std over windows of `radius` texels.
-    pub fn l_std(&self, image: &Image, radius: f32) -> f32 {
-        analysis::local_l_std(image, radius, self.wrap)
+    /// Median lightness std over windows of `radius` texels (of `image`), measured on the source
+    /// before enlargement when there is one.
+    pub fn l_std(&self, image: &Image, ctx: &FileContext, radius: f32) -> f32 {
+        match ctx.source {
+            Some(src) => analysis::local_l_std(src, radius / self.upscale, self.wrap),
+            None => analysis::local_l_std(image, radius, self.wrap),
+        }
     }
 }

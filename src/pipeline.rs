@@ -18,6 +18,10 @@ pub struct FileContext<'a> {
     /// Texels of the image per texel of the source file: above 1 when the image was enlarged for
     /// an output resolution floor (paint marks keep their size relative to the source content).
     pub upscale: f32,
+    /// The file's image before it was enlarged (`None` when it was not): texture statistics that
+    /// steer the painting (value spread, speckle) are measured on it, so an enlarged texture is
+    /// painted as its source would be.
+    pub source: Option<&'a Image>,
 }
 
 /// One processing step. Stages run on worker threads, so they must be `Send + Sync`; GPU stages

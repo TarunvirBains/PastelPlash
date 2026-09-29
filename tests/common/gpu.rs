@@ -48,7 +48,46 @@ pub fn render_mood(
         mood: mood.clone(),
         config,
         upscale: 1.0,
+        source: None,
     };
     stage.apply(&mut out, &ctx).unwrap();
+    Some(out)
+}
+
+/// The shared stage as a pipeline stage (the pipeline owns its stages).
+struct Shared(&'static Stylize);
+
+impl pastelplash::pipeline::Stage for Shared {
+    fn name(&self) -> &str {
+        "stylize"
+    }
+
+    fn apply(&self, image: &mut Image, ctx: &FileContext) -> anyhow::Result<()> {
+        self.0.apply(image, ctx)
+    }
+}
+
+/// Runs `img` through the per-file driver as the front ends do (resolution floors included) as
+/// `category` in `mood`; `None` if no GPU is available. The result may be larger than `img`.
+pub fn render_driven(
+    style: &Path,
+    config: &Config,
+    category: Category,
+    mood: &Mood,
+    img: &Image,
+) -> Option<Image> {
+    let stage = stylizer(style)?;
+    let mut pipeline = pastelplash::pipeline::Pipeline::default();
+    pipeline.push(Shared(stage));
+    let driver = pastelplash::driver::Driver {
+        config,
+        pipeline: &pipeline,
+        category: Some(category),
+        mood: Some(mood.clone()),
+    };
+    let mut out = img.clone();
+    driver
+        .run(&mut out, Path::new("test.png"), category)
+        .unwrap();
     Some(out)
 }

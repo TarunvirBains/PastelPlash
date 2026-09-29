@@ -298,6 +298,7 @@ fn plan_section() -> Section {
                         mood: mood.clone(),
                         config,
                         upscale: 1.0,
+                        source: None,
                     };
                     let plan = planner.plan(img, &ctx, style).unwrap();
                     let lut = lut_hash
@@ -399,6 +400,7 @@ fn apply(stage: &Stylize, config: &Config, category: Category, mood: &Mood, img:
         mood: mood.clone(),
         config,
         upscale: 1.0,
+        source: None,
     };
     stage.apply(&mut out, &ctx).unwrap();
     out
@@ -667,6 +669,7 @@ fn misc_section() -> Section {
         mood: Mood::default(),
         config: &config,
         upscale: 1.0,
+        source: None,
     };
     Pipeline::from_config(&config)
         .unwrap()
@@ -719,6 +722,7 @@ fn misc_section() -> Section {
             mood: Mood::default(),
             config: &config,
             upscale: 1.0,
+            source: None,
         };
         stage.apply(&mut decoded, &ctx).unwrap();
         out.insert(

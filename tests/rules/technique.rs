@@ -684,3 +684,130 @@ fn rule_thin_structures_survive() {
         report.finish();
     }
 }
+
+/// Mean lightness step across source-texel borders over the mean step inside source texels, for
+/// an image enlarged `k` times (both axes).
+fn blockiness(img: &Image, k: usize) -> f32 {
+    let (w, h) = (img.width as usize, img.height as usize);
+    let l: Vec<f32> = img.pixels.iter().map(|&p| lch(p)[0]).collect();
+    let (mut border, mut nb, mut inside, mut ni) = (0.0f64, 0usize, 0.0f64, 0usize);
+    let mut add = |d: f32, at_border: bool| {
+        if at_border {
+            border += d as f64;
+            nb += 1;
+        } else {
+            inside += d as f64;
+            ni += 1;
+        }
+    };
+    for y in 0..h {
+        for x in 0..w - 1 {
+            add((l[y * w + x + 1] - l[y * w + x]).abs(), (x + 1) % k == 0);
+        }
+    }
+    for y in 0..h - 1 {
+        for x in 0..w {
+            add((l[(y + 1) * w + x] - l[y * w + x]).abs(), (y + 1) % k == 0);
+        }
+    }
+    ((border / nb.max(1) as f64) / (inside / ni.max(1) as f64).max(1e-9)) as f32
+}
+
+/// p90 over a 16×16 grid of the OKLab distance between the cells' mean colors.
+fn coarse_delta_e(a: &Image, b: &Image) -> f32 {
+    let (w, h) = (a.width as usize, a.height as usize);
+    let mut d = Vec::new();
+    for cy in 0..16 {
+        for cx in 0..16 {
+            let mean = |img: &Image| {
+                let mut m = [0.0f32; 3];
+                let mut n = 0.0;
+                for y in cy * h / 16..(cy + 1) * h / 16 {
+                    for x in cx * w / 16..(cx + 1) * w / 16 {
+                        let p = img.pixels[y * w + x];
+                        let lab = pastelplash::color::srgb_to_oklab([p[0], p[1], p[2]]);
+                        for c in 0..3 {
+                            m[c] += lab[c];
+                        }
+                        n += 1.0;
+                    }
+                }
+                m.map(|v| v / n)
+            };
+            let (p, q) = (mean(a), mean(b));
+            d.push(((p[0] - q[0]).powi(2) + (p[1] - q[1]).powi(2) + (p[2] - q[2]).powi(2)).sqrt());
+        }
+    }
+    d.sort_by(f32::total_cmp);
+    d[d.len() * 9 / 10]
+}
+
+/// Low-resolution textures are painted at the resolution floor: enlarged by an integer factor to
+/// the contract's floor (or its maximum factor), with no texel grid, the same painting as at the
+/// source size, and a tiling texture still tiles. (The Deku Tree's 128×256 ring walls showed
+/// blocky pixel steps in a 4K game.)
+#[test]
+fn rule_low_res_textures_are_painted_at_the_floor() {
+    let rr = &contract().resolution;
+    let mut report = Report::new("low-res textures are painted at the floor");
+    let src = bark(128, 3);
+    let tile = tiling(64, 9);
+    let tile_before = [
+        analysis::seam_ratio(&tile, false),
+        analysis::seam_ratio(&tile, true),
+    ];
+    let long = src.width.max(src.height);
+    let want = rr.min_floor.min(rr.max_factor * long);
+    for case in Matrix::base(&STYLIZED).cases {
+        let label = case.label();
+        let Some(out) = case.render_driven(&src) else {
+            return;
+        };
+        let native = case.render(&src).unwrap();
+        report.check(
+            &label,
+            (|| {
+                let k = out.width / src.width;
+                ensure(
+                    out.width.max(out.height) >= want
+                        && (out.width, out.height) == (src.width * k, src.height * k),
+                    || {
+                        format!(
+                            "{}x{} -> {}x{} (want an integer enlargement to a long side >= {want})",
+                            src.width, src.height, out.width, out.height
+                        )
+                    },
+                )?;
+                let b = blockiness(&out, k as usize);
+                ensure(b <= rr.max_blockiness, || {
+                    format!(
+                        "texel grid shows: blockiness {b:.2} (max {})",
+                        rr.max_blockiness
+                    )
+                })?;
+                let small = pastelplash::resample::downsample(&out, k);
+                let d = coarse_delta_e(&small, &native);
+                ensure(d <= rr.max_coarse_delta_e, || {
+                    format!(
+                        "not the same painting: coarse ΔE p90 {d:.4} (max {})",
+                        rr.max_coarse_delta_e
+                    )
+                })
+            })(),
+        );
+        if case.category == Category::World {
+            let out = case.render_driven(&tile).unwrap();
+            for (axis, &b) in tile_before.iter().enumerate() {
+                let after = analysis::seam_ratio(&out, axis == 1);
+                let limit = (b * 1.5).max(case.config.style.tiling.threshold);
+                report.check(
+                    &label,
+                    ensure(after <= limit, || {
+                        format!("enlarged tiling texture: seam ratio axis {axis}: {b} -> {after} (limit {limit})")
+                    }),
+                );
+            }
+        }
+    }
+    report.finish();
+}

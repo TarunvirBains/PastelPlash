@@ -2,7 +2,7 @@
 
 [config]
 "pack/oot-reloaded" = "9fc5a899c2942d1f"
-"target/soh-celshade" = "8f3f883789b91db4"
+"target/soh-celshade" = "f7844cf062693bfd"
 
 [luts]
 "impressionist/base/actor" = "19dc49a31f971c12"
@@ -1185,7 +1185,7 @@
 "watercolor/nocturne:0.50/world/tiling320" = "params:e32227468d99b258 lowres:0ae93f4ab20bd835 lut:43544b3224c9cb47 halo:31 wrap:11"
 
 [shader]
-hlsl = "d574b7cffec00339"
+hlsl = "70a616e85925fdc3"
 
 [styles]
 "impressionist/base" = "eb5466246f918a71"

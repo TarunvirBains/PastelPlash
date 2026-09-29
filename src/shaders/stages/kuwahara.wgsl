@@ -33,8 +33,13 @@ fn kuwahara(@builtin(global_invocation_id) gid: vec3<u32>) {
         m[k] = vec4<f32>(0.0);
         s[k] = vec3<f32>(0.0);
     }
-    for (var y = -max_y; y <= max_y; y++) {
-        for (var x = -max_x; x <= max_x; x++) {
+    // Radii of 64 texels and more (textures enlarged for a resolution floor) sample the disc on a
+    // coarser grid: the same weights over a smooth enlargement, at about a radius-32 filter's cost.
+    let st = max(1, i32(radius / 32.0));
+    let y0 = -(max_y / st) * st;
+    let x0 = -(max_x / st) * st;
+    for (var y = y0; y <= max_y; y += st) {
+        for (var x = x0; x <= max_x; x += st) {
             let fx = f32(x);
             let fy = f32(y);
             var v = vec2<f32>((cp * fx - sp * fy) * 0.5 / a, (sp * fx + cp * fy) * 0.5 / b);

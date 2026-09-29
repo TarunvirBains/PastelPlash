@@ -111,6 +111,7 @@ fn rule_neutral_config_is_identity_without_a_gpu() {
         mood: Default::default(),
         config: &config,
         upscale: 1.0,
+        source: None,
     };
     pipeline.run(&mut img, &ctx).unwrap();
     assert_eq!(img, before);
@@ -141,6 +142,7 @@ fn rule_chunked_processing_matches_whole_image() {
             mood: Default::default(),
             config: &config,
             upscale: 1.0,
+            source: None,
         };
         stage.apply(&mut out, &ctx).unwrap();
         out

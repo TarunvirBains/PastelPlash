@@ -92,6 +92,7 @@ impl Driver<'_> {
             mood: self.mood(rel),
             config: self.config,
             upscale: 1.0,
+            source: None,
         };
         if internal <= 1 {
             return self.pipeline.run(image, &ctx);
@@ -101,6 +102,7 @@ impl Driver<'_> {
         let wrap = self.wrap(image, category);
         let mut big = crate::resample::upsample(image, internal, wrap);
         ctx.upscale = internal as f32;
+        ctx.source = Some(image);
         self.pipeline.run(&mut big, &ctx)?;
         *image = crate::resample::downsample(&big, internal / out);
         Ok(())

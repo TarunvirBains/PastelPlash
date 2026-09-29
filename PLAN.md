@@ -79,6 +79,9 @@ transparency becomes an alpha channel. Ancillary chunks (`gAMA`, `sRGB`, `iCCP`,
 ## Pipeline (per texture)
 
 1. Load (alpha-aware); pad with wrap-around when the texture tiles.
+   Below the target's resolution floor (e.g. long side 1024; pre-rendered backgrounds ~3840), enlarge by an
+   integer factor (≤ 4×) with Lanczos-3, paint at 2× the output size, area-average down. OTEX headers are
+   rescaled (size, HD scale factors, data size). A preflight estimates the output and checks free disk space.
 2. **De-light** — remove baked shading/AO; strength from target + category.
 3. **Anisotropic Kuwahara** (GPU) — structure-tensor-guided, edge-preserving painterly smoothing.
 4. **Palette LUT** — 3D `.cube` built in OKLCH (see below). **Tint-safe:** textures the engine colours at runtime

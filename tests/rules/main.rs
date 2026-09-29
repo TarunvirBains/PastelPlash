@@ -56,6 +56,11 @@ impl Case {
     pub fn render(&self, img: &Image) -> Option<Image> {
         render_mood(&self.path, &self.config, self.category, &self.mood, img)
     }
+
+    /// Renders `img` for this case through the per-file driver (resolution floors included).
+    pub fn render_driven(&self, img: &Image) -> Option<Image> {
+        render_driven(&self.path, &self.config, self.category, &self.mood, img)
+    }
 }
 
 /// The cases a rule is checked over.

@@ -456,7 +456,9 @@ impl Runner {
         };
         for &(var, input, r) in passes {
             let out = if var == 1 { 4 } else { 3 };
-            let area = (3.0 * r as f64 + 1.0).powi(2).max(1.0);
+            // Samples per texel (the shader strides the disc from radius 64: see kuwahara.wgsl).
+            let stride = (r / 32.0).floor().max(1.0) as f64;
+            let area = (3.0 * r as f64 / stride + 1.0).powi(2).max(1.0);
             let rows = ((KUWAHARA_BAND_BUDGET / (w as f64 * area)) as u32).clamp(8, h.max(8));
             let rows = rows.div_ceil(8) * 8;
             let mut y = 0;

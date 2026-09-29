@@ -3,6 +3,7 @@
 use crate::config::{Style, Treatment};
 use crate::image::Image;
 use crate::palette::smoothstep;
+use crate::pipeline::FileContext;
 use crate::stylize::facts::ImageFacts;
 use crate::stylize::params::Params;
 
@@ -14,10 +15,15 @@ pub(super) fn contrast_on(style: &Style, tr: &Treatment) -> bool {
 /// The texture's value spread (median L std over mid-scale windows) and the busy gate: how far
 /// the spread is above the style's trigger (feathered ±15%). Shared by adaptive contrast,
 /// abstraction and grouping.
-pub(super) fn spread_gate(image: &Image, style: &Style, facts: &ImageFacts) -> (f32, f32) {
+pub(super) fn spread_gate(
+    image: &Image,
+    ctx: &FileContext,
+    style: &Style,
+    facts: &ImageFacts,
+) -> (f32, f32) {
     let r_mid = (style.value_contrast.radius_mid * facts.scale).max(2.0 * facts.upscale);
     let ct = &style.contrast;
-    let s = facts.l_std(image, r_mid);
+    let s = facts.l_std(image, ctx, r_mid);
     (
         s,
         smoothstep(ct.trigger_spread * 0.85, ct.trigger_spread * 1.15, s),

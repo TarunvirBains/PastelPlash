@@ -287,3 +287,19 @@ tint_safe_max_darkening = 0.1
 lava_max_darkening = 0.02
 lava_min_chroma_retention = 0.9
 lava_max_hue_shift = 8.0
+
+# Low-resolution textures are painted at a resolution floor, not shown as a texel grid in a
+# high-resolution game (the Deku Tree's 128x256 ring walls showed blocky pixel steps).
+[resolution]
+# A texture whose long side is below min_floor comes out enlarged by an integer factor (aspect
+# kept) to a long side of at least min(min_floor, max_factor x its own), in every restyled
+# category (a target may set a higher floor, e.g. for pre-rendered backgrounds).
+min_floor = 1024
+max_factor = 4
+# No texel grid: the mean lightness step across the source's texel borders stays within this
+# multiple of the mean step inside a source texel (a nearest-neighbor enlargement puts every step
+# on a border: unbounded; a smooth interpolation of texel noise peaks between texel centers: ~2.6).
+max_blockiness = 3.0
+# The same painting, finer: area-averaged back to the source size, its 16x16 cell mean colors
+# stay within this OKLab distance (p90) of the painting made at the source size.
+max_coarse_delta_e = 0.04

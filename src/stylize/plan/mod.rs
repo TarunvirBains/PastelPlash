@@ -159,14 +159,15 @@ impl Planner {
         let abstraction_on = abstraction::on(style, &tr, ctx);
         let grouping_on = grouping::on(style, &tr, ctx);
         let (spread, gate) = if contrast_on || abstraction_on || grouping_on {
-            value::spread_gate(image, style, &facts)
+            value::spread_gate(image, ctx, style, &facts)
         } else {
             (0.0, 0.0)
         };
         let value = value::plan(style, &tr, &facts, contrast_on, spread, gate);
         let abstraction = abstraction::plan(image, style, &tr, &facts, abstraction_on, gate);
         let grouping = grouping::plan(
-            image,
+            // The value masses of an enlarged texture are its source's.
+            ctx.source.unwrap_or(image),
             style,
             &tr,
             &facts,
