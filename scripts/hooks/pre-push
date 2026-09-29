@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Pre-push checks: formatting, lints and the full test suite (GPU tests included; they skip
+# cleanly without an adapter).
+# Enable with: git config core.hooksPath scripts/hooks   (skip once with git push --no-verify)
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+command -v cargo >/dev/null 2>&1 || { echo "pre-push: cargo not found (run git from the shell with the Rust toolchain)" >&2; exit 1; }
+
+start=$SECONDS
+step() { printf '\n== pre-push: %s\n' "$*"; }
+
+step "cargo fmt --check"
+cargo fmt --check
+step "cargo clippy"
+cargo clippy --all-targets --locked --quiet -- -D warnings
+step "cargo test --release"
+cargo test --release --locked
+printf '\npre-push: passed in %d s\n' $((SECONDS - start))

@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Pre-commit checks: formatting, lints and the fast CPU-only tests (no GPU needed).
+# Enable with: git config core.hooksPath scripts/hooks   (skip once with git commit --no-verify)
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+command -v cargo >/dev/null 2>&1 || { echo "pre-commit: cargo not found (run git from the shell with the Rust toolchain)" >&2; exit 1; }
+
+start=$SECONDS
+step() { printf '\n== pre-commit: %s\n' "$*"; }
+
+step "cargo fmt --check"
+cargo fmt --check
+step "cargo clippy"
+cargo clippy --all-targets --locked --quiet -- -D warnings
+# Library unit tests, the CPU rule tests (contract, palette proptests), the pack map, fluid
+# detection, PNG I/O and the CPU golden hashes. The GPU rules, snapshots and GPU hashes run in
+# the pre-push hook and in CI.
+step "fast CPU tests"
+cargo test --release --locked --quiet \
+    --lib --test rules_config --test packs --test fluids --test png_roundtrip --test golden_hash \
+    -- --skip gpu_hashes_are_unchanged --skip user_textures_are_unchanged
+printf '\npre-commit: passed in %d s\n' $((SECONDS - start))
