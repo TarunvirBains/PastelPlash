@@ -54,6 +54,50 @@ enum Command {
     /// declared scope.
     #[command(hide = true)]
     DevScope(DevScopeArgs),
+    /// Fluid detection scores of every texture of a `.o2r` pack (or PNG folder), as a TSV.
+    #[command(hide = true)]
+    DevFluidScan(DevFluidScanArgs),
+    /// A numbered contact sheet of listed textures (first TSV column: path under a folder).
+    #[command(hide = true)]
+    DevFluidSheet(DevFluidSheetArgs),
+}
+
+#[derive(Args)]
+struct DevFluidScanArgs {
+    /// `.o2r` pack (only read) or a folder of PNGs.
+    input: PathBuf,
+    /// Output TSV.
+    output: PathBuf,
+    /// Save the analysis thumbnails here (pack input only).
+    #[arg(long, value_name = "DIR")]
+    thumbs: Option<PathBuf>,
+    #[arg(long, value_name = "GLOB")]
+    include: Vec<String>,
+    /// Pack map, for the category column.
+    #[arg(long, value_name = "FILE")]
+    pack: Option<PathBuf>,
+    #[arg(short, long, default_value_t = 12)]
+    jobs: usize,
+}
+
+#[derive(Args)]
+struct DevFluidSheetArgs {
+    /// Folder of PNGs (paths in the list are relative to it, without `.png`).
+    dir: PathBuf,
+    /// List (TSV; first column is the path; `#` lines and a `path` header are skipped).
+    list: PathBuf,
+    /// Output PNG.
+    output: PathBuf,
+    #[arg(long, default_value_t = 160)]
+    thumb: u32,
+    #[arg(long, default_value_t = 10)]
+    cols: u32,
+    /// Number of the first tile.
+    #[arg(long, default_value_t = 0)]
+    first: usize,
+    /// Frame color r,g,b (0..1).
+    #[arg(long, value_delimiter = ',', num_args = 3, default_values_t = [0.5, 0.5, 0.5])]
+    frame: Vec<f32>,
 }
 
 #[derive(Args)]
@@ -322,6 +366,27 @@ fn main() -> ExitCode {
                 },
             )
         }
+        Command::DevFluidScan(args) => dev_fluid_scan(args).map(|()| ExitCode::SUCCESS),
+        Command::DevFluidSheet(args) => std::fs::read_to_string(&args.list)
+            .map_err(anyhow::Error::from)
+            .and_then(|text| {
+                let rels: Vec<String> = text
+                    .lines()
+                    .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
+                    .filter_map(|l| l.split('\t').next().map(str::to_string))
+                    .filter(|p| p != "path")
+                    .collect();
+                pastelplash::audit::sheet(
+                    &args.dir,
+                    &rels,
+                    &args.output,
+                    args.thumb,
+                    args.cols,
+                    args.first,
+                    [args.frame[0], args.frame[1], args.frame[2]],
+                )
+            })
+            .map(|()| ExitCode::SUCCESS),
         Command::DevSheet(args) => {
             pastelplash::compare::sheet(&args.input, &args.output, args.thumb, args.cols)
                 .map(|()| ExitCode::SUCCESS)
@@ -435,6 +500,28 @@ fn dev_map(args: DevMapArgs) -> anyhow::Result<()> {
             src[0], src[1], src[2], out[0], out[1], out[2], o[3]
         );
     }
+    Ok(())
+}
+
+fn dev_fluid_scan(args: DevFluidScanArgs) -> anyhow::Result<()> {
+    let pack = match &args.pack {
+        Some(p) => Some(Config::load(None, None, Some(p))?.pack),
+        None => None,
+    };
+    let t = std::time::Instant::now();
+    let n = pastelplash::audit::scan(
+        &args.input,
+        &args.output,
+        args.thumbs.as_deref(),
+        &args.include,
+        pack.as_ref(),
+        args.jobs,
+    )?;
+    println!(
+        "{n} textures scored in {:.1?} -> {}",
+        t.elapsed(),
+        args.output.display()
+    );
     Ok(())
 }
 

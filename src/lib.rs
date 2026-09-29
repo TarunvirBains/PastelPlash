@@ -2,11 +2,13 @@
 
 pub mod adapters;
 pub mod analysis;
+pub mod audit;
 pub mod color;
 pub mod compare;
 pub mod config;
 pub mod driver;
 pub mod exposure;
+pub mod fluid;
 pub mod gpu;
 pub mod grouping;
 pub mod image;
