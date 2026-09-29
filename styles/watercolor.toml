@@ -246,6 +246,19 @@ dark_below = 0.5
 dark_cool_bias = 0.2        # hue rotation toward indigo-violet, chroma kept
 dark_cool_hue = 275.0
 warmth = { strength = 0.0 }
+# Neutral darks and grays (stone, night skies) tint cool, not umber/olive: a sepia night reads as
+# mud, not moonlight.
+# Restrained: grays take only a whisper of cool, and no color gets loud against the night (a
+# saturated warm/cool split reads as a photo negative, not a nocturne).
+shadow_tint = { hue = 275.0, chroma = 0.03 }
+neutral_tint = { hue = 265.0, chroma = 0.008 }
+dark_chroma = 0.04          # the no-mud and colored-dark floors still hold
+chroma_lift = 0.1
+chroma_cap = 0.12
+
+# No warm/cool from baked shading: the night is uniformly cool.
+[moods.nocturne.temperature]
+chroma = 0.0
 
 # Atmosphere: let the narrower palette through on busy textures too.
 [moods.nocturne.abstraction]
