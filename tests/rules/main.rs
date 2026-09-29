@@ -90,6 +90,18 @@ impl Matrix {
         Self::build(categories, true)
     }
 
+    /// The same cases with the pack map raising every file's brushwork by `strength` (the
+    /// props multiplier).
+    pub fn with_brushwork(mut self, strength: f32) -> Self {
+        for case in &mut self.cases {
+            case.config.pack.brushwork = vec![pastelplash::config::BrushworkRule {
+                glob: "**".into(),
+                strength,
+            }];
+        }
+        self
+    }
+
     /// Renders `img` for every case and checks it with `f`, recording failures in `report`.
     /// Returns false (and checks nothing) without a GPU.
     pub fn check(

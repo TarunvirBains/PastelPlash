@@ -177,7 +177,8 @@ impl Planner {
         );
         let busy = abstraction.busy;
         let kuwahara = kuwahara::plan(style, &tr, &facts, marks_scale, busy);
-        let strokes = strokes::plan(style, &tr, &facts, busy);
+        let brushwork = ctx.config.pack.brushwork_for(ctx.rel);
+        let strokes = strokes::plan(style, &tr, &facts, busy, brushwork);
         let bleed = bleed::plan(style, &facts);
         let watercolor = watercolor::plan(style, &tr, &facts);
         let tint_safe = tint::plan(image, &tr, &facts);

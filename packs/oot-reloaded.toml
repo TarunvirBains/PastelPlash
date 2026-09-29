@@ -200,3 +200,17 @@ cast = "indigo"
 glob = "alt/scenes/shared/shrine_r_scene/*Background_*"
 mood = "nocturne"
 cast = "indigo"
+
+# Props (chests, pots, crates): visibly more brushwork than faces and skin, which keep the
+# actor default. The wood grain, metal bands and lock shapes stay (the actor rules still apply).
+[[brushwork]]
+glob = "alt/objects/object_box/**"
+strength = 2.5
+
+[[brushwork]]
+glob = "alt/objects/object_tsubo/**"
+strength = 2.5
+
+[[brushwork]]
+glob = "alt/objects/object_kibako*/**"
+strength = 2.5

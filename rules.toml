@@ -164,6 +164,9 @@ max_lightness_shift = 0.2
 # Actor brushwork makes no large light/dark patches (the cel shader bands lit and shadow): the
 # 16x16 cell-mean lightness change, less the texture's mean change, stays within max_patch_l (p95).
 max_patch_l = 0.04
+# Props (chests, pots) may take more brushwork via the pack map, at most max_brushwork times the
+# style's strokes; they still make no large patches.
+max_brushwork = 3.0
 # Engine-tinted (tint-safe) actor textures may be raised to a median gray of at most
 # max_tint_safe_gray and never above max_tint_safe_l (the tint provides the headroom, so they may
 # exceed the actor ceiling); their folds stay (16x16 cell correlation with the source at least

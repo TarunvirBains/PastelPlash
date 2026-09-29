@@ -843,3 +843,26 @@ fn rule_moonlight_cast_only_where_the_mood_allows() {
         }
     }
 }
+
+#[test]
+fn rule_pack_brushwork_stays_within_the_contract() {
+    // Props may take more brushwork than faces and skin, within actor.max_brushwork (the
+    // no-large-patches rule is checked at that maximum).
+    let max = contract().actor.max_brushwork;
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("packs");
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().is_some_and(|e| e == "toml") {
+            let pack = Config::load(None, None, Some(&path)).unwrap().pack;
+            for r in &pack.brushwork {
+                assert!(
+                    r.strength <= max,
+                    "{}: brushwork {:?} = {} (at most {max})",
+                    path.display(),
+                    r.glob,
+                    r.strength
+                );
+            }
+        }
+    }
+}

@@ -202,6 +202,7 @@ pub struct ActorRules {
     pub retention_ratio: f32,
     pub max_lightness_shift: f32,
     pub max_patch_l: f32,
+    pub max_brushwork: f32,
     pub max_tint_safe_gray: f32,
     pub max_tint_safe_l: f32,
     pub tint_safe_min_structure: f32,

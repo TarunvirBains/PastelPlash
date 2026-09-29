@@ -21,7 +21,7 @@ mod target;
 
 pub use builtin::DEFAULT_STYLE;
 pub use category::Category;
-pub use pack::{MarksRule, MoodRule, Pack, Rule, glob_match};
+pub use pack::{BrushworkRule, MarksRule, MoodRule, Pack, Rule, glob_match};
 pub use style::{
     Abstraction, Cast, Contrast, Delight, Grouping, HueGroup, Kuwahara, Marks, Palette, Scale,
     Strokes, Style, Temperature, Tiling, Tint, ValueContrast, Warmth, Watercolor,

@@ -26,6 +26,9 @@ pub struct Pack {
     pub moods: Vec<MoodRule>,
     /// Paint-mark size rules by path glob, first match wins; unmatched files get scale 1.
     pub marks: Vec<MarksRule>,
+    /// Brushwork rules by path glob, first match wins: multiply the stroke strength of matching
+    /// files (props like chests and pots take more visible strokes than faces and skin).
+    pub brushwork: Vec<BrushworkRule>,
     /// Path globs of files never value-grouped (signs, lettering, symbols the detector misses).
     pub no_grouping: Vec<String>,
     /// Path globs of files that never get the large-scale abstraction pass (signs whose thin
@@ -41,6 +44,17 @@ pub struct MarksRule {
     pub glob: String,
     pub scale: f32,
 }
+
+/// Multiplies the brushstroke strength of matching files (at most [`MAX_BRUSHWORK`]).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BrushworkRule {
+    pub glob: String,
+    pub strength: f32,
+}
+
+/// The largest brushwork multiplier a pack map may set.
+pub const MAX_BRUSHWORK: f32 = 4.0;
 
 /// Assigns a mood (and optionally allows or denies dark greens) to matching files.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -68,6 +82,7 @@ impl Default for Pack {
             source_scale: None,
             moods: Vec::new(),
             marks: Vec::new(),
+            brushwork: Vec::new(),
             no_grouping: Vec::new(),
             no_abstraction: Vec::new(),
             name: String::new(),
@@ -100,6 +115,15 @@ impl Pack {
             .map_or(1.0, |r| r.scale)
     }
 
+    /// Brushwork multiplier by the first matching brushwork rule, else 1.
+    pub fn brushwork_for(&self, path: &Path) -> f32 {
+        let p = path.to_string_lossy().replace('\\', "/");
+        self.brushwork
+            .iter()
+            .find(|r| glob_match(&r.glob, &p))
+            .map_or(1.0, |r| r.strength)
+    }
+
     /// False if a `no_grouping` glob matches the file.
     pub fn grouping_allowed(&self, path: &Path) -> bool {
         let p = path.to_string_lossy().replace('\\', "/");
@@ -128,6 +152,14 @@ impl Pack {
 
     /// Rejects unknown cast names and out-of-range strengths.
     pub fn validate(&self) -> anyhow::Result<()> {
+        for r in &self.brushwork {
+            anyhow::ensure!(
+                (0.0..=MAX_BRUSHWORK).contains(&r.strength),
+                "brushwork {:?}: strength = {} must be within 0..={MAX_BRUSHWORK}",
+                r.glob,
+                r.strength
+            );
+        }
         for r in &self.moods {
             if let Some(c) = &r.cast {
                 anyhow::ensure!(

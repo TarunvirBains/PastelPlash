@@ -146,17 +146,28 @@ fn rule_actor_brushwork_makes_no_large_patches() {
     };
     let c0 = cells(&img);
     let mut report = Report::new("actor brushwork makes no large patches");
-    let rendered = Matrix::full(&[Category::Actor]).check(&mut report, &img, |_, out| {
-        let c1 = cells(out);
-        let d: Vec<f32> = c0.iter().zip(&c1).map(|(a, b)| b - a).collect();
-        let mean = d.iter().sum::<f32>() / d.len() as f32;
-        let mut dev: Vec<f32> = d.iter().map(|v| (v - mean).abs()).collect();
-        dev.sort_by(f32::total_cmp);
-        let p95 = dev[(dev.len() - 1) * 95 / 100];
-        ensure(p95 <= k.actor.max_patch_l, || {
-            format!("cell lightness moved unevenly: p95 {p95:.3}")
-        })
-    });
+    let c0 = &c0;
+    // Also with a prop's raised brushwork (pack-map `brushwork`, at its contract maximum).
+    let check = |what: &'static str| {
+        move |_: &Case, out: &Image| {
+            let c1 = cells(out);
+            let d: Vec<f32> = c0.iter().zip(&c1).map(|(a, b)| b - a).collect();
+            let mean = d.iter().sum::<f32>() / d.len() as f32;
+            let mut dev: Vec<f32> = d.iter().map(|v| (v - mean).abs()).collect();
+            dev.sort_by(f32::total_cmp);
+            let p95 = dev[(dev.len() - 1) * 95 / 100];
+            ensure(p95 <= k.actor.max_patch_l, || {
+                format!("{what}: cell lightness moved unevenly: p95 {p95:.3}")
+            })
+        }
+    };
+    let matrix = Matrix::full(&[Category::Actor]);
+    let rendered = matrix.check(&mut report, &img, check("default"))
+        && matrix.with_brushwork(k.actor.max_brushwork).check(
+            &mut report,
+            &img,
+            check("prop brushwork"),
+        );
     if rendered {
         report.finish();
     }

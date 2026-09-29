@@ -14,13 +14,20 @@ pub(super) struct Strokes {
     smear: f32,
 }
 
-/// Busy textures (`busy` from the abstraction) get longer strokes.
-pub(super) fn plan(style: &Style, tr: &Treatment, facts: &ImageFacts, busy: f32) -> Strokes {
+/// Busy textures (`busy` from the abstraction) get longer strokes; `brushwork` (the pack map's
+/// per-file multiplier) scales their strength.
+pub(super) fn plan(
+    style: &Style,
+    tr: &Treatment,
+    facts: &ImageFacts,
+    busy: f32,
+    brushwork: f32,
+) -> Strokes {
     let f = facts.scale;
     let st = &style.strokes;
     let ab = &style.abstraction;
     Strokes {
-        strength: st.strength * tr.strokes,
+        strength: st.strength * tr.strokes * brushwork,
         chroma: st.chroma,
         len: (st.length * f * tr.stroke_scale * (1.0 + busy * (ab.stroke_scale - 1.0))).max(1.0),
         width: (st.width * f * tr.stroke_scale).max(0.75),
