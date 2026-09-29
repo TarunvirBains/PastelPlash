@@ -56,7 +56,9 @@ pub fn seam_ratio(image: &Image, transpose: bool) -> f32 {
     };
     let step = (across / 512).max(1);
     let rows: Vec<usize> = (0..across).step_by(step).collect();
-    let (seam1, inner1, seamk, innerk) = rows
+    // Per-row values in parallel, summed in row order: a parallel float reduction would depend on
+    // how rayon splits the work (nondeterministic, and it can flip a borderline tiling decision).
+    let per_row: Vec<(f32, f32, f32, f32)> = rows
         .par_iter()
         .map(|&j| {
             let seam1 = diff(get(len - 1, j), get(0, j));
@@ -75,10 +77,10 @@ pub fn seam_ratio(image: &Image, transpose: bool) -> f32 {
             innerk /= n.max(1) as f32;
             (seam1, inner1, seamk, innerk)
         })
-        .reduce(
-            || (0.0, 0.0, 0.0, 0.0),
-            |a, b| (a.0 + b.0, a.1 + b.1, a.2 + b.2, a.3 + b.3),
-        );
+        .collect();
+    let (seam1, inner1, seamk, innerk) = per_row.iter().fold((0.0, 0.0, 0.0, 0.0), |a, b| {
+        (a.0 + b.0, a.1 + b.1, a.2 + b.2, a.3 + b.3)
+    });
     let eps = 1e-3 * rows.len() as f32;
     ((seam1 + eps) / (inner1 + eps)).max((seamk + eps) / (innerk + eps))
 }
@@ -354,6 +356,25 @@ mod tests {
             [v, v, v, 1.0]
         });
         assert!(seam_ratio(&img, false) > 2.5);
+    }
+
+    #[test]
+    fn seam_ratio_does_not_depend_on_the_thread_count() {
+        let img = image(300, 1100, |x, y| {
+            let v = 0.2 + 0.6 * noise(x, y);
+            [v, v * 0.9, 0.3, 1.0]
+        });
+        let with = |threads: usize| {
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build()
+                .unwrap();
+            pool.install(|| [false, true].map(|t| seam_ratio(&img, t).to_bits()))
+        };
+        let one = with(1);
+        for threads in [2, 3, 7, 16] {
+            assert_eq!(with(threads), one, "{threads} threads");
+        }
     }
 
     #[test]
