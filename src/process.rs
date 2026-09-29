@@ -97,7 +97,7 @@ pub fn run(opts: &Options, config: &Config, pipeline: &Pipeline) -> Result<Summa
                     .unwrap_or_else(|| config.pack.classify(&entry.rel))
                 {
                     // UI is copied through until it gets its own treatment.
-                    Category::Skip | Category::Ui => Action::PassThrough,
+                    category if !category.is_stylized() => Action::PassThrough,
                     category => Action::Process(category),
                 }
             };

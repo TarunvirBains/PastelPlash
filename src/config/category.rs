@@ -37,6 +37,27 @@ impl std::str::FromStr for Category {
     }
 }
 
+/// Category policy: the rules every driver and stage share, in one place.
+impl Category {
+    /// Whether the texture is restyled at all. UI (until it gets its own treatment) and skip
+    /// are copied through untouched.
+    pub fn is_stylized(self) -> bool {
+        !matches!(self, Self::Ui | Self::Skip)
+    }
+
+    /// Whether the texture may tile. Pre-rendered backgrounds are whole pictures: they never
+    /// wrap, whatever their edges say.
+    pub fn may_tile(self) -> bool {
+        self != Self::Background
+    }
+
+    /// Whether soft value grouping may apply: world and background textures only (never
+    /// actors, which the cel shader bands, nor UI).
+    pub fn may_group(self) -> bool {
+        matches!(self, Self::World | Self::Background)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -45,5 +66,18 @@ mod tests {
     fn categories_parse_from_cli_strings() {
         assert_eq!("Actor".parse::<Category>(), Ok(Category::Actor));
         assert!("actors".parse::<Category>().is_err());
+    }
+
+    #[test]
+    fn category_policy() {
+        use Category::*;
+        let all = [Actor, World, Skybox, Background, Ui, Skip];
+        let pick = |f: fn(Category) -> bool| all.into_iter().filter(|&c| f(c)).collect::<Vec<_>>();
+        assert_eq!(
+            pick(Category::is_stylized),
+            [Actor, World, Skybox, Background]
+        );
+        assert_eq!(pick(Category::may_group), [World, Background]);
+        assert!(!Background.may_tile() && World.may_tile() && Skybox.may_tile());
     }
 }

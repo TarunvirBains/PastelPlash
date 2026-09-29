@@ -301,8 +301,7 @@ fn handle(
 
     let rel = Path::new(name);
     let category = opts.category.unwrap_or_else(|| config.pack.classify(rel));
-    let skip =
-        matches!(category, Category::Skip | Category::Ui) || config.pack.is_non_color_map(rel);
+    let skip = !category.is_stylized() || config.pack.is_non_color_map(rel);
     let t = Instant::now();
     let decoded = if skip { None } else { decode(&bytes) };
     add(&timers.decode, t.elapsed());

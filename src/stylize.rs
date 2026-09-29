@@ -26,7 +26,7 @@ use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
 
 use crate::analysis;
-use crate::config::{Category, Config, Mood, Palette, Style, Treatment};
+use crate::config::{Config, Mood, Palette, Style, Treatment};
 use crate::gpu::Gpu;
 use crate::grouping;
 use crate::image::Image;
@@ -571,7 +571,7 @@ impl Planner {
     /// The plan for one file in `style` (the file's mood already applied); `None` when the stage
     /// leaves the file alone (UI, skip, empty images).
     pub fn plan(&self, image: &Image, ctx: &FileContext, style: &Style) -> Option<Plan> {
-        if matches!(ctx.category, Category::Ui | Category::Skip) {
+        if !ctx.category.is_stylized() {
             return None;
         }
         let t_start = Instant::now();
@@ -598,7 +598,7 @@ impl Planner {
             analysis::seam_ratio(image, true),
         ];
         // Pre-rendered backgrounds are whole pictures: never wrap, whatever their edges say.
-        let wrap = if ctx.category == Category::Background {
+        let wrap = if !ctx.category.may_tile() {
             [false; 2]
         } else {
             ratios.map(|r| r <= style.tiling.threshold)
@@ -661,7 +661,7 @@ impl Planner {
         let gr = &style.grouping;
         let grouping_on = gr.strength > 0.0
             && tr.grouping > 0.0
-            && matches!(ctx.category, Category::World | Category::Background)
+            && ctx.category.may_group()
             && ctx.config.pack.grouping_allowed(ctx.rel);
         let (spread, gate) = if contrast_on || abstraction_on || grouping_on {
             let s = analysis::local_l_std(image, r_mid, wrap);
@@ -922,7 +922,7 @@ impl Stage for Stylize {
     }
 
     fn apply(&self, image: &mut Image, ctx: &FileContext) -> Result<()> {
-        if matches!(ctx.category, Category::Ui | Category::Skip) {
+        if !ctx.category.is_stylized() {
             return Ok(());
         }
         let style = self.style_for(ctx)?;
