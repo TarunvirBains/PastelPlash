@@ -1,6 +1,6 @@
 //! Color-space conversions: gamma sRGB ↔ linear sRGB ↔ OKLab ↔ OKLCH (Björn Ottosson's OKLab).
 //!
-//! The WGSL shaders carry the same formulas (see `src/shaders/stylize.wgsl`).
+//! The WGSL shaders carry the same formulas (see `src/shaders/common/color.wgsl`).
 
 /// sRGB transfer function, gamma-encoded → linear.
 pub fn srgb_to_linear(c: f32) -> f32 {

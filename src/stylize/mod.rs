@@ -37,7 +37,37 @@ use cache::Cache;
 pub use plan::{LutSpec, Plan, Planner};
 use runner::{Job, Runner};
 
-const SHADER: &str = include_str!("../shaders/stylize.wgsl");
+/// The WGSL of every pass: shared declarations, then one file per stage, concatenated in this
+/// order (the order fixes the generated code, so keep it).
+pub const SHADER: &str = concat!(
+    include_str!("../shaders/common/bindings.wgsl"),
+    "\n",
+    include_str!("../shaders/common/addr.wgsl"),
+    "\n",
+    include_str!("../shaders/common/color.wgsl"),
+    "\n",
+    include_str!("../shaders/common/noise.wgsl"),
+    "\n",
+    include_str!("../shaders/common/lowres.wgsl"),
+    "\n",
+    include_str!("../shaders/stages/delight.wgsl"),
+    "\n",
+    include_str!("../shaders/stages/group.wgsl"),
+    "\n",
+    include_str!("../shaders/stages/tensor.wgsl"),
+    "\n",
+    include_str!("../shaders/stages/kuwahara.wgsl"),
+    "\n",
+    include_str!("../shaders/stages/bleed.wgsl"),
+    "\n",
+    include_str!("../shaders/stages/palette.wgsl"),
+    "\n",
+    include_str!("../shaders/stages/strokes.wgsl"),
+    "\n",
+    include_str!("../shaders/stages/accent.wgsl"),
+    "\n",
+    include_str!("../shaders/stages/finish.wgsl"),
+);
 
 pub struct Stylize {
     runner: Runner,

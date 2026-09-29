@@ -335,8 +335,8 @@ fn toml_dir(dir: &str) -> Vec<PathBuf> {
 /// The HLSL naga generates for the stylize shader (all entry points, shader model 5.1 as used
 /// with FXC). Unchanged HLSL means the DX12 compiler sees the same program.
 fn hlsl() -> String {
-    let source = fs::read_to_string(repo().join("src/shaders/stylize.wgsl")).unwrap();
-    let module = naga::front::wgsl::parse_str(&source).unwrap();
+    let source = pastelplash::stylize::SHADER;
+    let module = naga::front::wgsl::parse_str(source).unwrap();
     let info = naga::valid::Validator::new(
         naga::valid::ValidationFlags::all(),
         naga::valid::Capabilities::default(),
