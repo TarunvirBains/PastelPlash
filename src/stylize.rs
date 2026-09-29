@@ -138,6 +138,10 @@ struct Params {
     mean_a: f32,
     mean_b: f32,
     spread: f32,
+    pivot_r: f32,
+    _pad7: f32,
+    _pad8: f32,
+    _pad9: f32,
 }
 
 #[repr(C)]
@@ -627,6 +631,7 @@ impl Stage for Stylize {
             mean_a: mean_lab[1],
             mean_b: mean_lab[2],
             spread,
+            pivot_r: (style.contrast.pattern_radius * gm).max(2.0),
             paper: wc.paper_grain * tr.paper,
             paper_tint: wc.paper_tint * tr.paper,
             paper_cells_x: cells(w, paper_px),

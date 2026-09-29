@@ -194,6 +194,10 @@ pub struct Contrast {
     pub target_spread: f32,
     /// Only textures whose spread exceeds this (feathered ±15%) adapt.
     pub trigger_spread: f32,
+    /// Scale (fraction of the texture's size) above which the light/dark pattern is kept:
+    /// variation finer than this (grooves, grit) is compressed, coarser (lichen patches, large
+    /// lighting shapes) stays.
+    pub pattern_radius: f32,
 }
 
 /// Design-like abstraction for busy, photographic textures (the same trigger as [`Contrast`]):
@@ -250,6 +254,7 @@ impl Default for Contrast {
         Self {
             strength: 0.0,
             target_spread: 0.03,
+            pattern_radius: 0.04,
             trigger_spread: 0.08,
         }
     }

@@ -28,6 +28,7 @@ struct Params {
     amp: f32, busy: f32, kuw_radius_coarse: f32, edge_coarse_step: f32,
     edge_soften: f32, highlight_calm: f32, highlight_radius: f32, chroma_retain: f32,
     mean_l: f32, mean_a: f32, mean_b: f32, spread: f32,
+    pivot_r: f32, _pad7: f32, _pad8: f32, _pad9: f32,
 };
 
 struct Band { y0: i32, y1: i32, _a: i32, _b: i32 };
@@ -641,27 +642,32 @@ fn finish(@builtin(global_invocation_id) gid: vec3<u32>) {
     // surface color.
     if (P.busy > 0.0 && P.highlight_calm > 0.0) {
         let v = srgb_to_oklab(c.rgb);
+        // Only SMALL glints: the texel must stand out against both a ring at the glint radius and
+        // one at half of it. A large coherent light region (pale lichen, sunlit patches) has at
+        // least one ring inside itself and is left alone.
         var m = vec3<f32>(0.0);
+        var mh = vec3<f32>(0.0);
         var n = 0.0;
         for (var k = 0; k < 8; k++) {
-            let ang = f32(k) * 0.78539816;
-            let q = loadA(p + vec2<i32>(round(vec2<f32>(cos(ang), sin(ang)) * P.highlight_radius)));
-            if (q.a > 0.0) { m += srgb_to_oklab(q.rgb); n += 1.0; }
+            let dir = vec2<f32>(cos(f32(k) * 0.78539816), sin(f32(k) * 0.78539816));
+            let q = loadA(p + vec2<i32>(round(dir * P.highlight_radius)));
+            let qh = loadA(p + vec2<i32>(round(dir * P.highlight_radius * 0.5)));
+            if (q.a > 0.0 && qh.a > 0.0) {
+                m += srgb_to_oklab(q.rgb);
+                mh += srgb_to_oklab(qh.rgb);
+                n += 1.0;
+            }
         }
         if (n > 0.0) {
             m /= n;
-            // Against the neighborhood (small glints) and against the texture's own mean color
-            // (large glare patches the neighborhood ring sits inside of).
-            let g = vec3<f32>(P.mean_l, P.mean_a, P.mean_b);
-            let t_ring = smoothstep(0.03, 0.10, v.x - m.x)
+            mh /= n;
+            let t_far = smoothstep(0.03, 0.10, v.x - m.x)
                 * smoothstep(0.0, 0.03, length(m.yz) - length(v.yz));
-            let t_glob = smoothstep(0.08, 0.2, v.x - g.x)
-                * smoothstep(0.0, 0.03, length(g.yz) - length(v.yz));
-            let calm_to = select(m, vec3<f32>(mix(v.x, g.x, 0.6), g.yz), t_glob > t_ring);
+            let t_near = smoothstep(0.03, 0.10, v.x - mh.x);
             // Salient objects (far outside the texture's value distribution) are not glare.
             let salient = smoothstep(3.0, 4.0, abs(v.x - P.mean_l) / max(P.spread, 1e-3));
-            let t = P.busy * P.highlight_calm * max(t_ring, t_glob) * (1.0 - salient);
-            let w = mix(v, calm_to, t);
+            let t = P.busy * P.highlight_calm * min(t_far, t_near) * (1.0 - salient);
+            let w = mix(v, m, t);
             c = vec4<f32>(linear_to_srgb(clamp(oklab_to_linear(w), vec3<f32>(0.0), vec3<f32>(1.0))), c.a);
         }
     }
@@ -776,11 +782,19 @@ fn finish(@builtin(global_invocation_id) gid: vec3<u32>) {
         lab = vec3<f32>(lab.x + P.paper * n * (0.4 + 0.6 * hl), ab);
     }
 
-    // Adaptive contrast: remove (1 − amp) of the source's deviation from its large-scale local
-    // lightness (the low-res field). Groove amplitude shrinks; big lighting shapes, every edge
-    // position and the palette's own per-texel changes stay.
-    if (P.amp < 1.0 && P.low_w > 0) {
-        let pivot = pow(max(lowres_sample(gp), 0.0), 1.0 / 3.0);
+    // Adaptive contrast: remove (1 − amp) of the source's deviation from its local lightness
+    // (a ring mean at `pivot_r`, a bit larger than a groove, smaller than a lichen patch).
+    // Groove and grit amplitude shrinks; the coarse light/dark pattern (big patches, lichen,
+    // large lighting shapes), every edge position and the palette's per-texel changes stay.
+    if (P.amp < 1.0) {
+        var pl = 0.0;
+        var pn = 0.0;
+        for (var k = 0; k < 16; k++) {
+            let ang = f32(k) * 0.39269908;
+            let q = loadA(p + vec2<i32>(round(vec2<f32>(cos(ang), sin(ang)) * P.pivot_r)));
+            if (q.a > 0.0) { pl += lightness(q); pn += 1.0; }
+        }
+        let pivot = select(src.x, pl / max(pn, 1.0), pn > 0.0);
         // Salient objects (value outliers beyond ~3 sigma of the texture's spread) keep their
         // contrast; grooves and grain within the distribution are compressed.
         let keep = smoothstep(2.0, 3.0, abs(src.x - pivot) / max(P.spread, 1e-3));
