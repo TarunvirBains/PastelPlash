@@ -375,6 +375,11 @@ fn rule_actor_targets_leave_lighting_to_the_renderer() {
             "{n}: actor shadow_tint"
         );
         assert!(
+            actor.accent <= c.max_actor_accent,
+            "{n}: actor accent {}",
+            actor.accent
+        );
+        assert!(
             actor.cast <= c.max_actor_cast,
             "{n}: actor cast {}",
             actor.cast

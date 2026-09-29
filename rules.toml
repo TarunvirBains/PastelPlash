@@ -145,6 +145,8 @@ max_actor_ceiling = 0.9
 max_actor_warm_cool = 0.0
 max_actor_shadow_tint = 0.0
 max_actor_cast = 0.0
+# No baked cool accent darks on actors (blue flecks at a gold stud's highlight).
+max_actor_accent = 0.0
 # Actors keep their painted form and their own colors.
 max_actor_delight = 0.4
 max_actor_lift = 0.5
@@ -167,6 +169,9 @@ max_patch_l = 0.04
 # Props (chests, pots) may take more brushwork via the pack map, at most max_brushwork times the
 # style's strokes; they still make no large patches.
 max_brushwork = 3.0
+# No new hue: a colored actor texel stays within max_local_hue_change degrees of its 9x9 source
+# neighborhood's mean hue (where that neighborhood is clearly colored).
+max_local_hue_change = 45.0
 # Engine-tinted (tint-safe) actor textures may be raised to a median gray of at most
 # max_tint_safe_gray and never above max_tint_safe_l (the tint provides the headroom, so they may
 # exceed the actor ceiling); their folds stay (16x16 cell correlation with the source at least

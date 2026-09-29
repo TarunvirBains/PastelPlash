@@ -172,3 +172,52 @@ fn rule_actor_brushwork_makes_no_large_patches() {
         report.finish();
     }
 }
+
+#[test]
+fn rule_actor_colors_bring_no_new_hue() {
+    // Props and characters keep the hues of their neighborhood: no blue flecks at a gold stud's
+    // highlight, no teal at a band's edge. A colored output texel's hue stays within
+    // actor.max_local_hue_change of its 9x9 source neighborhood's mean color (where that
+    // neighborhood is clearly colored).
+    let k = contract();
+    let img = gold_studs(192, 171);
+    let (w, h) = (img.width as i32, img.height as i32);
+    let local: Vec<[f32; 3]> = (0..w * h)
+        .map(|i| {
+            let (x, y) = (i % w, i / w);
+            let mut s = [0.0f32; 3];
+            for dy in -4..=4 {
+                for dx in -4..=4 {
+                    let p = img.pixels
+                        [((y + dy).clamp(0, h - 1) * w + (x + dx).clamp(0, w - 1)) as usize];
+                    let lab = pastelplash::color::srgb_to_oklab([p[0], p[1], p[2]]);
+                    for k in 0..3 {
+                        s[k] += lab[k] / 81.0;
+                    }
+                }
+            }
+            s
+        })
+        .collect();
+    let mut report = Report::new("actor colors bring no new hue");
+    let rendered = Matrix::full(&[Category::Actor]).check(&mut report, &img, |_, out| {
+        let mut bad = 0usize;
+        for (p, m) in out.pixels.iter().zip(&local) {
+            let [_, c, hue] = lch(*p);
+            let mc = m[1].hypot(m[2]);
+            if c > 0.03 && mc > 0.05 {
+                let mh = m[2].atan2(m[1]).to_degrees();
+                if pastelplash::color::hue_diff(mh, hue).abs() > k.actor.max_local_hue_change {
+                    bad += 1;
+                }
+            }
+        }
+        let share = bad as f32 / out.pixels.len() as f32;
+        ensure(share <= k.tolerance.outliers, || {
+            format!("{:.2}% of texels took a new hue", share * 100.0)
+        })
+    });
+    if rendered {
+        report.finish();
+    }
+}

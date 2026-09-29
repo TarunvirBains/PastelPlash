@@ -484,3 +484,28 @@ pub fn cracked_ground(size: u32, seed: u32) -> (Image, impl Fn(u32, u32) -> bool
     });
     (img, is_crack)
 }
+
+/// A gold plate with shiny studs (the gold chest): saturated yellow metal with mottling, round
+/// studs with a dark rim and a near-white highlight.
+pub fn gold_studs(size: u32, seed: u32) -> Image {
+    image(size, size, |x, y| {
+        let (fx, fy) = (x as f32, y as f32);
+        let t = smooth_noise(fx, fy, 6, size, seed);
+        let (cx, cy) = (
+            (fx / 32.0).floor() * 32.0 + 16.0,
+            (fy / 32.0).floor() * 32.0 + 16.0,
+        );
+        let r = ((fx - cx).powi(2) + (fy - cy).powi(2)).sqrt();
+        let [l, c] = if r < 6.0 {
+            let hl =
+                (1.0 - ((fx - cx + 2.0).powi(2) + (fy - cy + 2.0).powi(2)).sqrt() / 4.0).max(0.0);
+            [0.75 + 0.22 * hl, 0.14 * (1.0 - hl) + 0.02]
+        } else if r < 8.0 {
+            [0.35, 0.07]
+        } else {
+            [0.62 + 0.1 * t, 0.12 + 0.03 * t]
+        };
+        let [r, g, b] = from_oklch(l, c, 95.0);
+        [r, g, b, 1.0]
+    })
+}
