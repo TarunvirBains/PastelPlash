@@ -158,6 +158,139 @@ pub fn sheet(dir: &Path, out: &Path, thumb: u32, cols: u32) -> Result<()> {
     png_io::write(&sheet, out)
 }
 
+/// Resamples `image` to fit a `size`×`size` box (aspect kept): area average when shrinking,
+/// nearest texel when enlarging (so texels stay visible in crops).
+pub fn fit(image: &Image, size: u32) -> Image {
+    let (w, h) = (image.width as f32, image.height as f32);
+    let s = size as f32 / w.max(h);
+    let (ow, oh) = (
+        ((w * s).round() as u32).max(1),
+        ((h * s).round() as u32).max(1),
+    );
+    let pixels = (0..ow * oh)
+        .into_par_iter()
+        .map(|i| {
+            let (ox, oy) = ((i % ow) as f32, (i / ow) as f32);
+            let (x0, x1) = (ox / s, (ox + 1.0) / s);
+            let (y0, y1) = (oy / s, (oy + 1.0) / s);
+            let (xa, xb) = (x0.floor() as u32, (x1.ceil() as u32).max(x0 as u32 + 1));
+            let (ya, yb) = (y0.floor() as u32, (y1.ceil() as u32).max(y0 as u32 + 1));
+            let mut acc = [0.0f32; 4];
+            let mut n = 0.0;
+            for y in ya..yb.min(image.height) {
+                for x in xa..xb.min(image.width) {
+                    let p = image.pixels[(y * image.width + x) as usize];
+                    for c in 0..3 {
+                        acc[c] += p[c] * p[3];
+                    }
+                    acc[3] += p[3];
+                    n += 1.0;
+                }
+            }
+            if acc[3] > 0.0 {
+                [
+                    acc[0] / acc[3],
+                    acc[1] / acc[3],
+                    acc[2] / acc[3],
+                    acc[3] / n,
+                ]
+            } else {
+                [0.0; 4]
+            }
+        })
+        .collect();
+    Image {
+        width: ow,
+        height: oh,
+        pixels,
+        source: RGBA8,
+        source_scale: None,
+        tint_safe: None,
+    }
+}
+
+/// Writes a comparison grid (`dev-grid`): one row per relative path in `rows`, one column per
+/// folder in `cols` (the same file in each), every cell fitted into a `thumb` square on gray.
+/// With `crop`, each cell is instead a `crop`-sized 1:1 region (the most detailed one of the first
+/// column's image, at the same relative position in the others). Missing files stay gray.
+/// Prints the row index of every path.
+pub fn grid(
+    cols: &[std::path::PathBuf],
+    rows: &[String],
+    out: &Path,
+    thumb: u32,
+    crop_size: Option<u32>,
+    wrap: u32,
+) -> Result<()> {
+    anyhow::ensure!(!cols.is_empty() && !rows.is_empty(), "nothing to show");
+    let gap = 4;
+    // Each path is a block of `cols` cells; `wrap` blocks per sheet row (with a wider gap).
+    let wrap = wrap.max(1).min(rows.len() as u32);
+    let nc = cols.len() as u32;
+    let block = nc * (thumb + gap) + 3 * gap;
+    let nr = (rows.len() as u32).div_ceil(wrap);
+    let (w, h) = (wrap * block + gap, nr * (thumb + gap) + gap);
+    let mut pixels = vec![[0.3, 0.3, 0.3, 1.0]; (w * h) as usize];
+    for (r, rel) in rows.iter().enumerate() {
+        let rel = if rel.to_ascii_lowercase().ends_with(".png") {
+            rel.clone()
+        } else {
+            format!("{rel}.png")
+        };
+        let mut region = None;
+        for (c, dir) in cols.iter().enumerate() {
+            let path = dir.join(&rel);
+            let Ok(img) = png_io::read(&path) else {
+                continue;
+            };
+            let cell = match crop_size {
+                Some(size) => {
+                    let (fx, fy) = *region.get_or_insert_with(|| {
+                        let (x, y) = detailed_region(&img, size);
+                        (
+                            x as f32 / img.width.max(1) as f32,
+                            y as f32 / img.height.max(1) as f32,
+                        )
+                    });
+                    let (x, y) = (
+                        ((fx * img.width as f32) as u32).min(img.width.saturating_sub(1)),
+                        ((fy * img.height as f32) as u32).min(img.height.saturating_sub(1)),
+                    );
+                    fit(&crop(&img, x, y, size), thumb)
+                }
+                None => fit(&img, thumb),
+            };
+            let (bx, by) = (r as u32 % wrap, r as u32 / wrap);
+            let (ox, oy) = (
+                gap + bx * block + c as u32 * (thumb + gap),
+                gap + by * (thumb + gap),
+            );
+            for y in 0..cell.height.min(thumb) {
+                for x in 0..cell.width.min(thumb) {
+                    let p = cell.pixels[(y * cell.width + x) as usize];
+                    let dst = &mut pixels[((oy + y) * w + ox + x) as usize];
+                    for k in 0..3 {
+                        dst[k] = p[k] * p[3] + 0.5 * (1.0 - p[3]);
+                    }
+                }
+            }
+        }
+        println!("{r:3} {rel}");
+    }
+    let sheet = Image {
+        width: w,
+        height: h,
+        pixels,
+        source: RGBA8,
+        source_scale: None,
+        tint_safe: None,
+    };
+    if let Some(dir) = out.parent() {
+        fs::create_dir_all(dir)?;
+    }
+    png_io::write(&sheet, out)
+}
+
 pub fn run(before: &Path, after: &Path, out: &Path, max_side: u32, crop_size: u32) -> Result<()> {
     fs::create_dir_all(out).with_context(|| format!("creating {}", out.display()))?;
     // Recursive, so exported pack trees work; nested files are named `<folder>__<file>`.

@@ -41,6 +41,41 @@ enum Command {
     /// Per-texture metrics of processed PNGs against their sources (and a baseline render).
     #[command(hide = true)]
     DevMetrics(DevMetricsArgs),
+    /// A comparison grid: the same files from several folders side by side.
+    #[command(hide = true)]
+    DevGrid(DevGridArgs),
+    /// OKLCH statistics of a PNG (or a rectangle of it).
+    #[command(hide = true)]
+    DevStats(DevStatsArgs),
+}
+
+#[derive(Args)]
+struct DevGridArgs {
+    /// Output PNG.
+    output: PathBuf,
+    /// Folders, one column each (the first decides crop positions).
+    #[arg(long = "col", value_name = "DIR", required = true)]
+    cols: Vec<PathBuf>,
+    /// File listing one relative path per row (blank lines and `#` comments ignored).
+    #[arg(long, value_name = "FILE")]
+    rows: PathBuf,
+    #[arg(long, default_value_t = 256)]
+    thumb: u32,
+    /// Show a 1:1 crop of this size instead of the whole image.
+    #[arg(long)]
+    crop: Option<u32>,
+    /// Paths per sheet row (each a block of one cell per folder).
+    #[arg(long, default_value_t = 1)]
+    wrap: u32,
+}
+
+#[derive(Args)]
+struct DevStatsArgs {
+    /// PNGs.
+    inputs: Vec<PathBuf>,
+    /// Rectangle x,y,w,h.
+    #[arg(long, value_delimiter = ',', num_args = 4)]
+    rect: Option<Vec<u32>>,
 }
 
 #[derive(Args)]
@@ -218,6 +253,33 @@ fn main() -> ExitCode {
                 },
             )
         }
+        Command::DevGrid(args) => std::fs::read_to_string(&args.rows)
+            .map_err(anyhow::Error::from)
+            .and_then(|text| {
+                let rows: Vec<String> = text
+                    .lines()
+                    .map(str::trim)
+                    .filter(|l| !l.is_empty() && !l.starts_with('#'))
+                    .map(String::from)
+                    .collect();
+                pastelplash::compare::grid(
+                    &args.cols,
+                    &rows,
+                    &args.output,
+                    args.thumb,
+                    args.crop,
+                    args.wrap,
+                )
+            })
+            .map(|()| ExitCode::SUCCESS),
+        Command::DevStats(args) => args
+            .inputs
+            .iter()
+            .try_for_each(|p| {
+                let rect = args.rect.as_ref().map(|r| [r[0], r[1], r[2], r[3]]);
+                pastelplash::report::stats(p, rect).map(|t| print!("{t}"))
+            })
+            .map(|()| ExitCode::SUCCESS),
         Command::DevSheet(args) => {
             pastelplash::compare::sheet(&args.input, &args.output, args.thumb, args.cols)
                 .map(|()| ExitCode::SUCCESS)

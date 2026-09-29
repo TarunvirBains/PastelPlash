@@ -562,6 +562,45 @@ pub fn local_contrast(dir: &Path, radii: &[usize]) -> Result<Vec<f32>> {
         .collect())
 }
 
+/// OKLCH statistics of one image (`dev-stats`), optionally of a rectangle `[x, y, w, h]`:
+/// L p10/p50/p90, C p50/p90, and the chroma-weighted mean hue of texels with C ≥ 0.02.
+pub fn stats(path: &Path, rect: Option<[u32; 4]>) -> Result<String> {
+    let img = png_io::read(path)?;
+    let [x0, y0, rw, rh] = rect.unwrap_or([0, 0, img.width, img.height]);
+    let mut l = Vec::new();
+    let mut c = Vec::new();
+    let (mut ha, mut hb) = (0.0f64, 0.0f64);
+    for y in y0..(y0 + rh).min(img.height) {
+        for x in x0..(x0 + rw).min(img.width) {
+            let p = img.pixels[(y * img.width + x) as usize];
+            if p[3] < 0.5 {
+                continue;
+            }
+            let lab = color::srgb_to_oklab([p[0], p[1], p[2]]);
+            let ch = lab[1].hypot(lab[2]);
+            l.push(lab[0]);
+            c.push(ch);
+            if ch >= 0.02 {
+                ha += lab[1] as f64;
+                hb += lab[2] as f64;
+            }
+        }
+    }
+    anyhow::ensure!(!l.is_empty(), "no opaque texels");
+    let n = l.len();
+    let h = (hb.atan2(ha).to_degrees() as f32).rem_euclid(360.0);
+    Ok(format!(
+        "{}: {n} texels | L p10 {:.3} p50 {:.3} p90 {:.3} | C p50 {:.3} p90 {:.3} | hue {:.0}\n",
+        path.display(),
+        pct(&mut l.clone(), 0.1),
+        median(&mut l.clone()),
+        pct(&mut l, 0.9),
+        median(&mut c.clone()),
+        pct(&mut c, 0.9),
+        h
+    ))
+}
+
 /// The report as text: one row per reference group, plus neutrals and local value contrast.
 pub fn report(dir: &Path, reference: &Reference) -> Result<String> {
     let all = samples(dir, 40_000)?;
