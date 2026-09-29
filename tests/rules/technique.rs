@@ -1,0 +1,477 @@
+//! Value and technique: softer internal contrast, value grouping, small objects and lettering,
+//! no blur, seamless tiling, alpha.
+
+use super::*;
+use pastelplash::analysis;
+
+#[test]
+fn rule_small_objects_survive() {
+    // Busy textures get a large-scale abstraction; it must never erase small salient objects
+    // (hooks, tools, bowls painted into a wall). Thin dark sticks and small bright squares on a
+    // gritty, high-contrast wall keep at least half their contrast against their surroundings,
+    // in every style and mood.
+    let wall = bark(256, 21);
+    let is_stick =
+        |x: u32, y: u32| (x % 64 == 20 || x % 64 == 21 || x % 64 == 22) && (40..216).contains(&y);
+    let is_square = |x: u32, y: u32| (100..112).contains(&x) && (y % 80) < 12 && y >= 16;
+    let img = image(256, 256, |x, y| {
+        let p = wall.pixels[(y * 256 + x) as usize];
+        if is_stick(x, y) {
+            let [r, g, b] = from_oklch(0.12, 0.03, 60.0);
+            [r, g, b, 1.0]
+        } else if is_square(x, y) {
+            let [r, g, b] = from_oklch(0.92, 0.02, 90.0);
+            [r, g, b, 1.0]
+        } else {
+            p
+        }
+    });
+    // Mean L of the object texels vs. of the wall texels within 6 px of them.
+    let contrast = |out: &Image, is_obj: &dyn Fn(u32, u32) -> bool| {
+        let (mut o, mut no, mut s, mut ns) = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
+        for y in 6..250 {
+            for x in 6..250 {
+                let l = lch(out.pixels[(y * 256 + x) as usize])[0];
+                if is_obj(x, y) {
+                    o += l;
+                    no += 1.0;
+                } else if (x - 6..=x + 6).any(|xx| is_obj(xx, y))
+                    || (y - 6..=y + 6).any(|yy| is_obj(x, yy))
+                {
+                    s += l;
+                    ns += 1.0;
+                }
+            }
+        }
+        (o / no - s / ns).abs()
+    };
+    let keep = contract().technique.small_object_min_contrast;
+    let (c_stick, c_square) = (contrast(&img, &is_stick), contrast(&img, &is_square));
+    let mut report = Report::new("small objects survive");
+    let rendered = Matrix::full(&[Category::World]).check(&mut report, &img, |_, out| {
+        let (s1, q1) = (contrast(out, &is_stick), contrast(out, &is_square));
+        ensure(s1 >= keep * c_stick, || {
+            format!("stick contrast {c_stick:.3} -> {s1:.3}")
+        })?;
+        ensure(q1 >= keep * c_square, || {
+            format!("square contrast {c_square:.3} -> {q1:.3}")
+        })
+    });
+    if rendered {
+        report.finish();
+    }
+}
+
+#[test]
+fn rule_text_stays_legible() {
+    // A busy, grained sign (value grouping and abstraction both active) with small blocky
+    // lettering: the letters keep most of their contrast against the board around them, in
+    // every style and mood.
+    let img = sign(256, 41);
+    let contrast = |out: &Image| {
+        let (mut o, mut no, mut s, mut ns) = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
+        for y in 4..252u32 {
+            for x in 4..252u32 {
+                let l = lch(out.pixels[(y * 256 + x) as usize])[0];
+                if is_letter(x, y) {
+                    o += l;
+                    no += 1.0;
+                } else if (x - 4..=x + 4).any(|xx| is_letter(xx, y))
+                    || (y - 4..=y + 4).any(|yy| is_letter(x, yy))
+                {
+                    s += l;
+                    ns += 1.0;
+                }
+            }
+        }
+        s / ns - o / no
+    };
+    let keep = contract().technique.text_min_contrast;
+    let c0 = contrast(&img);
+    let mut report = Report::new("text stays legible");
+    let rendered = Matrix::full(&[Category::World]).check(&mut report, &img, |_, out| {
+        let c1 = contrast(out);
+        ensure(c1 >= keep * c0, || {
+            format!("lettering contrast {c0:.3} -> {c1:.3} (keep {keep})")
+        })
+    });
+    if rendered {
+        report.finish();
+    }
+}
+
+#[test]
+fn rule_grouping_only_touches_busy_world_textures() {
+    // Value grouping never touches actors (the cel shader bands them already), even if a target
+    // asked for it, nor calm, shape-based textures (ground, foliage).
+    let trunk = bark(256, 51);
+    let calm = mid_foliage(256, 52);
+    let mut report = Report::new("grouping only touches busy world textures");
+    for path in styles() {
+        let config = load(&path, &default_target());
+        if config.style.grouping.strength <= 0.0 {
+            continue;
+        }
+        let n = name(&path);
+        let mut off = config.clone();
+        off.style.grouping.strength = 0.0;
+        let mut greedy = config.clone();
+        greedy
+            .target
+            .categories
+            .entry(Category::Actor)
+            .or_default()
+            .grouping = 1.0;
+        let Some(a_on) = render(&path, &greedy, Category::Actor, &trunk) else {
+            return;
+        };
+        let a_off = render(&path, &off, Category::Actor, &trunk).unwrap();
+        report.check(
+            &n,
+            ensure(a_on.pixels == a_off.pixels, || {
+                "grouping changed an actor".into()
+            }),
+        );
+        let c_on = render(&path, &config, Category::World, &calm).unwrap();
+        let c_off = render(&path, &off, Category::World, &calm).unwrap();
+        report.check(
+            &n,
+            ensure(c_on.pixels == c_off.pixels, || {
+                "grouping changed a calm texture".into()
+            }),
+        );
+    }
+    report.finish();
+}
+
+#[test]
+fn rule_grouping_forms_value_masses() {
+    // On a busy photographic texture, grouping simplifies the values within each mass (less
+    // lightness variation inside the source's light and dark regions) while the masses keep
+    // their separation and the coarse light/dark pattern stays.
+    use pastelplash::report::coarse_l_pattern;
+    let k = contract();
+    let trunk = bark(256, 61);
+    // Source regions: 5×5 box-smoothed source L above / below its median.
+    let size = 256usize;
+    let src_l: Vec<f32> = trunk.pixels.iter().map(|&p| lch(p)[0]).collect();
+    let smooth: Vec<f32> = (0..size * size)
+        .map(|i| {
+            let (x, y) = ((i % size) as isize, (i / size) as isize);
+            let mut s = 0.0;
+            for dy in -2..=2isize {
+                for dx in -2..=2isize {
+                    let (xx, yy) = (
+                        (x + dx).rem_euclid(size as isize),
+                        (y + dy).rem_euclid(size as isize),
+                    );
+                    s += src_l[yy as usize * size + xx as usize];
+                }
+            }
+            s / 25.0
+        })
+        .collect();
+    // Two-means (isodata) threshold: the source's own dark and light masses.
+    let mut split = median(smooth.clone());
+    for _ in 0..20 {
+        let (mut lo, mut nl, mut hi, mut nh) = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
+        for &s in &smooth {
+            if s > split {
+                hi += s;
+                nh += 1.0;
+            } else {
+                lo += s;
+                nl += 1.0;
+            }
+        }
+        split = 0.5 * (lo / nl.max(1.0) + hi / nh.max(1.0));
+    }
+    // (mean within-region L std, light-minus-dark region mean L).
+    let masses = |out: &Image| {
+        let mut acc = [[0.0f64; 3]; 2];
+        for (p, &s) in out.pixels.iter().zip(&smooth) {
+            let l = lch(*p)[0] as f64;
+            let r = usize::from(s > split);
+            acc[r][0] += l;
+            acc[r][1] += l * l;
+            acc[r][2] += 1.0;
+        }
+        let stat = |a: [f64; 3]| {
+            let m = a[0] / a[2];
+            (m, (a[1] / a[2] - m * m).max(0.0).sqrt())
+        };
+        let ((m0, s0), (m1, s1)) = (stat(acc[0]), stat(acc[1]));
+        (((s0 + s1) / 2.0) as f32, (m1 - m0) as f32)
+    };
+    let mut report = Report::new("grouping forms value masses");
+    for path in styles() {
+        let config = load(&path, &default_target());
+        if config.style.grouping.strength <= 0.0 {
+            continue;
+        }
+        let n = name(&path);
+        let mut off = config.clone();
+        off.style.grouping.strength = 0.0;
+        let Some(on) = render(&path, &config, Category::World, &trunk) else {
+            return;
+        };
+        let off = render(&path, &off, Category::World, &trunk).unwrap();
+        let ((w_on, sep_on), (w_off, sep_off)) = (masses(&on), masses(&off));
+        report.check(
+            &n,
+            ensure(w_on < w_off, || {
+                format!(
+                    "grouping did not simplify values within masses: L std {w_on:.4} vs \
+                     {w_off:.4} without"
+                )
+            }),
+        );
+        report.check(
+            &n,
+            ensure(sep_on >= sep_off - k.tolerance.lightness, || {
+                format!(
+                    "grouping pulled the masses together: separation {sep_on:.3} vs {sep_off:.3}"
+                )
+            }),
+        );
+        let (corr, _) = coarse_l_pattern(&trunk, &on, 16);
+        report.check(
+            &n,
+            ensure(corr >= k.identity.coarse_min_pattern_corr, || {
+                format!("grouped pattern correlation {corr:.2}")
+            }),
+        );
+    }
+    report.finish();
+}
+
+#[test]
+fn rule_adaptive_contrast_targets_high_contrast_textures() {
+    // Trunk-like textures (large mid-scale lightness spread) are compressed noticeably; textures
+    // below the style's target spread are not touched by adaptivity at all.
+    let k = contract();
+    let trunk = bark(256, 3);
+    let ground = mid_foliage(256, 4);
+    let mut report = Report::new("adaptive contrast targets high-contrast textures");
+    for path in styles() {
+        let config = load(&path, &default_target());
+        if config.style.contrast.strength <= 0.0 {
+            continue;
+        }
+        let n = name(&path);
+        let mut off = config.clone();
+        off.style.contrast.strength = 0.0;
+        let Some(on_t) = render(&path, &config, Category::World, &trunk) else {
+            return;
+        };
+        let off_t = render(&path, &off, Category::World, &trunk).unwrap();
+        let (s_src, s_on) = (mid_std(&trunk), mid_std(&on_t));
+        report.check(
+            &n,
+            ensure(
+                s_on <= s_src * (1.0 - k.technique.adaptive_min_effect),
+                || format!("trunk mid-scale L std {s_src:.4} -> {s_on:.4}"),
+            ),
+        );
+        report.check(
+            &n,
+            ensure(mid_std(&on_t) < mid_std(&off_t), || {
+                "adaptivity did not compress the trunk".into()
+            }),
+        );
+        let on_g = render(&path, &config, Category::World, &ground).unwrap();
+        let off_g = render(&path, &off, Category::World, &ground).unwrap();
+        report.check(
+            &n,
+            ensure(on_g.pixels == off_g.pixels, || {
+                "adaptivity changed a low-contrast texture".into()
+            }),
+        );
+    }
+    report.finish();
+}
+
+#[test]
+fn rule_value_contrast_is_compressed_color_is_kept() {
+    // Fine light/dark detail is reduced by at least the configured amount, while the texture's
+    // mean lightness and its color stay.
+    let k = contract();
+    let img = gritty_blocks(256, 8);
+    let (std0, mean0) = (local_std(&img), pastelplash::report::mean_oklab(&img)[0]);
+    let c0 = median(img.pixels.iter().map(|&p| lch(p)[1]).collect());
+    let mut report = Report::new("value contrast is compressed, color is kept");
+    let rendered = Matrix::base(&[Category::World]).check(&mut report, &img, |case, out| {
+        let style = case.config.style.for_mood(&case.mood).unwrap();
+        let fine = style.value_contrast.fine;
+        let std1 = local_std(out);
+        let want = std0 * (1.0 - k.technique.value_min_effect * fine);
+        ensure(std1 <= want, || {
+            format!("local L std {std0:.4} -> {std1:.4} (want <= {want:.4})")
+        })?;
+        let mean1 = pastelplash::report::mean_oklab(out)[0];
+        let bound = k
+            .technique
+            .value_mean_tolerance
+            .max(k.identity.bound(&case.style));
+        ensure((mean1 - mean0).abs() <= bound, || {
+            format!("mean L {mean0:.3} -> {mean1:.3}")
+        })?;
+        let c1 = median(out.pixels.iter().map(|&p| lch(p)[1]).collect());
+        ensure(c1 >= k.palette.retained(c0), || {
+            format!("median chroma {c0:.3} -> {c1:.3}")
+        })
+    });
+    if rendered {
+        report.finish();
+    }
+}
+
+#[test]
+fn rule_vivid_colors_are_bounded() {
+    let k = contract();
+    let img = image(128, 128, |x, y| {
+        let [r, g, b] = from_oklch(0.4 + 0.4 * noise(x, y, 5), 0.3, x as f32 * 2.8);
+        [r, g, b, 1.0]
+    });
+    let mut report = Report::new("vivid colors are bounded");
+    let rendered = Matrix::base(&[Category::World]).check(&mut report, &img, |case, out| {
+        // Brushwork and pooling may add a little chroma on top of the palette's cap; the
+        // contract bounds the result.
+        let style = case.config.style.for_mood(&case.mood).unwrap();
+        let cap = (style.palette.chroma_cap.max(style.palette.vivid_max_chroma) * 1.25)
+            .min(k.vivid.max_chroma);
+        few(out, 0.0, |p| lch(p)[1] > cap + k.tolerance.chroma)
+            .map_err(|e| format!("chroma above cap: {e}"))
+    });
+    if rendered {
+        report.finish();
+    }
+}
+
+#[test]
+fn rule_alpha_preserved_and_no_halos() {
+    let k = contract();
+    let img = cutout(192, 3);
+    let mut report = Report::new("alpha preserved, no halos");
+    let rendered = Matrix::base(&[Category::World]).check(&mut report, &img, |_, out| {
+        for (a, b) in img.pixels.iter().zip(&out.pixels) {
+            ensure(a[3].to_bits() == b[3].to_bits(), || "alpha changed".into())?;
+        }
+        // Opaque texels next to transparent (black) ones must not be darker than the interior.
+        let w = img.width as usize;
+        let (mut rim, mut inner) = (Vec::new(), Vec::new());
+        for y in 1..img.height as usize - 1 {
+            for x in 1..w - 1 {
+                if img.pixels[y * w + x][3] < 1.0 {
+                    continue;
+                }
+                let near = [
+                    (1, 0),
+                    (-1, 0),
+                    (0, 1),
+                    (0, -1),
+                    (2, 0),
+                    (-2, 0),
+                    (0, 2),
+                    (0, -2),
+                ]
+                .iter()
+                .any(|&(dx, dy): &(isize, isize)| {
+                    let (xx, yy) = ((x as isize + dx) as usize, (y as isize + dy) as usize);
+                    xx < w && yy < img.height as usize && img.pixels[yy * w + xx][3] == 0.0
+                });
+                let l = lch(out.pixels[y * w + x])[0];
+                if near { rim.push(l) } else { inner.push(l) }
+            }
+        }
+        let mean = |v: &[f32]| v.iter().sum::<f32>() / v.len() as f32;
+        let (rim, inner) = (mean(&rim), mean(&inner));
+        ensure(rim >= inner - 0.05 - k.tolerance.lightness, || {
+            format!("dark halo: rim L {rim} vs interior {inner}")
+        })
+    });
+    if rendered {
+        report.finish();
+    }
+}
+
+#[test]
+fn rule_tiling_textures_stay_seamless() {
+    let img = tiling(256, 9);
+    let before = [
+        analysis::seam_ratio(&img, false),
+        analysis::seam_ratio(&img, true),
+    ];
+    let mut report = Report::new("tiling textures stay seamless");
+    let rendered = Matrix::base(&[Category::World]).check(&mut report, &img, |case, out| {
+        for (axis, &b) in before.iter().enumerate() {
+            let after = analysis::seam_ratio(out, axis == 1);
+            let limit = (b * 1.5).max(case.config.style.tiling.threshold);
+            ensure(after <= limit, || {
+                format!("seam ratio axis {axis}: {b} -> {after} (limit {limit})")
+            })?;
+        }
+        Ok(())
+    });
+    if rendered {
+        report.finish();
+    }
+}
+
+/// 10%–90% transition width of the mean row profile across the step at the image center.
+fn edge_width(img: &Image) -> f32 {
+    let (w, h) = (img.width as usize, img.height as usize);
+    let profile: Vec<f32> = (0..w)
+        .map(|x| {
+            (h / 4..3 * h / 4)
+                .map(|y| lch(img.pixels[y * w + x])[0])
+                .sum::<f32>()
+                / (h / 2) as f32
+        })
+        .collect();
+    let (lo, hi) = (
+        profile[w / 2 - 24..w / 2 - 12].iter().sum::<f32>() / 12.0,
+        profile[w / 2 + 12..w / 2 + 24].iter().sum::<f32>() / 12.0,
+    );
+    let at = |f: f32| {
+        let t = lo + (hi - lo) * f;
+        (w / 2 - 16..w / 2 + 16)
+            .find(|&x| profile[x] >= t)
+            .unwrap_or(w / 2) as f32
+    };
+    at(0.9) - at(0.1)
+}
+
+/// Texel-level (1 px high-pass) lightness noise inside the left flat region: grit that the
+/// painterly filter must turn into flat patches. Coarser watercolor texture (granulation, paper,
+/// strokes) lives at larger scales and barely registers here.
+fn interior_std(img: &Image) -> f32 {
+    let (w, h) = (img.width as usize, img.height as usize);
+    let l = |x: usize, y: usize| lch(img.pixels[y * w + x])[0];
+    let v: Vec<f32> = (h / 4..3 * h / 4)
+        .flat_map(|y| (w / 8..3 * w / 8).map(move |x| (x, y)))
+        .map(|(x, y)| l(x, y) - (l(x - 1, y) + l(x + 1, y) + l(x, y - 1) + l(x, y + 1)) / 4.0)
+        .collect();
+    (v.iter().map(|x| x * x).sum::<f32>() / v.len() as f32).sqrt()
+}
+
+#[test]
+fn rule_no_blur_edges_stay_crisp_noise_becomes_flat() {
+    let k = contract();
+    let img = step_edge(512, 11);
+    let (w0, s0) = (edge_width(&img), interior_std(&img));
+    let mut report = Report::new("no blur: edges stay crisp, noise becomes flat");
+    let rendered = Matrix::base(&[Category::World]).check(&mut report, &img, |_, out| {
+        let w1 = edge_width(out);
+        ensure(w1 <= k.technique.max_edge_width, || {
+            format!("step edge widened {w0} -> {w1} texels")
+        })?;
+        let s1 = interior_std(out);
+        ensure(s1 < s0, || {
+            format!("flat-region noise did not decrease ({s0} -> {s1})")
+        })
+    });
+    if rendered {
+        report.finish();
+    }
+}
