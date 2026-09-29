@@ -27,8 +27,9 @@ use crate::lut::Lut3d;
 use crate::palette::Mapping;
 use crate::pipeline::FileContext;
 
-/// Palette LUT cache key: mood key and the bits of the treatment's lift, shadow and hue scales.
-pub(super) type LutKey = (String, [u32; 4]);
+/// Palette LUT cache key: the palette fingerprint and the bits of the treatment's lift, shadow,
+/// hue and warmth scales.
+pub(super) type LutKey = (u64, [u32; 4]);
 
 /// Which palette LUT a job binds.
 #[derive(Debug, Clone)]
@@ -142,7 +143,7 @@ impl Planner {
         let contrast_on = value::contrast_on(style, &tr);
         let lowres = (delight.strength > 0.0 || temperature.strength > 0.0 || contrast_on)
             .then(|| facts.lowres(image, style));
-        let lut = palette::lut(self.external_lut.as_ref(), style, &ctx.mood, &tr);
+        let lut = palette::lut(self.external_lut.as_ref(), style, &tr);
         let accent = accent::plan(style, &tr, &facts, lut.is_some());
         let (marks_scale, speckle) = kuwahara::marks(image, style, ctx, &facts);
         let abstraction_on = abstraction::on(style, &tr, ctx);

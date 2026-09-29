@@ -3,32 +3,23 @@
 use std::sync::Arc;
 
 use super::LutSpec;
-use crate::config::{Mood, Style, Treatment};
+use crate::config::{Style, Treatment};
 use crate::lut::Lut3d;
+use crate::stylize::cache::fingerprint;
 use crate::stylize::facts::ImageFacts;
 use crate::stylize::params::Params;
 
-/// The palette LUT for a mood and category treatment, if the style has a palette.
-pub(super) fn lut(
-    external: Option<&Arc<Lut3d>>,
-    style: &Style,
-    mood: &Mood,
-    tr: &Treatment,
-) -> Option<LutSpec> {
+/// The palette LUT for the (mood's) palette and a category treatment, if the style has one.
+pub(super) fn lut(external: Option<&Arc<Lut3d>>, style: &Style, tr: &Treatment) -> Option<LutSpec> {
     if let Some(lut) = external {
         return Some(LutSpec::External(lut.clone()));
     }
     if !style.palette.enabled {
         return None;
     }
-    let key = if mood.is_base() {
-        String::new()
-    } else {
-        mood.key()
-    };
     Some(LutSpec::Palette {
         key: (
-            key,
+            fingerprint(&style.palette),
             [tr.floor_scale, tr.shadow_tint, tr.hue, tr.warmth].map(f32::to_bits),
         ),
         palette: Box::new(style.palette.clone()),
