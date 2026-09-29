@@ -204,6 +204,15 @@ pub fn cast_filter(hue: f32, chroma: f32) -> [f32; 3] {
     f.map(|v| v / y)
 }
 
+/// Weight (1 at and below `black[0]`, 0 from `black[1]`) of the near-black handling for a source
+/// lightness; 0 when `black` is off (`[0, 0]`).
+pub fn black_weight(black: [f32; 2], l_src: f32) -> f32 {
+    if black[1] <= 0.0 {
+        return 0.0;
+    }
+    1.0 - smoothstep(black[0], black[1].max(black[0] + 1e-4), l_src)
+}
+
 /// The shared moonlight cast (`palette.cast`, a mood's device) on a palette-mapped OKLCH color.
 /// Applied per texel after the palette LUT (in `finish`; this is the same math for the CPU rule
 /// tests), because its dark handling switches with the source's chroma and hue, which a baked
@@ -217,7 +226,9 @@ pub fn cast_filter(hue: f32, chroma: f32) -> [f32; 3] {
 /// and the dark floor stay) and chroma scales proportionally. Darks: near-neutral sources blend
 /// into a muted midnight (chroma `dark_cap × L`, at least `dark_min`); warm darks (hue in
 /// `warm_band`) keep at least `dark_chroma` (never brown mud); every dark at least `dark_min`;
-/// colored sources keep the retention share of their chroma.
+/// colored sources keep the retention share of their chroma. Near-black sources (below
+/// `black`) just go darker: their chroma fades to `black_chroma` along the same hue (warm ones
+/// are still held at `dark_chroma`).
 pub fn apply_cast(
     p: &Palette,
     scale: f32,
@@ -254,17 +265,22 @@ pub fn apply_cast(
     let w = neutral * dark;
     let (a, b) = (an + (cm * ck - an) * w, bn + (cm * sk - bn) * w);
     let mut c3 = cn + (cm - cn) * w;
+    // Near-black sources just go darker: below `black` (source lightness) the chroma fades to a
+    // trace (black_chroma) along the same hue, and so does the dark floor. The midnight tints
+    // the mid-darks, never the fade into black.
+    let nb = black_weight(k.black, l_src);
+    c3 += (k.black_chroma - c3) * nb;
     let h3 = if a.hypot(b) > 1e-9 {
         b.atan2(a).to_degrees().rem_euclid(360.0)
     } else {
         k.hue
     };
-    // Warm darks (earth, olive) never dull: at least dark_chroma (no mud); every dark at least
-    // dark_min.
+    // Warm darks (earth, olive) never dull: at least dark_chroma (no mud), near-black ones too;
+    // every other dark at least dark_min.
     let warm = band_weight(k.warm_band, 5.0, h3);
     c3 = c3
         .max(k.dark_chroma * mud_dark * warm)
-        .max(k.dark_min * dark);
+        .max(k.dark_min * dark * (1.0 - nb));
     [l2, c3, h3]
 }
 

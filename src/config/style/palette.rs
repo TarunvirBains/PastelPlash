@@ -146,6 +146,13 @@ pub struct Cast {
     /// OKLCH hue band of warm (earth, olive) darks, which keep `dark_chroma` too, even when
     /// near-neutral: a dull warm dark reads as mud.
     pub warm_band: [f32; 2],
+    /// Source lightness over which the cast's color fades in (`[from, to]`): below `from`,
+    /// near-black sources just go darker, their chroma at `black_chroma` along the same hue
+    /// (warm darks are still held at `dark_chroma`: no mud); from `to` up the cast applies
+    /// fully. `[0, 0]`: off.
+    pub black: [f32; 2],
+    /// Chroma of near-black sources (see `black`): a trace of color, not a tint.
+    pub black_chroma: f32,
 }
 
 impl Default for Cast {
@@ -160,6 +167,8 @@ impl Default for Cast {
             dark_min: 0.018,
             dark_chroma: 0.038,
             warm_band: [35.0, 105.0],
+            black: [0.0, 0.0],
+            black_chroma: 0.0,
         }
     }
 }
@@ -382,6 +391,16 @@ impl Palette {
         unit("palette.cast.chroma", k.chroma)?;
         non_negative("palette.cast.tint", k.tint)?;
         non_negative("palette.cast.dark_cap", k.dark_cap)?;
+        non_negative("palette.cast.black_chroma", k.black_chroma)?;
+        check(
+            0.0 <= k.black[0] && k.black[0] <= k.black[1] && k.black[1] <= 1.0,
+            || {
+                format!(
+                    "palette.cast.black = {:?} must be increasing within [0, 1]",
+                    k.black
+                )
+            },
+        )?;
         check(k.exposure > 0.0 && k.exposure <= 1.0, || {
             format!(
                 "palette.cast.exposure = {} must be within (0, 1]",

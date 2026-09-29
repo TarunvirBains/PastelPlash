@@ -221,7 +221,7 @@ fn band_weight(lo: f32, hi: f32, f: f32, h: f32) -> f32 {
 // (linear RGB times the cast's filter), exposure down above the palette floor, chroma scaled;
 // colored sources keep most of their color; near-neutral darks blend (continuously) into a muted
 // midnight capped by lightness; warm darks are never dull (no mud). `lf` is the mapped lab color
-// and, in w, the lightness floor (dimmed the same way).
+// and, in w, the lightness floor (dimmed the same way). Near-black sources just go darker.
 fn finish_cast(lf: vec4<f32>, src: vec3<f32>, tint_safe: bool) -> vec4<f32> {
     if (!(P.cast_on > 0.0)) { return lf; }
     let floor_l = cast_exposure(lf.w);
@@ -244,11 +244,20 @@ fn finish_cast(lf: vec4<f32>, src: vec3<f32>, tint_safe: bool) -> vec4<f32> {
     let w = neutral * dark;
     let ab = mix(abn, kd * cm, w);
     var c3 = mix(cn, cm, w);
+    // Near-black sources just go darker: below cast_black0 (source lightness) the chroma fades
+    // to a trace (cast_black_chroma) along the same hue, and so does the dark floor. The
+    // midnight tints the mid-darks, never the fade into black (palette::black_weight).
+    var nb = 0.0;
+    if (P.cast_black1 > 0.0) {
+        nb = 1.0 - smoothstep(P.cast_black0, max(P.cast_black1, P.cast_black0 + 1e-4), src.x);
+        c3 = mix(c3, P.cast_black_chroma, nb);
+    }
     var dir = kd;
     if (length(ab) > 1e-9) { dir = normalize(ab); }
     let h3 = atan2(dir.y, dir.x) * 57.29577951;
+    // Warm darks never dull (no mud), near-black ones too; every other dark at least dark_min.
     let warm = band_weight(P.cast_warm0, P.cast_warm1, 5.0, h3);
-    c3 = max(max(c3, P.cast_dark_chroma * mud_dark * warm), P.cast_dark_min * dark);
+    c3 = max(max(c3, P.cast_dark_chroma * mud_dark * warm), P.cast_dark_min * dark * (1.0 - nb));
     return vec4<f32>(l2, dir * c3, floor_l);
 }
 

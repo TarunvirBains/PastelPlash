@@ -57,7 +57,7 @@ dark_cool_bias = 0.0    # optional cool push on lifted darks; off keeps OoT's ow
 # (gray stone stays gray). Tuned a little strong: Kokiri Forest's vertex light is greenish.
 warmth = { strength = 0.45, band = [45.0, 100.0], feather = 10.0, hue = 68.0, chroma = 0.079, chroma_boost = 0.4, min_chroma = [0.02, 0.06], lift = 0.0 }
 # Shared moonlight cast: off in the base look; the nocturne mood turns it on (see below).
-cast = { strength = 0.0, hue = 275.0, tint = 0.04, exposure = 0.7, chroma = 0.85, dark_cap = 0.09, dark_min = 0.017, dark_chroma = 0.05, warm_band = [25.0, 110.0] }
+cast = { strength = 0.0, hue = 275.0, tint = 0.04, exposure = 0.7, chroma = 0.85, dark_cap = 0.09, dark_min = 0.017, dark_chroma = 0.05, warm_band = [25.0, 110.0], black = [0.1, 0.25], black_chroma = 0.0 }
 # Reference water tone for the water category (target `reference`): hue and chroma lean toward
 # Skyward Sword's Ancient Cistern water and the N64 Deku Tree basement water (dark muted jade:
 # measured h 136-143, C 0.04-0.06); lightness stays the source's, so every area keeps its depth.

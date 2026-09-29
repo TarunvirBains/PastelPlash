@@ -35,6 +35,11 @@ pub struct MoodRules {
     pub near_black_max_lift: Option<f32>,
     pub dark_chroma_per_l: Option<f32>,
     pub cast_max_chroma: Option<f32>,
+    pub black_l: Option<f32>,
+    pub black_max_chroma: Option<f32>,
+    pub black_max_cast: Option<f32>,
+    pub black_warm_slack: Option<f32>,
+    pub black_fade_l: Option<f32>,
 }
 
 impl Contract {
@@ -45,6 +50,17 @@ impl Contract {
             .find(|(m, _)| label.contains(&format!("[{m}")))
             .and_then(|(_, r)| r.dark_max_hue_shift)
             .unwrap_or(self.palette.dark_max_hue_shift)
+    }
+
+    /// Source lightness below which a case's mood may fade near-black chroma (see
+    /// `moods.<name>.black_fade_l`; 0 for the base and unlisted moods), by label like
+    /// "watercolor [nocturne:0.50] World".
+    pub fn black_fade_l(&self, label: &str) -> f32 {
+        self.moods
+            .iter()
+            .find(|(m, _)| label.contains(&format!("[{m}")))
+            .and_then(|(_, r)| r.black_fade_l)
+            .unwrap_or(0.0)
     }
 
     /// The contract's rules for a mood name, if it lists any.

@@ -70,6 +70,8 @@ pub(super) fn write_cast(p: &mut Params, style: &Style, tr: &Treatment, has_lut:
     p.cast_dark_below = pal.dark_below;
     p.cast_warm0 = k.warm_band[0];
     p.cast_warm1 = k.warm_band[1];
+    (p.cast_black0, p.cast_black1) = (k.black[0], k.black[1]);
+    p.cast_black_chroma = k.black_chroma;
     p.cast_on = if has_lut && crate::palette::cast_strength(pal, 1.0) > 0.0 {
         1.0
     } else {

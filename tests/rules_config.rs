@@ -560,11 +560,14 @@ proptest! {
     #[test]
     fn rule_darks_are_colored_never_black(r in 0.0f32..1.0, g in 0.0f32..1.0, b in 0.0f32..1.0) {
         let k = contract();
+        let l_src = lch([r, g, b, 1.0])[0];
         for (name, style, cat, lut) in luts() {
             let [l, c, h] = mapped_lch(style, *cat, lut, [r, g, b]);
             prop_assert!(l >= k.palette.min_l - k.tolerance.lightness,
                 "{}: {:?} -> L {} (crushed black)", name, [r, g, b], l);
-            if l < k.palette.dark_l && k.palette.darks_colored(*cat) {
+            // Near-blacks in a mood that fades them just go darker (rule_near_black_colors_just_go_darker).
+            let faded = l_src < k.black_fade_l(name);
+            if l < k.palette.dark_l && k.palette.darks_colored(*cat) && !faded {
                 prop_assert!(c >= k.palette.dark_min_chroma - 1e-3,
                     "{}: {:?} -> L {} C {} h {} (neutral dark)", name, [r, g, b], l, c, h);
             }
@@ -610,7 +613,12 @@ proptest! {
         let rgb = from_oklch(l, c, h);
         let [_, c_src, _] = lch([rgb[0], rgb[1], rgb[2], 1.0]);
         prop_assume!(c_src >= k.palette.retention_min_source_chroma);
+        let l_src = lch([rgb[0], rgb[1], rgb[2], 1.0])[0];
         for (name, style, cat, lut) in luts() {
+            // Near-blacks in a mood that fades them just go darker (rule_near_black_colors_just_go_darker).
+            if l_src < k.black_fade_l(name) {
+                continue;
+            }
             let [lo, co, ho] = mapped_lch(style, *cat, lut, rgb);
             prop_assert!(co >= k.palette.retained(c_src) - k.tolerance.chroma,
                 "{}: C {} -> {} (L {}, h {}) lost color", name, c_src, co, lo, ho);

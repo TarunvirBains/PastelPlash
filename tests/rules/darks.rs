@@ -12,12 +12,21 @@ fn rule_darks_are_colored_never_black() {
         ("dark foliage", dark_foliage(192, 2)),
         ("crushed neutrals", grayscale_dark(192, 3)),
     ] {
-        let rendered = matrix.check(&mut report, &img, |_, out| {
+        let rendered = matrix.check(&mut report, &img, |case, out| {
             few(out, 0.0, |p| {
                 lch(p)[0] < k.palette.min_l - k.tolerance.lightness
             })
             .map_err(|e| format!("{label}: crushed black: {e}"))?;
-            few(out, 0.0, |p| {
+            // In a mood that fades near-blacks (moods.<name>.black_fade_l), those just go darker
+            // (rule_near_black_colors_just_go_darker): they are left out here.
+            let fade = k.black_fade_l(&case.label());
+            let mut judged = out.clone();
+            for (q, p) in judged.pixels.iter_mut().zip(&img.pixels) {
+                if lch(*p)[0] < fade {
+                    q[3] = 0.0;
+                }
+            }
+            few(&judged, 0.0, |p| {
                 let [l, c, _] = lch(p);
                 l < k.palette.dark_l && c < k.palette.dark_min_chroma - 1e-3
             })
@@ -116,6 +125,86 @@ fn rule_near_black_darks_take_a_muted_midnight() {
                 format!(
                     "{lifted} lifted too far, {ink} too saturated of {n} near-black texels \
                      (budget {budget}); e.g. {}",
+                    example.unwrap_or_default()
+                )
+            })
+        },
+    );
+    if rendered {
+        report.finish();
+    }
+}
+
+#[test]
+fn rule_near_black_colors_just_go_darker() {
+    // In moods with a moonlight cast, near-black sources of any color (source lightness below
+    // moods.<name>.black_l: a pit's cobbles going down into the dark) just go darker: unless held
+    // at the no-mud chroma as a warm dark, their chroma stays at most black_max_chroma and they
+    // move toward the cast hue by at most black_max_cast. The midnight tints the mid-darks, never
+    // the fade into black.
+    let k = contract();
+    let img = near_black_colors(192, 93);
+    let mut report = Report::new("near-black colors just go darker");
+    let rendered = Matrix::full(&[Category::World, Category::Background]).check(
+        &mut report,
+        &img,
+        |case, out| {
+            let Some(r) = k.mood(&case.mood.name) else {
+                return Ok(());
+            };
+            let (Some(bl), Some(max_c), Some(max_cast), Some(slack)) = (
+                r.black_l,
+                r.black_max_chroma,
+                r.black_max_cast,
+                r.black_warm_slack,
+            ) else {
+                return Ok(());
+            };
+            let style = case.config.style.for_mood(&case.mood).unwrap();
+            let [w0, w1] = style.palette.cast.warm_band;
+            let warm = [w0 - slack, w1 + slack];
+            let (sin, cos) = style.palette.cast.hue.to_radians().sin_cos();
+            let toward_cast = |p: [f32; 4]| {
+                let [_, a, b] = pastelplash::color::srgb_to_oklab([p[0], p[1], p[2]]);
+                a * cos + b * sin
+            };
+            let (mut n, mut colored, mut cast) = (0usize, 0usize, 0usize);
+            let mut example = None;
+            for (p, q) in img.pixels.iter().zip(&out.pixels) {
+                let [l0, c0, h0] = lch(*p);
+                if l0 >= bl {
+                    continue;
+                }
+                n += 1;
+                let [l1, c1, h1] = lch(*q);
+                // Warm darks (in the mud band, or in the cast's own warm band, which holds them at
+                // its no-mud chroma) are exempt: a dull warm near-black reads as mud. The source's
+                // hue counts too: at this lightness 8-bit rounding moves the rendered hue.
+                if in_hue_range(h1, k.palette.mud_hue)
+                    || in_hue_range(h0, warm)
+                    || in_hue_range(h1, warm)
+                {
+                    continue;
+                }
+                if c1 > max_c + k.tolerance.chroma {
+                    colored += 1;
+                    example.get_or_insert(format!(
+                        "LCh {l0:.3} {c0:.3} {h0:.0} -> {l1:.3} {c1:.3} {h1:.0}"
+                    ));
+                }
+                // Bluer (toward the cast) than the source was: losing color is not a push.
+                if toward_cast(*q) - toward_cast(*p).max(0.0) > max_cast + k.tolerance.chroma {
+                    cast += 1;
+                    example.get_or_insert(format!(
+                        "LCh {l0:.3} {c0:.3} {h0:.0} -> {l1:.3} {c1:.3} {h1:.0} (toward the cast)"
+                    ));
+                }
+            }
+            let budget = (n as f32 * k.tolerance.outliers).ceil() as usize;
+            ensure(colored <= budget && cast <= budget, || {
+                format!(
+                    "{colored} too colored, {cast} pushed toward the cast of {n} near-black \
+                     texels (budget {budget}); e.g. {}",
                     example.unwrap_or_default()
                 )
             })

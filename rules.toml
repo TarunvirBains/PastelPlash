@@ -234,6 +234,21 @@ near_black_l = 0.25
 near_neutral_c = 0.012
 near_black_max_lift = 0.06
 dark_chroma_per_l = 0.12
+# Near-black sources of any color (L < black_l) just go darker: unless held at the no-mud chroma as
+# a warm dark (hue in the style's cast warm band, see black_warm_slack, or in palette.mud_hue),
+# their chroma is at most black_max_chroma and they move toward the cast hue (OKLab a/b along it)
+# by at most black_max_cast. Midnight tints the mid-darks, never the fade into black (the Deku
+# Tree's hole went teal-blue into the dark).
+black_l = 0.15
+black_max_chroma = 0.02
+black_max_cast = 0.01
+# Warm darks held at the no-mud chroma: hues in the style's cast warm band, widened by this many
+# degrees (the band's feather).
+black_warm_slack = 6.0
+# The near-black handling may fade chroma only below this source lightness: there darks need not
+# carry palette.dark_min_chroma (they just go darker); above it, colored sources keep their color
+# (palette.retention_*, "pastel is not gray") and darks are colored in this mood too.
+black_fade_l = 0.25
 # The cast's small chroma budget where it brings its own hue (identity.new_hue_*): a muted
 # midnight, not blue paint.
 cast_max_chroma = 0.04

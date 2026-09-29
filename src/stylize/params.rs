@@ -145,7 +145,7 @@ pub(super) struct Params {
     cast_warm1: f32,
     cast_on: f32,
     cast_fb: f32,
-    _pad13: f32,
+    cast_black0: f32,
 
     ts_on: f32,
     ts_shift: f32,
@@ -158,8 +158,8 @@ pub(super) struct Params {
     thin_r: f32,
 
     thin_amount: f32,
-    _pad15: f32,
-    _pad16: f32,
+    cast_black1: f32,
+    cast_black_chroma: f32,
     _pad17: f32,
 }
 }

@@ -588,3 +588,14 @@ pub fn pitted_bark(size: u32, seed: u32) -> Image {
         [r, g, b, 1.0]
     })
 }
+
+/// Near-black colors of every hue: lightness 0.02-0.15 top to bottom, chroma 0.015-0.065 (dark
+/// cobbles going down into a pit, deep shadow in a colored wall).
+pub fn near_black_colors(size: u32, seed: u32) -> Image {
+    image(size, size, |x, y| {
+        let l = 0.02 + 0.13 * y as f32 / size as f32 + 0.01 * noise(x, y, seed);
+        let c = 0.015 + 0.05 * noise(x, y, seed + 1);
+        let [r, g, b] = from_oklch(l, c, 360.0 * x as f32 / size as f32);
+        [r, g, b, 1.0]
+    })
+}
