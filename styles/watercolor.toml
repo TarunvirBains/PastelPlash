@@ -234,6 +234,9 @@ stroke_value = 0.5
 size = 8.0
 tiling_multiplier = 3.0
 speckle = [0.45, 0.6]
+# Dark specks up to ~2.5 reference texels (dust in a cobweb) are cleaned before painting.
+speck_radius = 2.5
+speck_depth = 0.06
 
 # Nocturne mood (dark, haunting areas; assigned by the pack map): a Whistler/Monet nocturne
 # overlay on this style. Only these keys change; everything else (abstraction, marks, contrast,

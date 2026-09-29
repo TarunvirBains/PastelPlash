@@ -17,6 +17,13 @@ pub struct Marks {
     pub tiling_multiplier: f32,
     /// Speckle ratio (fine / mid-scale L std) range over which the multiplier fades in.
     pub speckle: [f32; 2],
+    /// Dark specks up to this radius (reference texels, at least 2.5 texels) are noise and are
+    /// cleaned before painting; larger small objects (handles, rims, lettering) keep their value.
+    /// 0 disables.
+    pub speck_radius: f32,
+    /// How much darker than its surroundings (OKLab L) a speck starts being cleaned (fully at
+    /// twice this).
+    pub speck_depth: f32,
 }
 
 impl Default for Marks {
@@ -25,6 +32,8 @@ impl Default for Marks {
             size: None,
             tiling_multiplier: 1.0,
             speckle: [0.45, 0.6],
+            speck_radius: 0.0,
+            speck_depth: 0.06,
         }
     }
 }

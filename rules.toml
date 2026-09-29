@@ -84,6 +84,10 @@ text_min_contrast = 0.6
 # at least split_min_separation of the source's.
 split_max_hue_change = 25.0
 split_min_separation = 0.6
+# Specks: dark dots of a few texels on a busy surface are noise; they keep at most
+# speck_max_contrast of their contrast against their surroundings (thin sticks, handles and
+# lettering keep theirs: small_object_min_contrast, text_min_contrast).
+speck_max_contrast = 0.5
 
 # Identity: it must still look and feel like the source game. Each texture's alpha-weighted mean
 # OKLab color stays within max_mean_delta_e of the source's (for relit actors, of the source

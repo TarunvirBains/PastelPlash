@@ -41,7 +41,7 @@ struct Params {
     cast_dark_chroma: f32, cast_pivot: f32, cast_dark_below: f32, cast_warm0: f32,
     cast_warm1: f32, cast_on: f32, cast_fb: f32, _pad13: f32,
     ts_on: f32, ts_shift: f32, ts_amp: f32, ts_max: f32,
-    clip_r: f32, _pad14: f32, _pad15: f32, _pad16: f32,
+    speck_r: f32, speck_thr: f32, clip_r: f32, _pad14: f32,
 };
 
 struct Band { y0: i32, y1: i32, _a: i32, _b: i32 };

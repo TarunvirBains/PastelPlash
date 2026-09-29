@@ -521,3 +521,58 @@ fn rule_no_negative_dark_and_light_stay_one_family() {
     }
     report.finish();
 }
+
+#[test]
+fn rule_specks_are_cleaned() {
+    // Dark specks of a few texels on a busy surface (dirt in a cobweb, photographic grit) are
+    // noise and are cleaned; real small objects keep their contrast (rule_small_objects_survive,
+    // rule_text_stays_legible).
+    let k = contract();
+    let wall = bark(256, 141);
+    let is_speck = |x: u32, y: u32| (x % 23 < 2) && (y % 29 < 2) && x > 8 && y > 8;
+    let img = image(256, 256, |x, y| {
+        if is_speck(x, y) {
+            let [r, g, b] = from_oklch(0.1, 0.02, 60.0);
+            [r, g, b, 1.0]
+        } else {
+            let mut p = wall.pixels[(y * 256 + x) as usize];
+            // A pale wall, so the specks stand out as in a cobweb.
+            for c in &mut p[..3] {
+                *c = 0.5 + 0.4 * *c;
+            }
+            p
+        }
+    });
+    // Mean L of the speck texels vs. of the texels 3..5 away from them.
+    let contrast = |im: &Image| {
+        let (mut o, mut no, mut s, mut ns) = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
+        for y in 10..246u32 {
+            for x in 10..246u32 {
+                let l = lch(im.pixels[(y * 256 + x) as usize])[0];
+                if is_speck(x, y) {
+                    o += l;
+                    no += 1.0;
+                } else if (x % 23) >= 5 && (x % 23) < 8 && (y % 29) < 2 {
+                    s += l;
+                    ns += 1.0;
+                }
+            }
+        }
+        s / ns - o / no
+    };
+    let c0 = contrast(&img);
+    let mut report = Report::new("specks are cleaned");
+    let rendered = Matrix::full(&[Category::World, Category::Background]).check(
+        &mut report,
+        &img,
+        |_, out| {
+            let c1 = contrast(out);
+            ensure(c1 <= k.technique.speck_max_contrast * c0, || {
+                format!("speck contrast {c0:.3} -> {c1:.3}")
+            })
+        },
+    );
+    if rendered {
+        report.finish();
+    }
+}

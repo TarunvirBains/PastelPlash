@@ -16,6 +16,7 @@ mod delight;
 mod grouping;
 mod kuwahara;
 mod palette;
+mod speck;
 mod strokes;
 mod temperature;
 mod tint;
@@ -180,8 +181,7 @@ impl Planner {
         let bleed = bleed::plan(style, &facts);
         let watercolor = watercolor::plan(style, &tr, &facts);
         let tint_safe = tint::plan(image, &tr, &facts);
-        // No-clip neighborhood: compact blown highlights vs. large blown regions (`finish`).
-        let clip_radius = (6.0 * facts.scale).clamp(3.0, 24.0);
+        let speck = speck::plan(style, ctx, &facts);
 
         let mut params = Params {
             full_x: facts.w as i32,
@@ -205,7 +205,7 @@ impl Planner {
         value.write(&mut params);
         watercolor.write(&mut params, style, &facts);
         tint_safe.write(&mut params);
-        params.clip_r = clip_radius;
+        speck.write(&mut params);
 
         // Filter reach: how far a texel's result depends on its neighbors (chunk overlap).
         let reach = [
@@ -214,7 +214,8 @@ impl Planner {
             accent.radius,
             watercolor.gran_radius(),
             value.r_coarse,
-            clip_radius,
+            1.5 * speck.radius,
+            speck.clip_radius,
         ]
         .into_iter()
         .fold(0.0f32, f32::max);

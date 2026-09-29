@@ -152,10 +152,10 @@ pub(super) struct Params {
     ts_amp: f32,
     ts_max: f32,
 
+    speck_r: f32,
+    speck_thr: f32,
     clip_r: f32,
     _pad14: f32,
-    _pad15: f32,
-    _pad16: f32,
 }
 }
 
