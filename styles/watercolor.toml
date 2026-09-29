@@ -67,8 +67,9 @@ cast = { strength = 0.0, hue = 275.0, tint = 0.04, exposure = 0.7, chroma = 0.85
 # Skyward Sword's Ancient Cistern water and the N64 Deku Tree basement water (dark muted jade:
 # measured h 136-143, C 0.04-0.06). The body lightness leans toward the dark jade too (N64 Deku
 # basement water L 0.34-0.36; SS Cistern 0.45-0.50 is lit and over a pale floor): the Kokiri pond
-# read light over its pale bed. Caustic highlights stay bright.
-water = { hue = 140.0, chroma = [0.035, 0.06], pull = 0.5, lightness = 0.36, lightness_pull = 0.8 }
+# read light over its pale bed. Caustic highlights stay bright. Pale water (a body at L 0.7 or
+# lighter: falls, foam, rapids) keeps its own tone: the reference is pooled water over depth.
+water = { hue = 140.0, chroma = [0.035, 0.06], pull = 0.5, lightness = 0.36, lightness_pull = 0.8, pale_body = 0.7 }
 hue_feather = 10
 pigments = [20.0, 58.0, 80.0, 100.0, 118.0, 135.0, 160.0, 195.0, 242.0, 280.0]
 harmonize = 0.05

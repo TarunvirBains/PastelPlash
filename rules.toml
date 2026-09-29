@@ -320,6 +320,14 @@ tint_safe_max_darkening = 0.1
 lava_max_darkening = 0.02
 lava_min_chroma_retention = 0.9
 lava_max_hue_shift = 8.0
+# Pale water keeps its own tone (falls, foam, rapids: Zora's Domain's pale cyan falls turned dark
+# jade under the reference lean meant for pooled water). A water texture whose body (median
+# lightness) is at least pale_body_l keeps its mean lightness within pale_max_mean_l of the source
+# (as the mood dims it) and its mean hue within pale_max_hue_shift degrees. A style's
+# `water.pale_body` is at most pale_body_l.
+pale_body_l = 0.7
+pale_max_mean_l = 0.04
+pale_max_hue_shift = 12.0
 
 # Low-resolution textures are painted at a resolution floor, not shown as a texel grid in a
 # high-resolution game (the Deku Tree's 128x256 ring walls showed blocky pixel steps).

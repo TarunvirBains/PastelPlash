@@ -76,6 +76,9 @@ pub struct Plan {
     pub lut: Option<LutSpec>,
     /// Filter reach in texels: the overlap between chunks.
     pub halo: u32,
+    /// The pull toward the reference water tone this image gets (the treatment's, or 0 for
+    /// pale water).
+    pub reference: f32,
     /// Axes that wrap (seamless tiling).
     pub wrap: [bool; 2],
     pub(super) note: Note,
@@ -132,9 +135,20 @@ impl Planner {
             return None;
         }
         let t_start = Instant::now();
-        let tr = ctx.config.target.treatment(ctx.category);
+        let mut tr = ctx.config.target.treatment(ctx.category);
         if image.width == 0 || image.height == 0 {
             return None;
+        }
+        // Pale water (falls, foam, rapids) keeps its own tone: the reference lean is for pooled
+        // water seen over depth.
+        let mut pale_note = "";
+        let pale = style.palette.water.pale_body;
+        if tr.reference > 0.0
+            && pale < 1.0
+            && crate::palette::water_body_l(&ctx.source.unwrap_or(image).pixels) >= pale
+        {
+            tr.reference = 0.0;
+            pale_note = " pale-water";
         }
         let facts = ImageFacts::analyze(image, ctx, style, &tr);
         if facts.effect_like {
@@ -244,6 +258,7 @@ impl Planner {
             lowres: lowres.map_or_else(|| vec![0.0], |l| l.data),
             lut,
             halo,
+            reference: tr.reference,
             wrap: facts.wrap,
             note: Note {
                 ratios: facts.seam_ratios,
@@ -255,7 +270,7 @@ impl Planner {
                 busy,
                 speckle,
                 marks_scale,
-                grouping: grouping.note + &terracotta.note,
+                grouping: grouping.note + &terracotta.note + pale_note,
                 analysis: t_start.elapsed(),
             },
         })

@@ -194,6 +194,11 @@ pub struct WaterTone {
     /// Engine-tinted (gray) water: its lightness multiplies an engine tint, so it is not the
     /// final color's; the body darkens by at most this much.
     pub tint_safe_max_darkening: f32,
+    /// Pale water keeps its own tone: a water texture whose body (median lightness of the
+    /// source) is at least this light (falls, foam, rapids, bright shallow flows) takes no
+    /// reference lean at all, neither hue nor lightness. The reference describes pooled water
+    /// seen over depth. 1 or more: off.
+    pub pale_body: f32,
 }
 
 impl Default for WaterTone {
@@ -205,6 +210,7 @@ impl Default for WaterTone {
             lightness: 0.4,
             lightness_pull: 0.0,
             tint_safe_max_darkening: 0.08,
+            pale_body: 1.0,
         }
     }
 }

@@ -308,6 +308,9 @@ pub struct FluidRules {
     pub lava_max_darkening: f32,
     pub lava_min_chroma_retention: f32,
     pub lava_max_hue_shift: f32,
+    pub pale_body_l: f32,
+    pub pale_max_mean_l: f32,
+    pub pale_max_hue_shift: f32,
 }
 
 #[derive(Debug, Deserialize)]

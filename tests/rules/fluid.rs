@@ -202,6 +202,53 @@ fn rule_water_leans_toward_the_reference_tone() {
 }
 
 #[test]
+fn rule_pale_water_keeps_its_tone() {
+    // Falls, foam and rapids are pale, bright water: the reference lean (dark muted jade) is for
+    // pooled water over depth. Zora's Domain's pale cyan falls came out dark jade.
+    let f = &contract().fluid;
+    let size = 192u32;
+    let img = image(size, size, |x, y| {
+        let (fx, fy) = (x as f32, y as f32);
+        // Vertical streaks of falling water, lighter foam lines.
+        let streak = smooth_noise(fx * 6.0, fy * 0.5, 8, size, 31);
+        let l = 0.74 + 0.18 * streak + 0.03 * noise(x, y, 32);
+        let [r, g, b] = from_oklch(l, 0.035 - 0.02 * streak, 200.0);
+        [r, g, b, 1.0]
+    });
+    let src_l = img.pixels.iter().map(|p| lch(*p)[0]).sum::<f32>() / img.pixels.len() as f32;
+    let h0 = mean_hue(&img);
+    let mut report = Report::new("pale water keeps its tone");
+    // (Every style treats this body as pale: its threshold is within the contract's.)
+    let rendered = Matrix::full(&[Category::Water]).check(&mut report, &img, |case, out| {
+        let style = case.config.style.for_mood(&case.mood).unwrap();
+        let l0 = dimmed_l(case, src_l);
+        let l1 = out.pixels.iter().map(|p| lch(*p)[0]).sum::<f32>() / out.pixels.len() as f32;
+        let h1 = mean_hue(out);
+        ensure((l1 - l0).abs() <= f.pale_max_mean_l, || {
+            format!("mean L {l0:.3} -> {l1:.3}")
+        })?;
+        // (A mood's moonlight shifts every hue on purpose: the hue is judged without a cast.)
+        let tr = case.config.target.treatment(case.category);
+        let cast = pastelplash::palette::cast_strength(&style.palette, tr.cast) > 0.0;
+        ensure(
+            cast || hue_diff(h0, h1).abs() <= f.pale_max_hue_shift,
+            || format!("hue {h0:.0} -> {h1:.0}"),
+        )?;
+        // Every style treats water this pale as pale (its threshold within the contract's).
+        let pale = style.palette.water.pale_body;
+        ensure(pale <= f.pale_body_l, || {
+            format!(
+                "water.pale_body {pale} above the contract's {}",
+                f.pale_body_l
+            )
+        })
+    });
+    if rendered {
+        report.finish();
+    }
+}
+
+#[test]
 fn rule_lava_keeps_its_glow_and_heat_colors() {
     let k = contract();
     let f = &k.fluid;

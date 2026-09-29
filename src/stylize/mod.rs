@@ -185,7 +185,7 @@ impl Stage for Stylize {
         // Water: the body leans toward the reference lightness (as the mood dims it); caustic
         // highlights stay.
         let wt = &style.palette.water;
-        let lean_pull = wt.lightness_pull * tr.reference;
+        let lean_pull = wt.lightness_pull * plan.reference;
         if lean_pull > 0.0 && plan.lut.is_some() {
             let mut target = crate::palette::cast_exposure(&style.palette, tr.cast, wt.lightness);
             if plan.note.tint_safe {
