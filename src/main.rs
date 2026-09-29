@@ -50,6 +50,21 @@ enum Command {
     /// The palette mapping of OKLCH colors (L,C,h triples) for a style, mood and category.
     #[command(hide = true)]
     DevMap(DevMapArgs),
+    /// Which textures changed between two render folders, by area, flagging changes outside a
+    /// declared scope.
+    #[command(hide = true)]
+    DevScope(DevScopeArgs),
+}
+
+#[derive(Args)]
+struct DevScopeArgs {
+    /// Folder of the earlier render.
+    before: PathBuf,
+    /// Folder of the new render (same relative paths).
+    after: PathBuf,
+    /// The change's intended scope: path globs (repeatable; none = nothing should change).
+    #[arg(long = "scope", value_name = "GLOB")]
+    scope: Vec<String>,
 }
 
 #[derive(Args)]
@@ -298,6 +313,15 @@ fn main() -> ExitCode {
             })
             .map(|()| ExitCode::SUCCESS),
         Command::DevMap(args) => dev_map(args).map(|()| ExitCode::SUCCESS),
+        Command::DevScope(args) => {
+            pastelplash::compare::scope(&args.before, &args.after, &args.scope).map(
+                |(text, flagged)| {
+                    print!("{text}");
+                    println!("{flagged} area(s) changed outside the declared scope");
+                    ExitCode::SUCCESS
+                },
+            )
+        }
         Command::DevSheet(args) => {
             pastelplash::compare::sheet(&args.input, &args.output, args.thumb, args.cols)
                 .map(|()| ExitCode::SUCCESS)

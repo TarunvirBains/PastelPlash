@@ -291,6 +291,169 @@ pub fn grid(
     png_io::write(&sheet, out)
 }
 
+/// How one file changed between two renders (`dev-scope`).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Change {
+    /// Mean and max per-texel OKLab ΔE (alpha-weighted mean; opaque texels for the max).
+    pub mean: f32,
+    pub max: f32,
+    /// Largest ΔE between the mean colors of matching cells of a 16×16 grid ("from across the
+    /// room").
+    pub coarse: f32,
+}
+
+/// Per-texel and coarse ΔE between two renders of the same texture (same size).
+pub fn change(a: &Image, b: &Image) -> Change {
+    let lab = |p: [f32; 4]| crate::color::srgb_to_oklab([p[0], p[1], p[2]]);
+    let d = |x: [f32; 3], y: [f32; 3]| {
+        ((x[0] - y[0]).powi(2) + (x[1] - y[1]).powi(2) + (x[2] - y[2]).powi(2)).sqrt()
+    };
+    let (w, h) = (a.width as usize, a.height as usize);
+    let n = 16usize;
+    let mut cells = vec![[0.0f64; 7]; n * n];
+    let (mut sum, mut wsum, mut max) = (0.0f64, 0.0f64, 0.0f32);
+    for (i, (p, q)) in a.pixels.iter().zip(&b.pixels).enumerate() {
+        let (x, y) = (lab(*p), lab(*q));
+        let e = d(x, y);
+        sum += (e * p[3]) as f64;
+        wsum += p[3] as f64;
+        if p[3] >= 0.5 {
+            max = max.max(e);
+        }
+        let c = &mut cells
+            [((i / w) * n / h.max(1)).min(n - 1) * n + ((i % w) * n / w.max(1)).min(n - 1)];
+        for k in 0..3 {
+            c[k] += (x[k] * p[3]) as f64;
+            c[3 + k] += (y[k] * q[3]) as f64;
+        }
+        c[6] += p[3] as f64;
+    }
+    let coarse = cells
+        .iter()
+        .filter(|c| c[6] > 0.0)
+        .map(|c| {
+            let m = |k: usize| (c[k] / c[6]) as f32;
+            d([m(0), m(1), m(2)], [m(3), m(4), m(5)])
+        })
+        .fold(0.0f32, f32::max);
+    Change {
+        mean: (sum / wsum.max(1e-9)) as f32,
+        max,
+        coarse,
+    }
+}
+
+/// The area a texture belongs to, from its archive-style path: the scene folder
+/// (`alt/scenes/<variant>/<scene>/…`), else the folder under `alt/textures/` or `alt/objects/`,
+/// else the parent folder.
+pub fn area(rel: &Path) -> String {
+    let parts: Vec<String> = rel
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect();
+    let at = |i: usize| parts.get(i).cloned().unwrap_or_default();
+    match (at(1).as_str(), parts.len()) {
+        ("scenes", n) if n > 4 => at(3),
+        ("textures" | "objects", n) if n > 3 => format!("{}/{}", at(1), at(2)),
+        _ => rel
+            .parent()
+            .map(|p| p.to_string_lossy().replace('\\', "/"))
+            .unwrap_or_default(),
+    }
+}
+
+/// Thresholds for `dev-scope`: a file counts as changed above `changed` (max per-texel ΔE), and
+/// as a notable change outside the declared scope above `flag` (coarse ΔE or mean ΔE).
+pub const SCOPE_CHANGED: f32 = 0.002;
+pub const SCOPE_FLAG: f32 = 0.004;
+
+/// `dev-scope`: which files changed between two render folders (same relative paths), grouped by
+/// area, and which of those lie outside the declared scope (`scope` globs over relative paths).
+/// Returns the report text and the number of flagged areas.
+pub fn scope(before: &Path, after: &Path, scope: &[String]) -> Result<(String, usize)> {
+    use std::collections::BTreeMap;
+    use std::fmt::Write as _;
+    let walk_opts = crate::walk::WalkOptions {
+        recursive: true,
+        follow_links: false,
+        exclude: None,
+    };
+    let rels: Vec<std::path::PathBuf> = crate::walk::walk(after, &walk_opts)?
+        .entries
+        .into_iter()
+        .filter(|e| e.is_png && before.join(&e.rel).exists())
+        .map(|e| e.rel)
+        .collect();
+    let results: Vec<(std::path::PathBuf, Change)> = rels
+        .par_iter()
+        .map(|rel| -> Result<_> {
+            let (a, b) = (
+                png_io::read(&before.join(rel))?,
+                png_io::read(&after.join(rel))?,
+            );
+            anyhow::ensure!(
+                (a.width, a.height) == (b.width, b.height),
+                "{}: size changed",
+                rel.display()
+            );
+            Ok((rel.clone(), change(&a, &b)))
+        })
+        .collect::<Result<_>>()?;
+    /// Per area: file count, changed count, and the worst change outside the scope.
+    #[derive(Default)]
+    struct Area {
+        files: usize,
+        changed: usize,
+        worst: Change,
+        worst_file: String,
+    }
+    let mut areas: BTreeMap<String, Area> = BTreeMap::new();
+    for (rel, c) in &results {
+        let p = rel.to_string_lossy().replace('\\', "/");
+        let p = p.strip_suffix(".png").unwrap_or(&p).to_string();
+        let in_scope = scope.iter().any(|g| crate::config::glob_match(g, &p));
+        let e = areas.entry(area(rel)).or_default();
+        e.files += 1;
+        if c.max > SCOPE_CHANGED {
+            e.changed += 1;
+        }
+        if in_scope {
+            continue;
+        }
+        if c.coarse.max(c.mean) > e.worst.coarse.max(e.worst.mean) {
+            e.worst_file = p.rsplit('/').next().unwrap_or_default().to_string();
+        }
+        e.worst.mean = e.worst.mean.max(c.mean);
+        e.worst.coarse = e.worst.coarse.max(c.coarse);
+        e.worst.max = e.worst.max.max(c.max);
+    }
+    let mut out = String::new();
+    let mut flagged = 0;
+    for (name, a) in &areas {
+        let (n, changed, worst) = (a.files, a.changed, &a.worst_file);
+        let Change { mean, coarse, max } = a.worst;
+        let out_of_scope = coarse.max(mean) > SCOPE_FLAG;
+        if out_of_scope {
+            flagged += 1;
+        }
+        let _ = writeln!(
+            out,
+            "{:<28} {changed:>4}/{n:<4} changed{}",
+            name,
+            if out_of_scope {
+                format!(
+                    "  OUT OF SCOPE: mean ΔE {mean:.4} coarse {coarse:.4} max {max:.3} (worst {worst})"
+                )
+            } else if changed > 0 && (coarse > 0.0 || max > 0.0) {
+                format!("  (outside scope within tolerance: coarse {coarse:.4} max {max:.3})")
+            } else {
+                String::new()
+            }
+        );
+    }
+    Ok((out, flagged))
+}
+
 pub fn run(before: &Path, after: &Path, out: &Path, max_side: u32, crop_size: u32) -> Result<()> {
     fs::create_dir_all(out).with_context(|| format!("creating {}", out.display()))?;
     // Recursive, so exported pack trees work; nested files are named `<folder>__<file>`.
@@ -337,4 +500,38 @@ pub fn run(before: &Path, after: &Path, out: &Path, max_side: u32, crop_size: u3
         println!("{stem}: crop at ({x}, {y})");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::test_images::image;
+
+    #[test]
+    fn areas_come_from_archive_paths() {
+        let a = |p: &str| area(Path::new(p));
+        assert_eq!(
+            a("alt/scenes/shared/spot04_scene/spot04_room_0Tex_01B090.png"),
+            "spot04_scene"
+        );
+        assert_eq!(
+            a("alt/textures/vr_LHVR_static/gLinksHouseBgTex.png"),
+            "textures/vr_LHVR_static"
+        );
+        assert_eq!(
+            a("alt/objects/object_link_child/gTex.png"),
+            "objects/object_link_child"
+        );
+        assert_eq!(a("rooms/x.png"), "rooms");
+    }
+
+    #[test]
+    fn changes_are_zero_for_identical_images_and_coarse_for_a_shift() {
+        let a = image(64, 64, |x, _| [x as f32 / 64.0, 0.5, 0.3, 1.0]);
+        let c = change(&a, &a);
+        assert_eq!((c.mean, c.max, c.coarse), (0.0, 0.0, 0.0));
+        let b = image(64, 64, |x, _| [x as f32 / 64.0, 0.55, 0.3, 1.0]);
+        let c = change(&a, &b);
+        assert!(c.coarse > 0.01 && c.max >= c.coarse * 0.9, "{c:?}");
+    }
 }
