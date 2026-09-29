@@ -382,6 +382,52 @@ fn rule_sky_colors_bring_no_new_hue() {
     }
 }
 
+#[test]
+fn rule_skies_keep_their_hue_and_value() {
+    // A night sky stays night and a royal-blue day sky stays royal blue: the palette's lift took
+    // OoT Reloaded's night skies from L 0.12 to 0.29, its SS pull turned the day sky cyan.
+    let k = contract();
+    let size = 192;
+    let night = image(size, size, |x, y| {
+        let t = smooth_noise(x as f32, y as f32, 5, size, 191);
+        let [r, g, b] = from_oklch(0.06 + 0.16 * t, 0.01 + 0.05 * t, 262.0);
+        [r, g, b, 1.0]
+    });
+    let day = image(size, size, |x, y| {
+        let t = smooth_noise(x as f32, y as f32, 4, size, 192);
+        let v = y as f32 / size as f32;
+        let [r, g, b] = from_oklch(0.5 + 0.2 * v + 0.05 * t, 0.14 - 0.05 * v, 266.0);
+        [r, g, b, 1.0]
+    });
+    let mut report = Report::new("skies keep their hue and value");
+    for (label, img) in [("night sky", night), ("day sky", day)] {
+        let mean = |i: &Image| {
+            let (mut l, mut a, mut b) = (0.0f32, 0.0f32, 0.0f32);
+            for p in &i.pixels {
+                let v = pastelplash::color::srgb_to_oklab([p[0], p[1], p[2]]);
+                (l, a, b) = (l + v[0], a + v[1], b + v[2]);
+            }
+            let n = i.pixels.len() as f32;
+            (l / n, b.atan2(a).to_degrees().rem_euclid(360.0))
+        };
+        let rendered = Matrix::full(&[Category::Skybox]).check(&mut report, &img, |case, out| {
+            let (l0, h0) = mean(&dimmed(case, &img));
+            let (l1, h1) = mean(out);
+            ensure((l1 - l0).abs() <= k.identity.sky_max_mean_l, || {
+                format!("{label}: mean L {l0:.3} -> {l1:.3}")
+            })?;
+            let dh = pastelplash::color::hue_diff(h0, h1).abs();
+            ensure(dh <= k.identity.sky_max_hue_shift, || {
+                format!("{label}: mean hue {h0:.0} -> {h1:.0}")
+            })
+        });
+        if !rendered {
+            return;
+        }
+    }
+    report.finish();
+}
+
 /// No output texel colored at least `min_c` takes a hue more than `gap` degrees from every texel
 /// of its 5x5 source neighborhood colored at least half that (a mood's moonlight cast excepted:
 /// near its hue, up to `moods.<name>.cast_max_chroma`), beyond the outlier budget.

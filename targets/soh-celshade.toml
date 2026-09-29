@@ -73,6 +73,8 @@ resolution = { floor = 3840, max_factor = 4, power_of_two = false, internal = 2 
 
 [categories.skybox]
 dark_chroma = 0.0       # no warm umber floor: a night sky's black gaps and faint blue darks stay neutral and blue, never brown
+floor_scale = 0.0       # no lift: a night sky keeps its night (the lift took it from L 0.12 to 0.29)
+hue = 0.2               # the sky keeps its own blue (the SS pull turned royal blue cyan); a light nudge only
 delight = 0.0
 warm_cool = 0.5
 shadow_tint = 0.0

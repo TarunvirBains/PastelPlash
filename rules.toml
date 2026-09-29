@@ -160,6 +160,12 @@ moss_max_warm_shift = 6.0
 # mood's moonlight cast: within new_hue_max_gap of the cast hue, up to moods.<name>.cast_max_chroma.
 new_hue_min_chroma = 0.02
 new_hue_max_gap = 60.0
+# Skies keep their hue family and their value (day and night): a sky's mean lightness stays
+# within sky_max_mean_l of the source's (as the mood dims it) and its chroma-weighted mean hue
+# within sky_max_hue_shift degrees. The palette's lift took the night skies from L 0.12 to 0.29
+# and its SS pull turned the royal-blue day sky cyan.
+sky_max_mean_l = 0.03
+sky_max_hue_shift = 10.0
 
 # Pre-rendered backgrounds (finished paintings with the designers' lighting): the room's exposure
 # stays — alpha-weighted mean L within background_max_mean_l of the source — and its coarse

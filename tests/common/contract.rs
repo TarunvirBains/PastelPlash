@@ -95,6 +95,8 @@ pub struct IdentityRules {
     pub moss_max_warm_shift: f32,
     pub new_hue_min_chroma: f32,
     pub new_hue_max_gap: f32,
+    pub sky_max_mean_l: f32,
+    pub sky_max_hue_shift: f32,
     pub background_max_mean_l: f32,
     pub background_min_pattern_range: f32,
     /// Larger bounds for named opt-in styles.
