@@ -171,11 +171,14 @@ fn style_mood_list() -> Vec<(String, PathBuf, Config, Vec<Mood>)> {
         .collect()
 }
 
-const CATEGORIES: [Category; 4] = [
+const CATEGORIES: [Category; 7] = [
     Category::World,
     Category::Actor,
     Category::Background,
     Category::Skybox,
+    Category::Water,
+    Category::Lava,
+    Category::Liquid,
 ];
 
 fn cat_name(c: Category) -> String {

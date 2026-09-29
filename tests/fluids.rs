@@ -67,3 +67,50 @@ fn detection_does_not_depend_on_resolution() {
         detect(&big)
     );
 }
+
+#[test]
+fn the_driver_decides_fluids_by_pack_rule_then_by_look() {
+    use pastelplash::config::{Category, Config};
+    use pastelplash::driver::Driver;
+    use pastelplash::pipeline::Pipeline;
+    use std::path::Path;
+    let config = Config::load(None, None, Some(&repo().join("packs/oot-reloaded.toml"))).unwrap();
+    let pipeline = Pipeline::default();
+    let driver = Driver {
+        config: &config,
+        pipeline: &pipeline,
+        category: None,
+        mood: None,
+    };
+    let (water, _) = caustic_water(256, 31, 0.05);
+    let plain = bark(256, 32);
+    let world = Path::new("alt/scenes/shared/spot04_scene/x");
+    assert_eq!(
+        driver.material(&water, world, Category::World),
+        Category::Water
+    );
+    assert_eq!(
+        driver.material(&plain, world, Category::World),
+        Category::World
+    );
+    // Actors are never detected; the pack map names their fluids.
+    let actor = Path::new("alt/objects/object_x/y");
+    assert_eq!(
+        driver.material(&water, actor, Category::Actor),
+        Category::Actor
+    );
+    let lava_actor = Path::new("alt/objects/object_hidan_objects/object_hidan_objectsTex_000240");
+    assert_eq!(
+        driver.material(&plain, lava_actor, Category::Actor),
+        Category::Lava
+    );
+    // A CLI category override is taken as is.
+    let forced = Driver {
+        category: Some(Category::World),
+        ..driver
+    };
+    assert_eq!(
+        forced.material(&water, world, Category::World),
+        Category::World
+    );
+}

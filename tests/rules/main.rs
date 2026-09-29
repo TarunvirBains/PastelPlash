@@ -11,6 +11,7 @@ mod common;
 
 mod actor;
 mod darks;
+mod fluid;
 mod identity;
 mod robustness;
 mod technique;
@@ -46,11 +47,14 @@ const EXPECTED_FAILURES: &[(&str, &str)] = &[
 ];
 
 /// Every category the stage restyles.
-pub const STYLIZED: [Category; 4] = [
+pub const STYLIZED: [Category; 7] = [
     Category::World,
     Category::Actor,
     Category::Background,
     Category::Skybox,
+    Category::Water,
+    Category::Lava,
+    Category::Liquid,
 ];
 
 /// One render case: a style in a mood, as a category.

@@ -164,6 +164,31 @@ impl Default for Cast {
     }
 }
 
+/// The reference water tone (applied to the water category, scaled by the target's
+/// `reference`): hue and chroma move `pull` of the way toward it, as one a/b blend (a near-gray
+/// source takes the reference hue without passing through unrelated hues); lightness stays the
+/// source's, so each area keeps its depth.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct WaterTone {
+    /// OKLCH hue of the reference water.
+    pub hue: f32,
+    /// OKLCH chroma range of the reference water; chroma outside it moves toward it.
+    pub chroma: [f32; 2],
+    /// 0..1: fraction of the way to the reference (0 = off).
+    pub pull: f32,
+}
+
+impl Default for WaterTone {
+    fn default() -> Self {
+        Self {
+            hue: 140.0,
+            chroma: [0.035, 0.06],
+            pull: 0.0,
+        }
+    }
+}
+
 /// OKLCH palette mapping, baked into a 3D LUT (see `src/palette.rs` for the exact order).
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -198,6 +223,8 @@ pub struct Palette {
     pub warmth: Warmth,
     /// Shared moonlight cast (moods such as nocturne).
     pub cast: Cast,
+    /// Reference water tone (scaled per category by the target's `reference`).
+    pub water: WaterTone,
     /// Chroma below which a color takes the neutral path (feathered over ±50%).
     pub neutral_c: f32,
     pub neutral_tint: Tint,
@@ -263,6 +290,7 @@ impl Default for Palette {
             dark_cool_hue: 255.0,
             warmth: Warmth::default(),
             cast: Cast::default(),
+            water: WaterTone::default(),
             neutral_c: 0.02,
             neutral_tint: Tint::default(),
             shadow_tint: Tint::default(),
@@ -341,6 +369,14 @@ impl Palette {
         })?;
         unit("palette.accent_min_l", p.accent_min_l)?;
         unit("palette.accent_softness", p.accent_softness)?;
+        let wt = &p.water;
+        unit("palette.water.pull", wt.pull)?;
+        check(0.0 <= wt.chroma[0] && wt.chroma[0] <= wt.chroma[1], || {
+            format!(
+                "palette.water.chroma = {:?} must be increasing and >= 0",
+                wt.chroma
+            )
+        })?;
         let k = &p.cast;
         unit("palette.cast.strength", k.strength)?;
         unit("palette.cast.chroma", k.chroma)?;

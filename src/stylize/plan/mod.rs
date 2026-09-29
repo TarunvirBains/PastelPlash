@@ -28,8 +28,8 @@ use crate::palette::Mapping;
 use crate::pipeline::FileContext;
 
 /// Palette LUT cache key: the palette fingerprint and the bits of the treatment's lift, shadow,
-/// hue and warmth scales.
-pub(super) type LutKey = (u64, [u32; 4]);
+/// hue, warmth and reference scales.
+pub(super) type LutKey = (u64, [u32; 5]);
 
 /// Which palette LUT a job binds.
 #[derive(Debug, Clone)]

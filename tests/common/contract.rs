@@ -17,6 +17,7 @@ pub struct Contract {
     pub target: TargetRules,
     pub actor: ActorRules,
     pub identity: IdentityRules,
+    pub fluid: FluidRules,
     /// Per-mood allowances (keyed by mood name).
     #[serde(default)]
     pub moods: std::collections::BTreeMap<String, MoodRules>,
@@ -188,6 +189,25 @@ pub struct TargetRules {
     pub max_actor_delight: f32,
     pub max_actor_lift: f32,
     pub max_actor_hue: f32,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FluidRules {
+    pub max_wet_edges: f32,
+    pub max_granulation: f32,
+    pub max_value_contrast: f32,
+    pub max_abstraction: f32,
+    pub max_accent: f32,
+    pub max_radius_scale: f32,
+    pub highlight_min_contrast: f32,
+    pub depth_max_grit: f32,
+    pub outline_drop: f32,
+    pub max_outline_share: f32,
+    pub max_mean_l: f32,
+    pub lava_max_darkening: f32,
+    pub lava_min_chroma_retention: f32,
+    pub lava_max_hue_shift: f32,
 }
 
 #[derive(Debug, Deserialize)]

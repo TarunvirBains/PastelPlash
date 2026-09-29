@@ -21,7 +21,7 @@ pub(super) fn plan(style: &Style, tr: &Treatment, facts: &ImageFacts, busy: f32)
     let ab = &style.abstraction;
     Strokes {
         strength: st.strength * tr.strokes,
-        chroma: st.chroma,
+        chroma: st.chroma * tr.strokes,
         len: (st.length * f * tr.stroke_scale * (1.0 + busy * (ab.stroke_scale - 1.0))).max(1.0),
         width: (st.width * f * tr.stroke_scale).max(0.75),
         smear: st.smear * tr.strokes,

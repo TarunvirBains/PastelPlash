@@ -380,7 +380,9 @@ pub fn caustic_water(size: u32, seed: u32, chroma: f32) -> (Image, Vec<f32>) {
     let img = image(size, size, |x, y| {
         let t = lines[(y * size + x) as usize];
         let depth = smooth_noise(x as f32, y as f32, 4, size, seed + 3);
-        let l = 0.38 + 0.08 * depth + 0.004 * noise(x, y, seed + 4) + 0.4 * t;
+        // Mottled depth, as painted packs have it (busy enough for value grouping).
+        let mottle = smooth_noise(x as f32, y as f32, 24, size, seed + 7);
+        let l = 0.34 + 0.08 * depth + 0.16 * mottle + 0.02 * noise(x, y, seed + 4) + 0.4 * t;
         let [r, g, b] = from_oklch(l, chroma * (1.0 - 0.5 * t), 175.0 + 10.0 * depth);
         [r, g, b, 1.0]
     });

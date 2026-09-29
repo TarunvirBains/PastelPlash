@@ -166,3 +166,30 @@ near_black_l = 0.25
 near_neutral_c = 0.012
 near_black_max_lift = 0.06
 dark_chroma_per_l = 0.12
+
+# Fluids (water, lava, other liquids; see docs/RULES.md "Fluids"). Every target's fluid
+# treatments (listed or built in) stay within these: caustics are soft light over depth, never
+# outlined cells.
+[fluid]
+max_wet_edges = 0.0
+max_granulation = 0.0
+max_value_contrast = 0.0
+max_abstraction = 0.0
+max_accent = 0.0
+max_radius_scale = 0.5
+# Rendered caustic water (every style and mood): the highlight lines keep at least this share of
+# their lightness contrast over the depth; the depth's texel-level grit stays at most
+# depth_max_grit (OKLab L, 1-texel high-pass std); at most max_outline_share of the depth texels
+# come out darker than the source (as the mood dims it) by more than outline_drop (no cell
+# outlines); the mean lightness stays within max_mean_l of the source's (water keeps its depth).
+highlight_min_contrast = 0.8
+depth_max_grit = 0.012
+outline_drop = 0.06
+max_outline_share = 0.01
+max_mean_l = 0.03
+# Lava is emissive (every style and mood, nocturne included): vein texels are never darkened by
+# more than max_darkening, keep at least min_chroma_retention of their chroma, and their mean
+# hue moves by at most max_hue_shift degrees (heat colors stay; no cool or pastel pull).
+lava_max_darkening = 0.02
+lava_min_chroma_retention = 0.9
+lava_max_hue_shift = 8.0

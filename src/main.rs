@@ -96,7 +96,7 @@ struct DevFluidSheetArgs {
     #[arg(long, default_value_t = 0)]
     first: usize,
     /// Frame color r,g,b (0..1).
-    #[arg(long, value_delimiter = ',', num_args = 3, default_values_t = [0.5, 0.5, 0.5])]
+    #[arg(long, value_delimiter = ',', default_values_t = [0.5, 0.5, 0.5])]
     frame: Vec<f32>,
 }
 
@@ -376,6 +376,7 @@ fn main() -> ExitCode {
                     .filter_map(|l| l.split('\t').next().map(str::to_string))
                     .filter(|p| p != "path")
                     .collect();
+                anyhow::ensure!(args.frame.len() == 3, "--frame takes r,g,b");
                 pastelplash::audit::sheet(
                     &args.dir,
                     &rels,

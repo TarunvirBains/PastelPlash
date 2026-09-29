@@ -9,8 +9,12 @@ use crate::stylize::cache::fingerprint;
 use crate::stylize::facts::ImageFacts;
 use crate::stylize::params::Params;
 
-/// The palette LUT for the (mood's) palette and a category treatment, if the style has one.
+/// The palette LUT for the (mood's) palette and a category treatment, if the style has one and
+/// the category is mapped through a palette at all.
 pub(super) fn lut(external: Option<&Arc<Lut3d>>, style: &Style, tr: &Treatment) -> Option<LutSpec> {
+    if !tr.palette {
+        return None;
+    }
     if let Some(lut) = external {
         return Some(LutSpec::External(lut.clone()));
     }
@@ -20,7 +24,14 @@ pub(super) fn lut(external: Option<&Arc<Lut3d>>, style: &Style, tr: &Treatment) 
     Some(LutSpec::Palette {
         key: (
             fingerprint(&style.palette),
-            [tr.floor_scale, tr.shadow_tint, tr.hue, tr.warmth].map(f32::to_bits),
+            [
+                tr.floor_scale,
+                tr.shadow_tint,
+                tr.hue,
+                tr.warmth,
+                tr.reference,
+            ]
+            .map(f32::to_bits),
         ),
         palette: Box::new(style.palette.clone()),
         treatment: tr.clone(),
