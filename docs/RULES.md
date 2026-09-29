@@ -63,8 +63,9 @@ There are four kinds of change, and each has its own place:
   - CI runs the GPU tests on software adapters (WARP on Windows, lavapipe on Linux) and has no
     GPU hash files for them: their bits depend on the WARP or Mesa/LLVM build of the runner
     image, which is not pinned, so the comparison is skipped there (the test prints why). The
-    rule tests (GPU rules included) and snapshots run in full, and the CPU hashes too (on Linux
-    without the math-library sections, see above).
+    snapshots and CPU hashes run on both (on Linux without the math-library sections, see
+    above). The GPU rule matrix (`tests/rules`) runs on lavapipe; on WARP it takes hours on a
+    CI runner, so it runs there only when the workflow is started by hand with `warp-rules`.
 - **GPU tests skip cleanly** without an adapter; the CPU checks always run. `WGPU_BACKEND`
   (`dx12`, `vulkan`) and `WGPU_ADAPTER_NAME` (a case-insensitive part of the adapter's name, e.g.
   `llvmpipe` or `Microsoft Basic Render Driver`) pick the adapter for the tests and the CLI alike;

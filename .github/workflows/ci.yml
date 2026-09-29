@@ -4,6 +4,11 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+    inputs:
+      warp-rules:
+        description: "Also run the GPU rule matrix (tests/rules) on WARP (hours)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -25,7 +30,11 @@ env:
 # golden GPU hashes (tests/golden/hashes-<adapter>.toml) are per adapter and none are captured
 # for these: their bits depend on the WARP or Mesa/LLVM build of the runner image, which is not
 # pinned, so the harness skips that comparison with a message (docs/RULES.md). The CPU golden
-# hashes, the rule tests (GPU rules included) and the snapshots run in full.
+# hashes and the snapshots run on both.
+#
+# The GPU rule matrix (tests/rules) runs on lavapipe only. On WARP it is too slow for every
+# push: about 1460 s on 24 threads locally (lavapipe: 470 s on 7), hours on a 4-core runner.
+# Start the workflow by hand with warp-rules to run it on WARP too.
 
 jobs:
   fmt:
@@ -56,6 +65,7 @@ jobs:
   test-windows:
     name: test (Windows, WARP)
     runs-on: windows-latest
+    timeout-minutes: ${{ inputs.warp-rules && 360 || 90 }}
     env:
       # WARP, the DirectX 12 software rasterizer that ships with Windows.
       WGPU_ADAPTER_NAME: Microsoft Basic Render Driver
@@ -79,11 +89,23 @@ jobs:
           key: test-windows
       - name: GPU adapter
         run: cargo run --release --locked -- gpu-info
-      - run: cargo test --release --locked
+      - name: cargo test (every test target but the GPU rule matrix, unless warp-rules)
+        shell: bash
+        env:
+          WARP_RULES: ${{ inputs.warp-rules }}
+        run: |
+          args=(--lib --bins)
+          for f in tests/*.rs tests/*/main.rs; do
+            name=${f#tests/}; name=${name%/main.rs}; name=${name%.rs}
+            if [[ "$name" != rules || "$WARP_RULES" == true ]]; then args+=(--test "$name"); fi
+          done
+          echo "cargo test --release --locked ${args[*]}"
+          cargo test --release --locked "${args[@]}"
 
   test-linux:
     name: test (Linux, lavapipe)
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     env:
       # Native Linux build instead of the pinned Windows cross-build (.cargo/config.toml).
       CARGO_BUILD_TARGET: x86_64-unknown-linux-gnu
