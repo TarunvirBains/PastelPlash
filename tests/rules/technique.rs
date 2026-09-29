@@ -524,26 +524,33 @@ fn rule_no_negative_dark_and_light_stay_one_family() {
 
 #[test]
 fn rule_specks_are_cleaned() {
-    // Dark specks of a few texels on a busy surface (dirt in a cobweb, photographic grit) are
-    // noise and are cleaned; real small objects keep their contrast (rule_small_objects_survive,
-    // rule_text_stays_legible).
+    // Specks of a few texels on a busy surface (dirt in a cobweb, photographic grit, blown-white
+    // glitter on cracked ground) are noise and are cleaned, dark or bright; real small objects
+    // keep their contrast (rule_small_objects_survive, rule_text_stays_legible) and compact
+    // glints larger than a speck keep their white (rule_no_new_clipping).
     let k = contract();
     let wall = bark(256, 141);
     let is_speck = |x: u32, y: u32| (x % 23 < 2) && (y % 29 < 2) && x > 8 && y > 8;
-    let img = image(256, 256, |x, y| {
-        if is_speck(x, y) {
-            let [r, g, b] = from_oklch(0.1, 0.02, 60.0);
-            [r, g, b, 1.0]
-        } else {
-            let mut p = wall.pixels[(y * 256 + x) as usize];
-            // A pale wall, so the specks stand out as in a cobweb.
-            for c in &mut p[..3] {
-                *c = 0.5 + 0.4 * *c;
+    // Dark specks on a pale wall (as in a cobweb), then blown-white specks on a darker one.
+    let make = |speck: [f32; 3], base: f32| {
+        image(256, 256, |x, y| {
+            if is_speck(x, y) {
+                [speck[0], speck[1], speck[2], 1.0]
+            } else {
+                let mut p = wall.pixels[(y * 256 + x) as usize];
+                for c in &mut p[..3] {
+                    *c = base + 0.4 * *c;
+                }
+                p
             }
-            p
-        }
-    });
-    // Mean L of the speck texels vs. of the texels 3..5 away from them.
+        })
+    };
+    let dark = from_oklch(0.1, 0.02, 60.0);
+    let cases = [
+        ("dark", make(dark, 0.5)),
+        ("bright", make([1.0, 1.0, 1.0], 0.3)),
+    ];
+    // Mean L of the speck texels vs. of the texels 3..5 away from them (absolute).
     let contrast = |im: &Image| {
         let (mut o, mut no, mut s, mut ns) = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
         for y in 10..246u32 {
@@ -558,23 +565,23 @@ fn rule_specks_are_cleaned() {
                 }
             }
         }
-        s / ns - o / no
+        (s / ns - o / no).abs()
     };
-    let c0 = contrast(&img);
     let mut report = Report::new("specks are cleaned");
-    let rendered = Matrix::full(&[Category::World, Category::Background]).check(
-        &mut report,
-        &img,
-        |_, out| {
+    let matrix = Matrix::full(&[Category::World, Category::Background]);
+    for (label, img) in &cases {
+        let c0 = contrast(img);
+        let rendered = matrix.check(&mut report, img, |_, out| {
             let c1 = contrast(out);
             ensure(c1 <= k.technique.speck_max_contrast * c0, || {
-                format!("speck contrast {c0:.3} -> {c1:.3}")
+                format!("{label} speck contrast {c0:.3} -> {c1:.3}")
             })
-        },
-    );
-    if rendered {
-        report.finish();
+        });
+        if !rendered {
+            return;
+        }
     }
+    report.finish();
 }
 
 #[test]

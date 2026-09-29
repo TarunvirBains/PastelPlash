@@ -15,10 +15,10 @@ fn speck_ring(p: vec2<i32>, r: f32, l0: f32, tol: f32) -> vec4<f32> {
     return vec4<f32>(sum / 8.0, similar);
 }
 
-// Dark specks of a few texels (photographic dirt, dust in a cobweb) are noise: a texel darker
-// than the rings around it at the speck radius and at 1.5× it, where at most one ring sample
-// shares its value (so it is no line, crack, handle or rim), takes the ring's color. Real small
-// objects are larger than the speck radius and keep their value.
+// Specks of a few texels (photographic dirt, dust in a cobweb, bright grit) are noise: a texel
+// darker or brighter than the rings around it at the speck radius and at 1.5× it, where at most
+// one ring sample shares its value (so it is no line, crack, handle or rim), takes the ring's
+// color. Real small objects are larger than the speck radius and keep their value.
 fn despeckle(p: vec2<i32>, c: vec4<f32>) -> vec4<f32> {
     if (!(P.speck_r > 0.0) || c.a < 0.5) { return c; }
     let l0 = lightness(c);
@@ -26,9 +26,13 @@ fn despeckle(p: vec2<i32>, c: vec4<f32>) -> vec4<f32> {
     let a = speck_ring(p, P.speck_r, l0, tol);
     let b = speck_ring(p, P.speck_r * 1.5, l0, tol);
     if (a.w > 1.0 || b.w > 1.0) { return c; }
-    let ring = srgb_to_oklab(a.rgb).x;
-    let t = smoothstep(P.speck_thr, 2.0 * P.speck_thr, ring - l0)
-        * smoothstep(P.speck_thr, 2.0 * P.speck_thr, srgb_to_oklab(b.rgb).x - l0);
+    let ra = srgb_to_oklab(a.rgb).x - l0;
+    let rb = srgb_to_oklab(b.rgb).x - l0;
+    let dark = smoothstep(P.speck_thr, 2.0 * P.speck_thr, ra)
+        * smoothstep(P.speck_thr, 2.0 * P.speck_thr, rb);
+    let bright = smoothstep(P.speck_thr, 2.0 * P.speck_thr, -ra)
+        * smoothstep(P.speck_thr, 2.0 * P.speck_thr, -rb);
+    let t = max(dark, bright);
     return vec4<f32>(mix(c.rgb, a.rgb, t), c.a);
 }
 

@@ -26,7 +26,7 @@ pub(super) fn plan(style: &Style, ctx: &FileContext, facts: &ImageFacts) -> Spec
             0.0
         },
         depth: mk.speck_depth,
-        clip_radius: (6.0 * facts.scale).clamp(3.0, 24.0),
+        clip_radius: (6.0 * facts.scale).clamp(6.0, 24.0),
     }
 }
 

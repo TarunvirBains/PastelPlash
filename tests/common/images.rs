@@ -346,7 +346,7 @@ pub fn glow(size: u32) -> Image {
     })
 }
 
-/// Bright highlights: a mid-gray textured surface with a large blown-white patch, small blown
+/// Bright highlights: a mid-gray textured surface with a large blown-white patch, compact blown
 /// glints, and near-white (unclipped) areas that brushwork could push over.
 pub fn highlights(size: u32, seed: u32) -> Image {
     image(size, size, |x, y| {
@@ -354,7 +354,7 @@ pub fn highlights(size: u32, seed: u32) -> Image {
         if x > size * 3 / 4 && y < size / 3 {
             return [1.0, 1.0, 1.0, 1.0];
         }
-        if (x % 37 == 5 || x % 37 == 6) && (y % 41 == 9 || y % 41 == 10) {
+        if (5..12).contains(&(x % 37)) && (9..16).contains(&(y % 41)) {
             return [1.0, 1.0, 1.0, 1.0];
         }
         let t = smooth_noise(fx, fy, 6, size, seed);

@@ -210,11 +210,12 @@ fn rule_no_new_clipping() {
                 )
             })?;
             if label == "highlights" {
-                // The small glints (not the big patch) stay white.
+                // The compact glints on the mid-gray surface (not the big patch, not the spots
+                // inside the near-white band: rule_no_glitter_on_bright_surfaces) stay white.
                 let w = img.width as usize;
                 for (i, (p, q)) in img.pixels.iter().zip(&out.pixels).enumerate() {
                     let (x, y) = ((i % w) as u32, (i / w) as u32);
-                    if p[0] >= 1.0 && !(x > 144 && y < 64) {
+                    if p[0] >= 1.0 && !(x > 144 && y < 64) && y < 128 {
                         ensure(q[..3].iter().all(|&c| c >= 254.0 / 255.0), || {
                             format!("a glint at ({x}, {y}) lost its white: {q:?}")
                         })?;
@@ -228,4 +229,52 @@ fn rule_no_new_clipping() {
         }
     }
     report.finish();
+}
+
+#[test]
+fn rule_no_glitter_on_bright_surfaces() {
+    // Blown-white spots inside an already bright surface (grit on pale cracked ground) are part of
+    // the surface, not glints: they stand out no more than in the source (they read as glitter
+    // once the painted surface around them settles). Glints on darker surfaces keep their white
+    // (rule_no_new_clipping).
+    let is_spot = |x: u32, y: u32| (x % 31 < 4) && (y % 27 < 4) && x > 8 && y > 8;
+    let img = image(192, 192, |x, y| {
+        if is_spot(x, y) {
+            return [1.0, 1.0, 1.0, 1.0];
+        }
+        let t = smooth_noise(x as f32, y as f32, 6, 192, 181);
+        let v = 0.84 + 0.1 * t + 0.03 * (noise(x, y, 182) - 0.5);
+        [v, v, v * 0.97, 1.0]
+    });
+    let contrast = |im: &Image| {
+        let (mut o, mut no, mut s, mut ns) = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
+        for y in 10..182u32 {
+            for x in 10..182u32 {
+                let l = lch(im.pixels[(y * 192 + x) as usize])[0];
+                if is_spot(x, y) {
+                    o += l;
+                    no += 1.0;
+                } else if (x % 31) >= 6 && (x % 31) < 9 && (y % 27) < 4 {
+                    s += l;
+                    ns += 1.0;
+                }
+            }
+        }
+        o / no - s / ns
+    };
+    let c0 = contrast(&img);
+    let mut report = Report::new("no glitter on bright surfaces");
+    let rendered = Matrix::full(&[Category::World, Category::Background]).check(
+        &mut report,
+        &img,
+        |_, out| {
+            let c1 = contrast(out);
+            ensure(c1 <= c0 + 0.01, || {
+                format!("blown spots stand out more: {c0:.3} -> {c1:.3}")
+            })
+        },
+    );
+    if rendered {
+        report.finish();
+    }
 }
