@@ -263,63 +263,106 @@ fn rule_world_colors_bring_no_new_hue() {
         ("olive moss", olive_moss(192, 175, k.identity.moss_hue)),
         ("dark brown bark", dark_brown_bark(192, 176)),
     ] {
-        let (w, h) = (img.width as i32, img.height as i32);
-        let src: Vec<[f32; 3]> = img.pixels.iter().map(|&p| lch(p)).collect();
         let rendered = matrix.check(&mut report, &img, |case, out| {
-            let style = case.config.style.for_mood(&case.mood).unwrap();
-            let scale = case.config.target.treatment(case.category).cast;
-            let cast = (pastelplash::palette::cast_strength(&style.palette, scale) > 0.0)
-                .then(|| k.mood(&case.mood.name).and_then(|r| r.cast_max_chroma))
-                .flatten()
-                .map(|max_c| (style.palette.cast.hue, max_c));
-            let (mut bad, mut n) = (0usize, 0usize);
-            let mut example = None;
-            for y in 0..h {
-                for x in 0..w {
-                    let q = out.pixels[(y * w + x) as usize];
-                    if q[3] < 0.5 {
-                        continue;
-                    }
-                    n += 1;
-                    let [l1, c1, h1] = lch(q);
-                    if c1 < min_c {
-                        continue;
-                    }
-                    let near = |hue: f32| pastelplash::color::hue_diff(hue, h1).abs() <= gap;
-                    let mut family = false;
-                    'nb: for dy in -2..=2 {
-                        for dx in -2..=2 {
-                            let i = (y + dy).clamp(0, h - 1) * w + (x + dx).clamp(0, w - 1);
-                            let [_, c0, h0] = src[i as usize];
-                            if c0 >= 0.5 * min_c && near(h0) {
-                                family = true;
-                                break 'nb;
-                            }
-                        }
-                    }
-                    if family || cast.is_some_and(|(ch, max_c)| near(ch) && c1 <= max_c) {
-                        continue;
-                    }
-                    bad += 1;
-                    example.get_or_insert_with(|| {
-                        let [l0, c0, h0] = src[(y * w + x) as usize];
-                        format!("({x},{y}) LCh {l0:.2} {c0:.3} {h0:.0} -> {l1:.2} {c1:.3} {h1:.0}")
-                    });
-                }
-            }
-            let budget = (n as f32 * k.tolerance.outliers).ceil() as usize;
-            ensure(bad <= budget, || {
-                format!(
-                    "{label}: {bad} of {n} texels took a new hue (budget {budget}); e.g. {}",
-                    example.unwrap_or_default()
-                )
-            })
+            brings_no_new_hue(label, &img, case, out, min_c, gap)
         });
         if !rendered {
             return;
         }
     }
     report.finish();
+}
+
+#[test]
+fn rule_sky_colors_bring_no_new_hue() {
+    // The same for skies: a night sky of dark blue cloud with black gaps stays blue and neutral.
+    // The palette's warm umber floor for neutral darks turned the black gaps of OoT Reloaded's
+    // night and sunset skies (vr_fine3, vr_cloud2) into brown blotches, and its LUT
+    // interpolation turned faint blue darks brown as well.
+    let k = contract();
+    let (min_c, gap) = (k.identity.new_hue_min_chroma, k.identity.new_hue_max_gap);
+    let size = 192;
+    let img = image(size, size, |x, y| {
+        let t = smooth_noise(x as f32, y as f32, 5, size, 181);
+        let gaps = smooth_noise(x as f32, y as f32, 3, size, 182);
+        let [r, g, b] = if gaps > 0.62 {
+            [0.0, 0.0, 0.0]
+        } else {
+            from_oklch(0.02 + 0.2 * t, 0.005 + 0.05 * t, 255.0)
+        };
+        [r, g, b, 1.0]
+    });
+    let mut report = Report::new("sky colors bring no new hue");
+    let rendered = Matrix::full(&[Category::Skybox]).check(&mut report, &img, |case, out| {
+        brings_no_new_hue("night sky", &img, case, out, min_c, gap)
+    });
+    if rendered {
+        report.finish();
+    }
+}
+
+/// No output texel colored at least `min_c` takes a hue more than `gap` degrees from every texel
+/// of its 5x5 source neighborhood colored at least half that (a mood's moonlight cast excepted:
+/// near its hue, up to `moods.<name>.cast_max_chroma`), beyond the outlier budget.
+fn brings_no_new_hue(
+    label: &str,
+    img: &Image,
+    case: &Case,
+    out: &Image,
+    min_c: f32,
+    gap: f32,
+) -> Result<(), String> {
+    let k = contract();
+    let (w, h) = (img.width as i32, img.height as i32);
+    let src: Vec<[f32; 3]> = img.pixels.iter().map(|&p| lch(p)).collect();
+    let style = case.config.style.for_mood(&case.mood).unwrap();
+    let scale = case.config.target.treatment(case.category).cast;
+    let cast = (pastelplash::palette::cast_strength(&style.palette, scale) > 0.0)
+        .then(|| k.mood(&case.mood.name).and_then(|r| r.cast_max_chroma))
+        .flatten()
+        .map(|max_c| (style.palette.cast.hue, max_c));
+    let (mut bad, mut n) = (0usize, 0usize);
+    let mut example = None;
+    for y in 0..h {
+        for x in 0..w {
+            let q = out.pixels[(y * w + x) as usize];
+            if q[3] < 0.5 {
+                continue;
+            }
+            n += 1;
+            let [l1, c1, h1] = lch(q);
+            if c1 < min_c {
+                continue;
+            }
+            let near = |hue: f32| pastelplash::color::hue_diff(hue, h1).abs() <= gap;
+            let mut family = false;
+            'nb: for dy in -2..=2 {
+                for dx in -2..=2 {
+                    let i = (y + dy).clamp(0, h - 1) * w + (x + dx).clamp(0, w - 1);
+                    let [_, c0, h0] = src[i as usize];
+                    if c0 >= 0.5 * min_c && near(h0) {
+                        family = true;
+                        break 'nb;
+                    }
+                }
+            }
+            if family || cast.is_some_and(|(ch, max_c)| near(ch) && c1 <= max_c) {
+                continue;
+            }
+            bad += 1;
+            example.get_or_insert_with(|| {
+                let [l0, c0, h0] = src[(y * w + x) as usize];
+                format!("({x},{y}) LCh {l0:.2} {c0:.3} {h0:.0} -> {l1:.2} {c1:.3} {h1:.0}")
+            });
+        }
+    }
+    let budget = (n as f32 * k.tolerance.outliers).ceil() as usize;
+    ensure(bad <= budget, || {
+        format!(
+            "{label}: {bad} of {n} texels took a new hue (budget {budget}); e.g. {}",
+            example.unwrap_or_default()
+        )
+    })
 }
 
 /// Mean hue (degrees) of the texels colored at least 0.03.

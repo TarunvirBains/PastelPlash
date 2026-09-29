@@ -72,6 +72,7 @@ exposure = { preserve_mean = true, protect = [0.15, 0.75] }
 resolution = { floor = 3840, max_factor = 4, power_of_two = false, internal = 2 }
 
 [categories.skybox]
+dark_chroma = 0.0       # no warm umber floor: a night sky's black gaps and faint blue darks stay neutral and blue, never brown
 delight = 0.0
 warm_cool = 0.5
 shadow_tint = 0.0
