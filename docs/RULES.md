@@ -178,7 +178,11 @@ into outlined cells that slide around (cracked stone, lizard skin).
   small paint marks (no tiling multiplier), gentle strokes. Engine-tinted gray fluids take the
   tint-safe path (lightness only). **Water** keeps its source lightness (each area keeps its
   depth; a mood's night exposure still applies) and leans toward the style's reference water
-  tone (`palette.water`, per-area override in the pack map). **Lava is emissive**: no palette,
+  tone (`palette.water`, per-area override in the pack map: `water_hue`, `water_chroma`,
+  `water_pull` on a `[[fluids]]` rule). The shipped tone is dark muted jade, hue 140, chroma
+  0.035–0.06, pulled halfway: Skyward Sword's Ancient Cistern water (sun and shade, hue and
+  chroma only: h 115–140, C 0.036–0.06) and the N64 Deku Tree basement water (h 143, C 0.04)
+  agree. **Lava is emissive**: no palette,
   no moonlight, no mood at all (`Category::is_emissive`): glow and heat colors stay.
 
 | Rule | Why | Enforced by |

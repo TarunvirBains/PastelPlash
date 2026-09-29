@@ -219,6 +219,10 @@ glob = "alt/objects/object_mori_tex/gMoriWaterTex"
 kind = "water"
 
 [[fluids]]
+glob = "alt/objects/object_blkobj/object_blkobjTex_00A090"               # Dark Link's water floor
+kind = "water"
+
+[[fluids]]
 glob = "alt/objects/object_hidan_objects/object_hidan_objectsTex_000240"  # Fire Temple lava
 kind = "lava"
 
