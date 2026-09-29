@@ -411,18 +411,20 @@ impl Stylize {
         } else {
             mood.key()
         };
-        let mut luts = self.luts.lock().unwrap();
-        let buf = luts
-            .entry((
-                key,
-                [tr.floor_scale, tr.shadow_tint, tr.hue, tr.warmth].map(f32::to_bits),
-            ))
-            .or_insert_with(|| {
-                let lut = Mapping::new(&style.palette, tr).bake();
-                Arc::new(lut_buffer(&self.gpu, &lut))
-            })
-            .clone();
-        Some((buf, style.palette.lut_size.clamp(2, 129) as i32))
+        let key = (
+            key,
+            [tr.floor_scale, tr.shadow_tint, tr.hue, tr.warmth].map(f32::to_bits),
+        );
+        let size = style.palette.lut_size.clamp(2, 129) as i32;
+        if let Some(buf) = self.luts.lock().unwrap().get(&key) {
+            return Some((buf.clone(), size));
+        }
+        // Baked outside the lock: baking runs on rayon, and a worker that steals another file's
+        // job while waiting would block on the lock it holds itself.
+        let lut = Mapping::new(&style.palette, tr).bake();
+        let buf = Arc::new(lut_buffer(&self.gpu, &lut));
+        let buf = self.luts.lock().unwrap().entry(key).or_insert(buf).clone();
+        Some((buf, size))
     }
 }
 

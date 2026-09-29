@@ -414,31 +414,15 @@ fn render_section() -> Section {
             }
         }
     }
-    // Sequentially first, one image per style × mood × category, so every palette LUT is baked
-    // before the parallel pass: `Stylize` bakes under its cache lock, and a rayon worker that
-    // steals another render while baking would wait on that lock forever.
-    let mut out: Section = cases
-        .iter()
-        .filter(|c| c.0.ends_with(&format!("/{}", imgs[0].0)))
-        .map(|(key, stage, config, cat, mood, img)| {
-            (
-                key.clone(),
-                image_hash(&apply(stage, config, *cat, mood, img)),
-            )
-        })
-        .collect();
-    let rest: Section = cases
+    cases
         .par_iter()
-        .filter(|c| !out.contains_key(&c.0))
         .map(|(key, stage, config, cat, mood, img)| {
             (
                 key.clone(),
                 image_hash(&apply(stage, config, *cat, mood, img)),
             )
         })
-        .collect();
-    out.extend(rest);
-    out
+        .collect()
 }
 
 /// Chunked processing of 320 px textures, per style: a tiling one in 160 px chunks and a busy
