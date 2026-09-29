@@ -19,6 +19,7 @@ accent = 0.5
 paper = 0.3
 value_contrast = 0.3    # the cel shader supplies actors' light and shadow; keep their painted form
 warmth = 0.3            # a little earth warmth (leather, hair); skin keeps its own hue
+grouping = 0.0          # never value-grouped: the cel shader bands actors already
 
 [categories.world]
 delight = 0.35
@@ -34,6 +35,11 @@ shadow_tint = 1.0
 accent = 1.0
 abstraction = 0.0      # a finished painting: keep every painted object
 value_contrast = 0.6   # gentle compression and strokes
+grouping = 0.5         # gentler value grouping; small painted objects keep their value
+# The room's lighting and mood are painted in: keep the murk lift (crushed darks become readable
+# colored shadow), then bring mids and lights down with a monotone curve so the room's mean
+# lightness (its exposure) matches the source.
+exposure = { preserve_mean = true, protect = [0.15, 0.75] }
 
 [categories.skybox]
 delight = 0.0

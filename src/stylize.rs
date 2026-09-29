@@ -28,6 +28,7 @@ use wgpu::util::DeviceExt;
 use crate::analysis;
 use crate::config::{Category, Config, Mood, Style, Treatment};
 use crate::gpu::Gpu;
+use crate::grouping;
 use crate::image::Image;
 use crate::lut::Lut3d;
 use crate::palette::{Mapping, smoothstep};
@@ -139,9 +140,20 @@ struct Params {
     mean_b: f32,
     spread: f32,
     pivot_r: f32,
-    _pad7: f32,
-    _pad8: f32,
-    _pad9: f32,
+    grp: f32,
+    grp_sigma: f32,
+    grp_radius: f32,
+    grp_range: f32,
+    grp_color: f32,
+    grp_family: f32,
+    grp_stroke: f32,
+    grp_sal0: f32,
+    grp_sal1: f32,
+    grp_count: f32,
+    _pad10: f32,
+    grp_l: [f32; 4],
+    grp_a: [f32; 4],
+    grp_b: [f32; 4],
 }
 
 #[repr(C)]
@@ -154,6 +166,7 @@ struct BandUniform {
 
 struct Passes {
     delight: wgpu::ComputePipeline,
+    group: wgpu::ComputePipeline,
     tensor: wgpu::ComputePipeline,
     blur_h: wgpu::ComputePipeline,
     blur_v: wgpu::ComputePipeline,
@@ -331,6 +344,7 @@ impl Stylize {
         };
         let passes = Passes {
             delight: make("delight"),
+            group: make("group"),
             tensor: make("tensor"),
             blur_h: make("blur_h"),
             blur_v: make("blur_v"),
@@ -524,8 +538,17 @@ impl Stage for Stylize {
         let ct = &style.contrast;
         let r_mid = (vc.radius_mid * f).max(2.0);
         let ab = &style.abstraction;
-        let abstraction_on = ab.strength > 0.0 && tr.value_contrast > 0.0;
-        let (spread, gate) = if contrast_on || abstraction_on {
+        let abstraction_on = ab.strength > 0.0
+            && tr.value_contrast > 0.0
+            && ctx.config.pack.abstraction_allowed(ctx.rel);
+        // Soft value grouping: world and background textures only (never actors, which the cel
+        // shader bands, nor UI), unless the pack map opts the file out.
+        let gr = &style.grouping;
+        let grouping_on = gr.strength > 0.0
+            && tr.grouping > 0.0
+            && matches!(ctx.category, Category::World | Category::Background)
+            && ctx.config.pack.grouping_allowed(ctx.rel);
+        let (spread, gate) = if contrast_on || abstraction_on || grouping_on {
             let s = analysis::local_l_std(image, r_mid, wrap);
             (
                 s,
@@ -546,6 +569,60 @@ impl Stage for Stylize {
         } else {
             0.0
         };
+        let mut grp = if grouping_on {
+            (gr.strength * gate * tr.grouping).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let mut grp_note = String::new();
+        let masses = if grp > 0.0 {
+            let field = lowres.as_ref().filter(|_| delight_strength > 0.0).map(|l| {
+                grouping::DelightField {
+                    field: l,
+                    strength: delight_strength,
+                    min_gain: style.delight.min_gain,
+                    max_gain: style.delight.max_gain,
+                }
+            });
+            match grouping::value_masses(image, field.as_ref(), wrap, gr) {
+                Ok(m) => {
+                    let lch: Vec<String> = (0..m.count)
+                        .map(|k| {
+                            let [a, b] = m.ab[k];
+                            format!(
+                                "{:.2}/{:.3}/{:.0}@{:.0}%",
+                                m.l[k],
+                                a.hypot(b),
+                                b.atan2(a).to_degrees().rem_euclid(360.0),
+                                m.share[k] * 100.0
+                            )
+                        })
+                        .collect();
+                    grp_note = format!(
+                        " grp={grp:.2} masses={} [{}] expl={:.2}/{:.2}",
+                        m.count,
+                        lch.join(" "),
+                        m.explained,
+                        m.explained2
+                    );
+                    Some(m)
+                }
+                Err(skip) => {
+                    grp_note = format!(" grp=skip({skip:?})");
+                    grp = 0.0;
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        let grp_radius = (gr.radius * gm).max(1.0);
+        let grp_sigma = masses.as_ref().map_or(0.0, |m| {
+            let gap = (0..m.count - 1)
+                .map(|i| m.l[i + 1] - m.l[i])
+                .fold(f32::MAX, f32::min);
+            (gr.softness * 0.5 * gap).max(1e-3)
+        });
         let mean_lab = if busy > 0.0 {
             crate::report::mean_oklab(image)
         } else {
@@ -632,6 +709,19 @@ impl Stage for Stylize {
             mean_b: mean_lab[2],
             spread,
             pivot_r: (style.contrast.pattern_radius * gm).max(2.0),
+            grp,
+            grp_sigma,
+            grp_radius,
+            grp_range: gr.range,
+            grp_color: gr.color,
+            grp_family: gr.color_family,
+            grp_stroke: gr.stroke_value,
+            grp_sal0: gr.salient[0],
+            grp_sal1: gr.salient[1],
+            grp_count: masses.as_ref().map_or(0.0, |m| m.count as f32),
+            grp_l: masses.as_ref().map_or([0.0; 4], |m| m.l),
+            grp_a: masses.as_ref().map_or([0.0; 4], |m| m.ab.map(|v| v[0])),
+            grp_b: masses.as_ref().map_or([0.0; 4], |m| m.ab.map(|v| v[1])),
             paper: wc.paper_grain * tr.paper,
             paper_tint: wc.paper_tint * tr.paper,
             paper_cells_x: cells(w, paper_px),
@@ -685,6 +775,7 @@ impl Stage for Stylize {
                 .max(2.0 * ab.min_frac * gm)
                 .max(2.0)
                 * busy.ceil()
+            + if grp > 0.0 { grp_radius + 1.0 } else { 0.0 }
             + 6.0)
             .ceil() as u32;
         let job = Job {
@@ -695,8 +786,29 @@ impl Stage for Stylize {
         };
 
         let t_gpu = Instant::now();
-        let (out, chunks) = self.run(image, &job, wrap)?;
+        let (mut out, chunks) = self.run(image, &job, wrap)?;
         let t_gpu = t_gpu.elapsed();
+        // Exposure: restore the source's mean lightness with a monotone tone curve (the murk lift
+        // stays; mids and lights come down).
+        let mut exp_note = String::new();
+        if tr.exposure.preserve_mean {
+            for p in out.iter_mut() {
+                for c in p.iter_mut().take(3) {
+                    if !c.is_finite() {
+                        *c = 0.0;
+                    }
+                }
+                p[3] = p[3].clamp(0.0, 1.0);
+            }
+            let target = crate::exposure::mean_l(&image.pixels);
+            let before = crate::exposure::mean_l(&out);
+            let curve = crate::exposure::preserve_mean(&mut out, target, tr.exposure.protect);
+            exp_note = format!(
+                " exposure L {target:.3}: {before:.3}->{:.3} (k {:.3})",
+                crate::exposure::mean_l(&out),
+                curve.k
+            );
+        }
         for (dst, src) in image.pixels.iter_mut().zip(out) {
             for c in 0..3 {
                 let v = src[c];
@@ -709,7 +821,7 @@ impl Stage for Stylize {
         }
         println!(
             "  {}: {w}x{h} {:?} mood={} wrap={}{} seam={:.1}/{:.1} tint_safe={} (C99 {:.3}) \
-             scale={f:.2} r={radius:.1} spread={spread:.4} busy={busy:.2} speckle={speckle:.2} marks={marks_scale:.2}{} | analysis {} gpu {}",
+             scale={f:.2} r={radius:.1} spread={spread:.4} busy={busy:.2} speckle={speckle:.2} marks={marks_scale:.2}{grp_note}{exp_note}{} | analysis {} gpu {}",
             ctx.rel.display(),
             ctx.category,
             ctx.mood,
@@ -954,6 +1066,11 @@ impl Stylize {
         let mut buffers = Vec::new();
         let mut enc = device.create_command_encoder(&Default::default());
         dispatch(&mut enc, &p.delight, 0, 0, 0, 1, 0, h);
+        if params.grp > 0.0 && params.grp_count >= 2.0 {
+            // Soft value grouping (T1 → T3), which then stands in for the de-lit source.
+            dispatch(&mut enc, &p.group, 1, 1, 1, 3, 0, h);
+            enc.copy_texture_to_texture(tex[3].as_image_copy(), tex[1].as_image_copy(), extent);
+        }
         let kuwahara_on = params.kuw_radius >= 0.5;
         let tensor_on = kuwahara_on || params.stroke_strength > 0.0 || params.smear > 0.0;
         if tensor_on {

@@ -76,3 +76,50 @@ fn oot_reloaded_paths_map_to_categories() {
         assert_eq!(classify("oot-reloaded.toml", path), want, "{path}");
     }
 }
+
+#[test]
+fn oot_reloaded_signs_are_never_grouped_or_abstracted() {
+    let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("packs/oot-reloaded.toml");
+    let pack = Config::load(None, None, Some(&file)).unwrap().pack;
+    for path in [
+        "alt/objects/object_spot01_matoya/gKakarikoBazaarSignTex",
+        "alt/objects/gameplay_keep/gSignLetteringTex",
+        "alt/objects/object_mag/gTitleTheLegendOfTextTex",
+    ] {
+        assert!(!pack.grouping_allowed(Path::new(path)), "{path} grouped");
+        assert!(
+            !pack.abstraction_allowed(Path::new(path)),
+            "{path} abstracted"
+        );
+    }
+    for path in [
+        "alt/scenes/shared/spot04_scene/spot04_room_0Tex_016508",
+        "alt/objects/gameplay_keep/gHylianShieldDesignTex",
+    ] {
+        assert!(pack.grouping_allowed(Path::new(path)), "{path} not grouped");
+        assert!(
+            pack.abstraction_allowed(Path::new(path)),
+            "{path} not abstracted"
+        );
+    }
+}
+
+#[test]
+fn oot_reloaded_adult_temple_of_time_is_nocturne_child_is_not() {
+    let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("packs/oot-reloaded.toml");
+    let pack = Config::load(None, None, Some(&file)).unwrap().pack;
+    let adult = "alt/scenes/shared/shrine_r_scene/shrine_r_room_0Background_007AF0";
+    assert_eq!(pack.classify(Path::new(adult)), Category::Background);
+    assert_eq!(pack.mood_for(Path::new(adult)).name, "nocturne");
+    for child in [
+        "alt/scenes/shared/shrine_scene/shrine_room_0Background_007AF0",
+        "alt/scenes/shared/shrine_n_scene/shrine_n_room_0Background_007B10",
+    ] {
+        assert_eq!(
+            pack.classify(Path::new(child)),
+            Category::Background,
+            "{child}"
+        );
+        assert!(pack.mood_for(Path::new(child)).is_base(), "{child}");
+    }
+}

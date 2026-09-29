@@ -71,6 +71,8 @@ pub struct IdentityRules {
     pub coarse_max_lightness: f32,
     pub coarse_min_pattern_corr: f32,
     pub coarse_min_pattern_range: f32,
+    pub background_max_mean_l: f32,
+    pub background_min_pattern_range: f32,
     /// Larger bounds for named opt-in styles.
     #[serde(default)]
     pub styles: std::collections::BTreeMap<String, f32>,
@@ -170,6 +172,7 @@ pub struct TechniqueRules {
     pub value_mean_tolerance: f32,
     pub adaptive_min_effect: f32,
     pub small_object_min_contrast: f32,
+    pub text_min_contrast: f32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -474,6 +477,77 @@ pub fn tiling(size: u32, seed: u32) -> Image {
         let l = 0.3 + 0.5 * smooth_noise(fx, fy, 6, size, seed);
         let h = 360.0 * smooth_noise(fx, fy, 3, size, seed + 7);
         let [r, g, b] = from_oklch(l, 0.1, h);
+        [r, g, b, 1.0]
+    })
+}
+
+/// True where the synthetic sign ([`sign`]) has a letter stroke: rows of 12×16 glyphs made of
+/// 3-texel strokes (a verticals / horizontals pattern per glyph, like blocky lettering).
+pub fn is_letter(x: u32, y: u32) -> bool {
+    let rows = [40u32, 100, 160, 220];
+    let Some(&top) = rows.iter().find(|&&t| (t..t + 16).contains(&y)) else {
+        return false;
+    };
+    if !(20..236).contains(&x) {
+        return false;
+    }
+    let (gx, gy) = ((x - 20) % 18, y - top);
+    if gx >= 12 {
+        return false;
+    }
+    let glyph = (x - 20) / 18 + 7 * (top / 60);
+    let bits = (glyph.wrapping_mul(2_654_435_761) >> 7) | 1;
+    let left = gx < 3;
+    let right = gx >= 9;
+    let center = (5..8).contains(&gx);
+    let top_bar = gy < 3;
+    let mid_bar = (7..10).contains(&gy);
+    let bottom_bar = gy >= 13;
+    (left && bits & 1 != 0)
+        || (right && bits & 2 != 0)
+        || (center && bits & 4 != 0)
+        || (top_bar && bits & 8 != 0)
+        || (mid_bar && bits & 16 != 0)
+        || (bottom_bar && bits & 32 != 0)
+}
+
+/// A wooden sign: busy, strongly grained pale planks with small dark painted lettering.
+pub fn sign(size: u32, seed: u32) -> Image {
+    image(size, size, |x, y| {
+        let (fx, fy) = (x as f32, y as f32);
+        if is_letter(x, y) {
+            let [r, g, b] = from_oklch(0.2 + 0.03 * noise(x, y, seed), 0.03, 50.0);
+            return [r, g, b, 1.0];
+        }
+        let phase = 3.0 * smooth_noise(fx, fy, 4, size, seed + 1);
+        let grain = (fy / 9.0 * std::f32::consts::TAU + phase).sin();
+        let l = 0.62 + 0.14 * grain + 0.12 * (noise(x, y, seed) - 0.5);
+        let [r, g, b] = from_oklch(l, 0.06, 70.0);
+        [r, g, b, 1.0]
+    })
+}
+
+/// A pre-rendered room (not tiling): crushed near-black corners, mid-value walls with painted
+/// texture, a bright window, and light falling off across the image.
+pub fn room(size: u32, seed: u32) -> Image {
+    image(size, size, |x, y| {
+        let (fx, fy) = (x as f32 / size as f32, y as f32 / size as f32);
+        let falloff = 1.0 - 0.35 * fx;
+        let corner = (fx < 0.3 && fy > 0.6) || (fx > 0.8 && fy < 0.25);
+        let window = (0.45..0.65).contains(&fx) && (0.15..0.45).contains(&fy);
+        let tex = smooth_noise(x as f32, y as f32, 12, size, seed);
+        let (l, c, h) = if window {
+            (0.88 + 0.04 * tex, 0.03, 100.0)
+        } else if corner {
+            (0.06 + 0.06 * tex, 0.02, 60.0)
+        } else {
+            (
+                (0.3 + 0.25 * tex) * falloff + 0.03 * noise(x, y, seed),
+                0.05,
+                65.0,
+            )
+        };
+        let [r, g, b] = from_oklch(l, c, h);
         [r, g, b, 1.0]
     })
 }

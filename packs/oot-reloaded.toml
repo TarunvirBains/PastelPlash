@@ -3,6 +3,10 @@
 name = "oot-reloaded"
 # Anything unrecognized is left untouched.
 default_category = "skip"
+# Signs and lettering: no value grouping and no large-scale abstraction, so letters, symbols and
+# thin painted borders stay legible.
+no_grouping = ["alt/**/*Sign*", "alt/**/*Lettering*", "alt/**/*Text*"]
+no_abstraction = ["alt/**/*Sign*", "alt/**/*Lettering*", "alt/**/*Text*"]
 
 # Eyes and mouths are swapped per frame by the engine: never restyle them.
 [[rules]]
@@ -123,7 +127,12 @@ mood = "nocturne"
 glob = "alt/scenes/shared/hakasitarelay_scene/**"
 mood = "nocturne"
 
-# Ruined adult Castle Town: pre-rendered backgrounds (category background, rule above).
+# Ruined adult Castle Town and the adult Temple of Time exterior: pre-rendered backgrounds
+# (category background, rules above). The child versions (shrine_scene, shrine_n_scene) stay base.
 [[moods]]
 glob = "alt/textures/vr_RUVR_static/**"
+mood = "nocturne"
+
+[[moods]]
+glob = "alt/scenes/shared/shrine_r_scene/*Background_*"
 mood = "nocturne"

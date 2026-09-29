@@ -74,6 +74,9 @@ adaptive_min_effect = 0.2
 # Small salient objects (thin sticks, small bright shapes) on a busy wall keep at least this
 # share of their contrast against their surroundings.
 small_object_min_contrast = 0.5
+# Legibility: small lettering on a busy (grouped, abstracted) sign keeps at least this share of
+# its contrast against the board around it.
+text_min_contrast = 0.6
 
 # Identity: it must still look and feel like the source game. Each texture's alpha-weighted mean
 # OKLab color stays within max_mean_delta_e of the source's (for relit actors, of the source
@@ -96,8 +99,16 @@ coarse_max_lightness = 0.2
 coarse_min_pattern_corr = 0.9
 coarse_min_pattern_range = 0.45
 
+# Pre-rendered backgrounds (finished paintings with the designers' lighting): the room's exposure
+# stays — alpha-weighted mean L within background_max_mean_l of the source — and its coarse
+# lightness pattern keeps at least background_min_pattern_range of its range, while crushed darks
+# are still lifted into readable shadow.
+background_max_mean_l = 0.03
+background_min_pattern_range = 0.45   # the synthetic room has large crushed corners; Link's house keeps 0.77-0.88
+
 [identity.styles]
 ss-baseline = 0.15
+ss-impressionist = 0.15   # ss-baseline's palette with impressionist brushwork
 
 [identity.coarse_lightness_styles]
 ss-baseline = 0.25

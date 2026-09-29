@@ -203,6 +203,25 @@ highlight_radius = 12.0
 chroma_retain = 0.9
 min_frac = 0.03          # low-res textures on big surfaces still get big shapes
 
+# Soft value grouping (notan) for the same busy, photographic textures: 2–4 value masses (found
+# on an edge-aware smoothed lightness), each texel pulled softly toward its mass value and color
+# (own hue family only). A bark photo becomes a clean dark mass with crisp pale lichen shapes;
+# brushwork inside a mass varies hue and chroma more than value. World and background only.
+[grouping]
+strength = 0.7
+max_masses = 4
+explained = 0.85
+min_gap = 0.08
+min_share = 0.03
+skip_explained = 0.96
+radius = 0.008
+range = 0.06
+softness = 0.5
+color = 0.4
+color_family = 0.08
+salient = [0.16, 0.26]
+stroke_value = 0.5
+
 # Paint marks: fine color variation becomes soft dabs of this radius (reference texels).
 # Tiling, speckled textures (photographic ground grit) get bigger dabs: they repeat many times, so
 # their marks shrink in world space. Skyward Sword ground dabs are ~1% of screen width; a 512 px

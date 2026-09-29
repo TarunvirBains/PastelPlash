@@ -220,6 +220,210 @@ fn rule_small_objects_survive() {
 }
 
 #[test]
+fn rule_text_stays_legible() {
+    // A busy, grained sign (value grouping and abstraction both active) with small blocky
+    // lettering: the letters keep most of their contrast against the board around them, in
+    // every style and mood.
+    let img = sign(256, 41);
+    let contrast = |out: &Image| {
+        let (mut o, mut no, mut s, mut ns) = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
+        for y in 4..252u32 {
+            for x in 4..252u32 {
+                let l = lch(out.pixels[(y * 256 + x) as usize])[0];
+                if is_letter(x, y) {
+                    o += l;
+                    no += 1.0;
+                } else if (x - 4..=x + 4).any(|xx| is_letter(xx, y))
+                    || (y - 4..=y + 4).any(|yy| is_letter(x, yy))
+                {
+                    s += l;
+                    ns += 1.0;
+                }
+            }
+        }
+        s / ns - o / no
+    };
+    let k = contract();
+    let c0 = contrast(&img);
+    for (label, path, config, mood) in style_moods() {
+        let Some(out) = render_mood(&path, &config, Category::World, &mood, &img) else {
+            return;
+        };
+        let keep = k.technique.text_min_contrast;
+        let c1 = contrast(&out);
+        assert!(
+            c1 >= keep * c0,
+            "{label}: lettering contrast {c0:.3} -> {c1:.3} (keep {keep})"
+        );
+    }
+}
+
+#[test]
+fn rule_grouping_only_touches_busy_world_textures() {
+    // Value grouping never touches actors (the cel shader bands them already), even if a target
+    // asked for it, nor calm, shape-based textures (ground, foliage).
+    let trunk = bark(256, 51);
+    let calm = mid_foliage(256, 52);
+    for path in styles() {
+        let config = load(&path, &default_target());
+        if config.style.grouping.strength <= 0.0 {
+            continue;
+        }
+        let n = name(&path);
+        let mut off = config.clone();
+        off.style.grouping.strength = 0.0;
+        let mut greedy = config.clone();
+        greedy
+            .target
+            .categories
+            .entry(Category::Actor)
+            .or_default()
+            .grouping = 1.0;
+        let Some(a_on) = render(&path, &greedy, Category::Actor, &trunk) else {
+            return;
+        };
+        let a_off = render(&path, &off, Category::Actor, &trunk).unwrap();
+        assert_eq!(a_on.pixels, a_off.pixels, "{n}: grouping changed an actor");
+        let c_on = render(&path, &config, Category::World, &calm).unwrap();
+        let c_off = render(&path, &off, Category::World, &calm).unwrap();
+        assert_eq!(
+            c_on.pixels, c_off.pixels,
+            "{n}: grouping changed a calm texture"
+        );
+    }
+}
+
+#[test]
+fn rule_grouping_forms_value_masses() {
+    // On a busy photographic texture, grouping simplifies the values within each mass (less
+    // lightness variation inside the source's light and dark regions) while the masses keep
+    // their separation and the coarse light/dark pattern stays.
+    use pastelplash::report::coarse_l_pattern;
+    let k = contract();
+    let trunk = bark(256, 61);
+    // Source regions: 5×5 box-smoothed source L above / below its median.
+    let size = 256usize;
+    let src_l: Vec<f32> = trunk.pixels.iter().map(|&p| lch(p)[0]).collect();
+    let smooth: Vec<f32> = (0..size * size)
+        .map(|i| {
+            let (x, y) = ((i % size) as isize, (i / size) as isize);
+            let mut s = 0.0;
+            for dy in -2..=2isize {
+                for dx in -2..=2isize {
+                    let (xx, yy) = (
+                        (x + dx).rem_euclid(size as isize),
+                        (y + dy).rem_euclid(size as isize),
+                    );
+                    s += src_l[yy as usize * size + xx as usize];
+                }
+            }
+            s / 25.0
+        })
+        .collect();
+    // Two-means (isodata) threshold: the source's own dark and light masses.
+    let mut split = median(smooth.clone());
+    for _ in 0..20 {
+        let (mut lo, mut nl, mut hi, mut nh) = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
+        for &s in &smooth {
+            if s > split {
+                hi += s;
+                nh += 1.0;
+            } else {
+                lo += s;
+                nl += 1.0;
+            }
+        }
+        split = 0.5 * (lo / nl.max(1.0) + hi / nh.max(1.0));
+    }
+    // (mean within-region L std, light-minus-dark region mean L).
+    let masses = |out: &Image| {
+        let mut acc = [[0.0f64; 3]; 2];
+        for (p, &s) in out.pixels.iter().zip(&smooth) {
+            let l = lch(*p)[0] as f64;
+            let r = usize::from(s > split);
+            acc[r][0] += l;
+            acc[r][1] += l * l;
+            acc[r][2] += 1.0;
+        }
+        let stat = |a: [f64; 3]| {
+            let m = a[0] / a[2];
+            (m, (a[1] / a[2] - m * m).max(0.0).sqrt())
+        };
+        let ((m0, s0), (m1, s1)) = (stat(acc[0]), stat(acc[1]));
+        (((s0 + s1) / 2.0) as f32, (m1 - m0) as f32)
+    };
+    for path in styles() {
+        let config = load(&path, &default_target());
+        if config.style.grouping.strength <= 0.0 {
+            continue;
+        }
+        let n = name(&path);
+        let mut off = config.clone();
+        off.style.grouping.strength = 0.0;
+        let Some(on) = render(&path, &config, Category::World, &trunk) else {
+            return;
+        };
+        let off = render(&path, &off, Category::World, &trunk).unwrap();
+        let ((w_on, sep_on), (w_off, sep_off)) = (masses(&on), masses(&off));
+        assert!(
+            w_on < w_off,
+            "{n}: grouping did not simplify values within masses: L std {w_on:.4} vs {w_off:.4} \
+             without"
+        );
+        assert!(
+            sep_on >= sep_off - k.tolerance.lightness,
+            "{n}: grouping pulled the masses together: separation {sep_on:.3} vs {sep_off:.3}"
+        );
+        let (corr, _) = coarse_l_pattern(&trunk, &on, 16);
+        assert!(
+            corr >= k.identity.coarse_min_pattern_corr,
+            "{n}: grouped pattern correlation {corr:.2}"
+        );
+    }
+}
+
+#[test]
+fn rule_backgrounds_keep_their_exposure() {
+    // Pre-rendered rooms carry the designers' lighting: crushed darks are still lifted into
+    // readable shadow, but the room's mean lightness and its coarse light/dark pattern stay.
+    use pastelplash::exposure::mean_l;
+    use pastelplash::report::coarse_l_pattern;
+    let k = contract();
+    let img = room(256, 71);
+    let dark = |im: &Image| {
+        let (mut s, mut n) = (0.0f32, 0.0f32);
+        for (p, q) in img.pixels.iter().zip(&im.pixels) {
+            if lch(*p)[0] < 0.13 {
+                s += lch(*q)[0];
+                n += 1.0;
+            }
+        }
+        s / n
+    };
+    for (label, path, config, mood) in style_moods() {
+        let Some(out) = render_mood(&path, &config, Category::Background, &mood, &img) else {
+            return;
+        };
+        let (m0, m1) = (mean_l(&img.pixels), mean_l(&out.pixels));
+        assert!(
+            (m1 - m0).abs() <= k.identity.background_max_mean_l,
+            "{label}: room mean L {m0:.3} -> {m1:.3}"
+        );
+        let (_, range) = coarse_l_pattern(&img, &out, 16);
+        assert!(
+            range >= k.identity.background_min_pattern_range,
+            "{label}: room light/dark range kept {range:.2}"
+        );
+        assert!(
+            dark(&out) >= k.palette.min_l - k.tolerance.lightness && dark(&out) > dark(&img),
+            "{label}: crushed corners {:.3} -> {:.3} (not lifted)",
+            dark(&img),
+            dark(&out)
+        );
+    }
+}
+
+#[test]
 fn rule_bark_does_not_turn_blue() {
     // Regression: v2 lifted bark and cliff darks toward navy. Dark bark (brown, and near-neutral
     // olive-gray with near-black grooves) must keep a warm hue in every style.
