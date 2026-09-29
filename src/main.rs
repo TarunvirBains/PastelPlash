@@ -223,7 +223,7 @@ fn main() -> ExitCode {
                 .map(|()| ExitCode::SUCCESS)
         }
         Command::O2rExport(args) => {
-            pastelplash::o2r::export(&args.input, &args.output, &args.include).map(|n| {
+            pastelplash::adapters::o2r::export(&args.input, &args.output, &args.include).map(|n| {
                 println!("exported {n} textures to {}", args.output.display());
                 ExitCode::SUCCESS
             })
@@ -307,7 +307,7 @@ fn o2r(args: O2rArgs) -> anyhow::Result<()> {
         args.pack.as_deref(),
     )?;
     let pipeline = Pipeline::from_config(&config)?;
-    let opts = pastelplash::o2r::Options {
+    let opts = pastelplash::adapters::o2r::Options {
         input: args.input,
         output: args.output,
         include: args.include,
@@ -316,5 +316,5 @@ fn o2r(args: O2rArgs) -> anyhow::Result<()> {
         complete: args.complete,
         jobs: args.jobs,
     };
-    pastelplash::o2r::run(&opts, &config, &pipeline)
+    pastelplash::adapters::o2r::run(&opts, &config, &pipeline)
 }

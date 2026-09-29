@@ -8,7 +8,8 @@ use anyhow::{Context, Result, bail};
 use rayon::prelude::*;
 
 use crate::config::{Category, Config, Mood};
-use crate::pipeline::{FileContext, Pipeline};
+use crate::driver::Driver;
+use crate::pipeline::Pipeline;
 use crate::png_io;
 use crate::util::ms;
 use crate::walk::{self, SkipReason, WalkOptions};
@@ -83,23 +84,22 @@ pub fn run(opts: &Options, config: &Config, pipeline: &Pipeline) -> Result<Summa
         eprintln!("error: {}: {e}", opts.input.join(rel).display());
     }
 
+    let driver = Driver {
+        config,
+        pipeline,
+        category: opts.category,
+        mood: opts.mood.clone(),
+    };
     let jobs: Vec<(&Path, Action)> = walked
         .entries
         .iter()
         .filter_map(|entry| {
             let action = if !entry.is_png {
                 opts.copy_other.then_some(Action::CopyOther)?
-            } else if config.pack.is_non_color_map(&entry.rel) {
-                Action::PassThrough
             } else {
-                match opts
-                    .category
-                    .unwrap_or_else(|| config.pack.classify(&entry.rel))
-                {
-                    // UI is copied through until it gets its own treatment.
-                    category if !category.is_stylized() => Action::PassThrough,
-                    category => Action::Process(category),
-                }
+                driver
+                    .category(&entry.rel)
+                    .map_or(Action::PassThrough, Action::Process)
             };
             Some((entry.rel.as_path(), action))
         })
@@ -111,7 +111,7 @@ pub fn run(opts: &Options, config: &Config, pipeline: &Pipeline) -> Result<Summa
     let results: Vec<(Action, bool)> = pool.install(|| {
         jobs.par_iter()
             .map(|&(rel, action)| {
-                let result = handle(opts, config, pipeline, rel, action);
+                let result = handle(opts, &driver, rel, action);
                 if let Err(e) = &result {
                     eprintln!("error: {e:#}");
                 }
@@ -133,13 +133,7 @@ pub fn run(opts: &Options, config: &Config, pipeline: &Pipeline) -> Result<Summa
     Ok(summary)
 }
 
-fn handle(
-    opts: &Options,
-    config: &Config,
-    pipeline: &Pipeline,
-    rel: &Path,
-    action: Action,
-) -> Result<()> {
+fn handle(opts: &Options, driver: &Driver, rel: &Path, action: Action) -> Result<()> {
     let src = opts.input.join(rel);
     let dst = opts.output.join(rel);
     if let Some(parent) = dst.parent() {
@@ -150,17 +144,8 @@ fn handle(
             let t0 = Instant::now();
             let mut image = png_io::read(&src)?;
             let t_read = t0.elapsed();
-            let ctx = FileContext {
-                rel,
-                category,
-                mood: opts
-                    .mood
-                    .clone()
-                    .unwrap_or_else(|| config.pack.mood_for(rel)),
-                config,
-            };
-            pipeline
-                .run(&mut image, &ctx)
+            driver
+                .run(&mut image, rel, category)
                 .with_context(|| format!("processing {}", src.display()))?;
             let t_run = t0.elapsed() - t_read;
             png_io::write(&image, &dst)?;

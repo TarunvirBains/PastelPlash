@@ -710,7 +710,7 @@ fn misc_section() -> Section {
         ("gray", 6, grayscale(64, 6)),
     ] {
         let bytes = otex(format, &img);
-        let (o, mut decoded) = pastelplash::o2r::decode(&bytes).unwrap();
+        let (o, mut decoded) = pastelplash::adapters::o2r::decode(&bytes).unwrap();
         let ctx = FileContext {
             rel: Path::new("t"),
             category: Category::World,
@@ -720,7 +720,7 @@ fn misc_section() -> Section {
         stage.apply(&mut decoded, &ctx).unwrap();
         out.insert(
             format!("otex/{label}"),
-            hex(&pastelplash::o2r::encode(&o, &decoded).unwrap()),
+            hex(&pastelplash::adapters::o2r::encode(&o, &decoded).unwrap()),
         );
     }
 
@@ -772,7 +772,7 @@ fn misc_section() -> Section {
     )
     .unwrap();
     let output = dir.path().join("out.o2r");
-    let opts = pastelplash::o2r::Options {
+    let opts = pastelplash::adapters::o2r::Options {
         input,
         output: output.clone(),
         include: Vec::new(),
@@ -781,7 +781,8 @@ fn misc_section() -> Section {
         complete: true,
         jobs: None,
     };
-    pastelplash::o2r::run(&opts, &config, &Pipeline::from_config(&config).unwrap()).unwrap();
+    pastelplash::adapters::o2r::run(&opts, &config, &Pipeline::from_config(&config).unwrap())
+        .unwrap();
     let mut archive = zip::ZipArchive::new(fs::File::open(&output).unwrap()).unwrap();
     for i in 0..archive.len() {
         let mut f = archive.by_index(i).unwrap();

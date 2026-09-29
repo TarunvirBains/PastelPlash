@@ -5,8 +5,8 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
 
+use pastelplash::adapters::o2r::{self, Options};
 use pastelplash::config::{Category, Config};
-use pastelplash::o2r::{self, Options};
 use pastelplash::pipeline::Pipeline;
 
 fn otex(format: u32, w: u32, h: u32, seed: u32) -> Vec<u8> {

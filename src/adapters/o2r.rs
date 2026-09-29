@@ -18,8 +18,9 @@ use anyhow::{Context, Result, bail, ensure};
 use rayon::prelude::*;
 
 use crate::config::{Category, Config, Mood, glob_match};
+use crate::driver::Driver;
 use crate::image::{Image, SourceColor, SourceFormat};
-use crate::pipeline::{FileContext, Pipeline};
+use crate::pipeline::Pipeline;
 
 const HEADER: usize = 0x5C;
 
@@ -148,6 +149,12 @@ pub fn run(opts: &Options, config: &Config, pipeline: &Pipeline) -> Result<()> {
     let t_index = start.elapsed();
     println!("{} entries selected (index {:.2?})", names.len(), t_index);
 
+    let driver = Driver {
+        config,
+        pipeline,
+        category: opts.category,
+        mood: opts.mood.clone(),
+    };
     let timers = Timers::default();
     let processed = AtomicUsize::new(0);
     let copied = AtomicUsize::new(0);
@@ -199,7 +206,7 @@ pub fn run(opts: &Options, config: &Config, pipeline: &Pipeline) -> Result<()> {
             names.par_iter().for_each_init(
                 || zip::ZipArchive::new(File::open(&opts.input).unwrap()).unwrap(),
                 |archive, name| {
-                    let result = handle(archive, name, opts, config, pipeline, &timers);
+                    let result = handle(archive, name, opts, &driver, &timers);
                     let msg = match result {
                         Ok(Some((data, did_process))) => {
                             if did_process {
@@ -287,8 +294,7 @@ fn handle(
     archive: &mut zip::ZipArchive<File>,
     name: &str,
     opts: &Options,
-    config: &Config,
-    pipeline: &Pipeline,
+    driver: &Driver,
     timers: &Timers,
 ) -> Result<Option<(Vec<u8>, bool)>> {
     let t = Instant::now();
@@ -300,26 +306,20 @@ fn handle(
     add(&timers.read, t.elapsed());
 
     let rel = Path::new(name);
-    let category = opts.category.unwrap_or_else(|| config.pack.classify(rel));
-    let skip = !category.is_stylized() || config.pack.is_non_color_map(rel);
+    let category = driver.category(rel);
     let t = Instant::now();
-    let decoded = if skip { None } else { decode(&bytes) };
+    // Only textures that will be restyled are decoded.
+    let decoded = match category {
+        Some(c) => decode(&bytes).map(|d| (c, d)),
+        None => None,
+    };
     add(&timers.decode, t.elapsed());
-    let Some((otex, mut image)) = decoded else {
+    let Some((category, (otex, mut image))) = decoded else {
         return Ok(opts.complete.then_some((bytes, false)));
     };
 
     let t = Instant::now();
-    let ctx = FileContext {
-        rel,
-        category,
-        mood: opts
-            .mood
-            .clone()
-            .unwrap_or_else(|| config.pack.mood_for(rel)),
-        config,
-    };
-    pipeline.run(&mut image, &ctx)?;
+    driver.run(&mut image, rel, category)?;
     add(&timers.pipeline, t.elapsed());
 
     let t = Instant::now();
