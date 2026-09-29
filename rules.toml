@@ -140,6 +140,12 @@ family_min_separation = 0.7
 # earth hues by at most moss_max_warm_shift degrees on average (earth warmth targets earth).
 moss_hue = [96.0, 120.0]
 moss_max_warm_shift = 6.0
+# No new hue (world): an output texel colored at least new_hue_min_chroma stays within
+# new_hue_max_gap degrees of the hue of some texel of its 5x5 source neighborhood that is colored
+# at least half that (no navy flecks on warm bark, no blue on olive moss). The only exception is a
+# mood's moonlight cast: within new_hue_max_gap of the cast hue, up to moods.<name>.cast_max_chroma.
+new_hue_min_chroma = 0.02
+new_hue_max_gap = 60.0
 
 # Pre-rendered backgrounds (finished paintings with the designers' lighting): the room's exposure
 # stays — alpha-weighted mean L within background_max_mean_l of the source — and its coarse
@@ -228,6 +234,9 @@ near_black_l = 0.25
 near_neutral_c = 0.012
 near_black_max_lift = 0.06
 dark_chroma_per_l = 0.12
+# The cast's small chroma budget where it brings its own hue (identity.new_hue_*): a muted
+# midnight, not blue paint.
+cast_max_chroma = 0.04
 
 # Fluids (water, lava, other liquids; see docs/RULES.md "Fluids"). Every target's fluid
 # treatments (listed or built in) stay within these: caustics are soft light over depth, never

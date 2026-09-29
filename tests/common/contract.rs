@@ -34,6 +34,7 @@ pub struct MoodRules {
     pub near_neutral_c: Option<f32>,
     pub near_black_max_lift: Option<f32>,
     pub dark_chroma_per_l: Option<f32>,
+    pub cast_max_chroma: Option<f32>,
 }
 
 impl Contract {
@@ -73,6 +74,8 @@ pub struct IdentityRules {
     pub family_min_separation: f32,
     pub moss_hue: [f32; 2],
     pub moss_max_warm_shift: f32,
+    pub new_hue_min_chroma: f32,
+    pub new_hue_max_gap: f32,
     pub background_max_mean_l: f32,
     pub background_min_pattern_range: f32,
     /// Larger bounds for named opt-in styles.

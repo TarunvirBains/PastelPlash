@@ -1,5 +1,5 @@
 # Impressionist (the default style): the watercolor base's rich color with the impressionist
-# brushwork overlay — bolder, directional brushwork, a few more cool accent darks, a stronger
+# brushwork overlay — bolder, directional brushwork, a few more accent darks, a stronger
 # (still subtle) warm/cool temperature on world textures and a little vivid color.
 extends = ["watercolor.toml", "overlays/impressionist-brushwork.toml"]
 name = "impressionist"

@@ -564,3 +564,27 @@ pub fn wall_with_shafts(size: u32, seed: u32) -> (Image, impl Fn(u32, u32) -> i3
     });
     (img, shaft)
 }
+
+/// Light, warm bark with dark grooves and small dark pits scattered over the light ridges (OoT
+/// Reloaded's Kokiri treehouse bark): 2-4 texel pits, some alone, some in pairs.
+pub fn pitted_bark(size: u32, seed: u32) -> Image {
+    image(size, size, |x, y| {
+        let (fx, fy) = (x as f32, y as f32);
+        let u = fx / size as f32 * 6.0 + 0.7 * smooth_noise(fx, fy, 5, size, seed);
+        let ridge = (u * std::f32::consts::TAU).sin() * 0.5 + 0.5;
+        let groove = 1.0 - ((ridge - 0.15) / 0.2).clamp(0.0, 1.0);
+        let n = noise(x, y, seed + 1);
+        let t = smooth_noise(fx, fy, 8, size, seed + 2);
+        let (bx, by) = (x / 5, y / 5);
+        let side = 2 + (noise(bx, by, seed + 4) * 3.0) as u32;
+        let pit = groove < 0.1 && noise(bx, by, seed + 3) > 0.9 && x % 5 < side && y % 5 < side;
+        let [l, c, h] = if pit {
+            [0.2 + 0.04 * n, 0.03, 62.0]
+        } else {
+            let l = 0.66 * (1.0 - groove) + 0.3 * groove + 0.05 * t + 0.04 * (n - 0.5);
+            [l, 0.05 - 0.008 * groove, 78.0 + 6.0 * n]
+        };
+        let [r, g, b] = from_oklch(l, c, h);
+        [r, g, b, 1.0]
+    })
+}

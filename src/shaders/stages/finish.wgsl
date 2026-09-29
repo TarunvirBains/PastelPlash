@@ -261,8 +261,12 @@ fn finish_temperature(gp: vec2<f32>, lab: vec3<f32>, tint_safe: bool) -> vec3<f3
     return vec3<f32>(lab.x, lab.yz + hue_dir(h) * (P.temp_strength * abs(t)));
 }
 
-// Accent darks from high-frequency detail (crevices, gaps between painted shapes), in cool
-// colored shadow. Thresholds come from the image's own histogram (accent_hist/threshold).
+// Hue distance (radians, 45°) from the accent hue within which a texel counts as cool family.
+const ACCENT_FAMILY: f32 = 0.78539816;
+
+// Accent darks from high-frequency detail (crevices, gaps between painted shapes), in colored
+// shadow: cool where the surface is already cool, else the surface's own hue. Thresholds come
+// from the image's own histogram (accent_hist/threshold).
 // `lf` is the lab color and, in w, the lightness floor (lowered under an accent).
 // Engine-tinted (tint-safe) textures get none: an accent there cannot take its cool hue, so it
 // would be a neutral near-black line (ink) under the tint, e.g. on vertex-colored cracked ground.
@@ -284,8 +288,14 @@ fn finish_accent(p: vec2<i32>, lf: vec4<f32>, tint_safe: bool) -> vec4<f32> {
         let h = atan2(lab.z, lab.y);
         var dh = P.accent_hue - h;
         dh = dh - 6.2831853 * round(dh / 6.2831853);
-        let h2 = select(P.accent_hue, h + dh * th, ch > 1e-4);
-        let c2 = mix(ch, P.accent_chroma, th);
+        // The cool accent hue only where the texel is already in or near the cool family (and
+        // clearly colored); anywhere else it would bring a hue its surroundings don't have (navy
+        // flecks on warm bark, blue on olive moss), so the accent deepens the texel's own color
+        // and adds no chroma.
+        let fam = (1.0 - smoothstep(ACCENT_FAMILY, 2.0 * ACCENT_FAMILY, abs(dh)))
+            * smoothstep(0.5 * P.accent_chroma, P.accent_chroma, ch);
+        let h2 = h + dh * th * fam;
+        let c2 = mix(ch, mix(min(ch, P.accent_chroma), P.accent_chroma, fam), th);
         lab = vec3<f32>(l_new, hue_dir(h2) * c2);
         floor_l = min(floor_l, l_new);
     }

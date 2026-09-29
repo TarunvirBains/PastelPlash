@@ -242,3 +242,82 @@ fn rule_moss_is_not_warmed_into_brown() {
         report.finish();
     }
 }
+
+#[test]
+fn rule_world_colors_bring_no_new_hue() {
+    // No output texel of a world texture takes a hue family its source neighborhood doesn't
+    // have: no navy flecks on warm treehouse bark or olive Deku Tree moss (v6a2: cool accent darks
+    // on the pits left alone once the grit around them was cleaned). A texel colored at least
+    // identity.new_hue_min_chroma stays within new_hue_max_gap degrees of some texel of its 5x5
+    // source neighborhood colored at least half that. The one exception is a mood's moonlight
+    // cast: near its hue, up to moods.<name>.cast_max_chroma.
+    let k = contract();
+    let (min_c, gap) = (k.identity.new_hue_min_chroma, k.identity.new_hue_max_gap);
+    let mut report = Report::new("world colors bring no new hue");
+    let matrix = Matrix::full(&[Category::World]);
+    for (label, img) in [
+        ("pitted bark", pitted_bark(192, 171)),
+        ("bark", bark(192, 172)),
+        ("grooved wood", grooved_wood(192, 173)),
+        ("moss on wood", moss_on_wood(192, 174)),
+        ("olive moss", olive_moss(192, 175, k.identity.moss_hue)),
+        ("dark brown bark", dark_brown_bark(192, 176)),
+    ] {
+        let (w, h) = (img.width as i32, img.height as i32);
+        let src: Vec<[f32; 3]> = img.pixels.iter().map(|&p| lch(p)).collect();
+        let rendered = matrix.check(&mut report, &img, |case, out| {
+            let style = case.config.style.for_mood(&case.mood).unwrap();
+            let scale = case.config.target.treatment(case.category).cast;
+            let cast = (pastelplash::palette::cast_strength(&style.palette, scale) > 0.0)
+                .then(|| k.mood(&case.mood.name).and_then(|r| r.cast_max_chroma))
+                .flatten()
+                .map(|max_c| (style.palette.cast.hue, max_c));
+            let (mut bad, mut n) = (0usize, 0usize);
+            let mut example = None;
+            for y in 0..h {
+                for x in 0..w {
+                    let q = out.pixels[(y * w + x) as usize];
+                    if q[3] < 0.5 {
+                        continue;
+                    }
+                    n += 1;
+                    let [l1, c1, h1] = lch(q);
+                    if c1 < min_c {
+                        continue;
+                    }
+                    let near = |hue: f32| pastelplash::color::hue_diff(hue, h1).abs() <= gap;
+                    let mut family = false;
+                    'nb: for dy in -2..=2 {
+                        for dx in -2..=2 {
+                            let i = (y + dy).clamp(0, h - 1) * w + (x + dx).clamp(0, w - 1);
+                            let [_, c0, h0] = src[i as usize];
+                            if c0 >= 0.5 * min_c && near(h0) {
+                                family = true;
+                                break 'nb;
+                            }
+                        }
+                    }
+                    if family || cast.is_some_and(|(ch, max_c)| near(ch) && c1 <= max_c) {
+                        continue;
+                    }
+                    bad += 1;
+                    example.get_or_insert_with(|| {
+                        let [l0, c0, h0] = src[(y * w + x) as usize];
+                        format!("({x},{y}) LCh {l0:.2} {c0:.3} {h0:.0} -> {l1:.2} {c1:.3} {h1:.0}")
+                    });
+                }
+            }
+            let budget = (n as f32 * k.tolerance.outliers).ceil() as usize;
+            ensure(bad <= budget, || {
+                format!(
+                    "{label}: {bad} of {n} texels took a new hue (budget {budget}); e.g. {}",
+                    example.unwrap_or_default()
+                )
+            })
+        });
+        if !rendered {
+            return;
+        }
+    }
+    report.finish();
+}
