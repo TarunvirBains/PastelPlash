@@ -384,13 +384,24 @@ pub fn scope(before: &Path, after: &Path, scope: &[String]) -> Result<(String, u
         .filter(|e| e.is_png && before.join(&e.rel).exists())
         .map(|e| e.rel)
         .collect();
+    let rescaled = std::sync::atomic::AtomicUsize::new(0);
     let results: Vec<(std::path::PathBuf, Change)> = rels
         .par_iter()
         .map(|rel| -> Result<_> {
-            let (a, b) = (
+            let (a, mut b) = (
                 png_io::read(&before.join(rel))?,
                 png_io::read(&after.join(rel))?,
             );
+            // A render at a higher output resolution (an integer multiple on both axes) is
+            // compared area-averaged down to the earlier size.
+            if (a.width, a.height) != (b.width, b.height)
+                && b.width.is_multiple_of(a.width)
+                && b.width / a.width == b.height / a.height
+                && b.height.is_multiple_of(a.height)
+            {
+                b = crate::resample::downsample(&b, b.width / a.width);
+                rescaled.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
             anyhow::ensure!(
                 (a.width, a.height) == (b.width, b.height),
                 "{}: size changed",
@@ -449,6 +460,13 @@ pub fn scope(before: &Path, after: &Path, scope: &[String]) -> Result<(String, u
             } else {
                 String::new()
             }
+        );
+    }
+    let rescaled = rescaled.into_inner();
+    if rescaled > 0 {
+        let _ = writeln!(
+            out,
+            "{rescaled} file(s) at a higher resolution, compared area-averaged down"
         );
     }
     Ok((out, flagged))
