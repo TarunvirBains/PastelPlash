@@ -201,6 +201,7 @@ impl Style {
         water.hue = mood.water_hue.unwrap_or(water.hue);
         water.chroma = mood.water_chroma.unwrap_or(water.chroma);
         water.pull = mood.water_pull.unwrap_or(water.pull);
+        water.lightness = mood.water_lightness.unwrap_or(water.lightness);
         style.validate().with_context(|| format!("mood {mood}"))?;
         Ok(style)
     }

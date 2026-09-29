@@ -70,6 +70,7 @@ impl Driver<'_> {
             mood.water_hue = r.water_hue;
             mood.water_chroma = r.water_chroma;
             mood.water_pull = r.water_pull;
+            mood.water_lightness = r.water_lightness;
         }
         mood
     }

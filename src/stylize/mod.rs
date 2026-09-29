@@ -182,6 +182,22 @@ impl Stage for Stylize {
                 curve.k
             );
         }
+        // Water: the body leans toward the reference lightness (as the mood dims it); caustic
+        // highlights stay.
+        let wt = &style.palette.water;
+        let lean_pull = wt.lightness_pull * tr.reference;
+        if lean_pull > 0.0 && plan.lut.is_some() {
+            let mut target = crate::palette::cast_exposure(&style.palette, tr.cast, wt.lightness);
+            if plan.note.tint_safe {
+                target =
+                    target.max(crate::palette::water_body_l(&out) - wt.tint_safe_max_darkening);
+            }
+            let lean = crate::palette::lean_water_lightness(&mut out, target, lean_pull);
+            exp_note += &format!(
+                " water body L {:.3}{:+.3} (target {:.3})",
+                lean.body, lean.shift, lean.target
+            );
+        }
         // Write back. No new clipping (as in `finish`, after the exposure curve too): a channel the
         // source had inside 8-bit 1..254 stays there.
         let (lo, hi) = (1.0 / 255.0, 254.0 / 255.0);

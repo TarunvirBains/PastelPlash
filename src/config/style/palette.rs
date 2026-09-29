@@ -177,6 +177,14 @@ pub struct WaterTone {
     pub chroma: [f32; 2],
     /// 0..1: fraction of the way to the reference (0 = off).
     pub pull: f32,
+    /// OKLab lightness of the reference water body (the depth between the caustics).
+    pub lightness: f32,
+    /// 0..1: fraction of the way the body lightness moves toward `lightness` (0 = the source's
+    /// own). The caustic highlights stay where they are, so they keep their contrast above it.
+    pub lightness_pull: f32,
+    /// Engine-tinted (gray) water: its lightness multiplies an engine tint, so it is not the
+    /// final color's; the body darkens by at most this much.
+    pub tint_safe_max_darkening: f32,
 }
 
 impl Default for WaterTone {
@@ -185,6 +193,9 @@ impl Default for WaterTone {
             hue: 140.0,
             chroma: [0.035, 0.06],
             pull: 0.0,
+            lightness: 0.4,
+            lightness_pull: 0.0,
+            tint_safe_max_darkening: 0.08,
         }
     }
 }
@@ -371,6 +382,8 @@ impl Palette {
         unit("palette.accent_softness", p.accent_softness)?;
         let wt = &p.water;
         unit("palette.water.pull", wt.pull)?;
+        unit("palette.water.lightness", wt.lightness)?;
+        unit("palette.water.lightness_pull", wt.lightness_pull)?;
         check(0.0 <= wt.chroma[0] && wt.chroma[0] <= wt.chroma[1], || {
             format!(
                 "palette.water.chroma = {:?} must be increasing and >= 0",

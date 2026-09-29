@@ -51,6 +51,7 @@ pub struct Mood {
     pub water_hue: Option<f32>,
     pub water_chroma: Option<[f32; 2]>,
     pub water_pull: Option<f32>,
+    pub water_lightness: Option<f32>,
 }
 
 impl Default for Mood {
@@ -64,6 +65,7 @@ impl Default for Mood {
             water_hue: None,
             water_chroma: None,
             water_pull: None,
+            water_lightness: None,
         }
     }
 }
@@ -85,6 +87,7 @@ impl Mood {
             && self.water_hue.is_none()
             && self.water_chroma.is_none()
             && self.water_pull.is_none()
+            && self.water_lightness.is_none()
     }
 
     /// A stable key for caches.
@@ -118,6 +121,9 @@ impl fmt::Display for Mood {
         }
         if let Some(p) = self.water_pull {
             write!(f, "+water@{p:.2}")?;
+        }
+        if let Some(l) = self.water_lightness {
+            write!(f, "+waterL{l:.3}")?;
         }
         Ok(())
     }
