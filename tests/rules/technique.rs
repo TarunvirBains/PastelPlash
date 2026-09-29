@@ -620,6 +620,76 @@ fn rule_no_ink_lines_on_tinted_ground() {
 }
 
 #[test]
+fn rule_gameplay_cues_stay_readable() {
+    // The cracks of a bombable wall are a gameplay cue: on files the pack map lists as cues,
+    // crack-vs-wall lightness contrast keeps at least technique.cue_min_contrast of the source's
+    // (as the mood dims it). The survey found the Desert Colossus and Zora's Fountain cracks
+    // abstracted away and the Death Mountain Crater crack decal lifted from black to gray.
+    let k = contract();
+    let size = 256u32;
+    let (gray, thin) = cracked_ground(size, 162);
+    let crack = |x: u32, y: u32| {
+        (x.saturating_sub(1)..=(x + 1).min(size - 1))
+            .any(|xx| (y.saturating_sub(1)..=(y + 1).min(size - 1)).any(|yy| thin(xx, yy)))
+    };
+    // A busy sandstone wall (grit and mottling: grouped and abstracted as a plain wall) with
+    // dark cracks 3-4 texels wide.
+    let sand = image(size, size, |x, y| {
+        let (fx, fy) = (x as f32, y as f32);
+        let [r, g, b] = if crack(x, y) {
+            from_oklch(0.25 + 0.04 * noise(x, y, 164), 0.025, 60.0)
+        } else {
+            let t = smooth_noise(fx, fy, 9, size, 165);
+            from_oklch(
+                0.48 + 0.26 * t + 0.22 * (noise(x, y, 166) - 0.5),
+                0.05 + 0.02 * t,
+                72.0 + 8.0 * noise(x, y, 167),
+            )
+        };
+        [r, g, b, 1.0]
+    });
+    let contrast = |im: &Image, is: &dyn Fn(u32, u32) -> bool| {
+        let (mut c, mut nc, mut w, mut nw) = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
+        for y in 0..size {
+            for x in 0..size {
+                let l = lch(im.pixels[(y * size + x) as usize])[0];
+                if is(x, y) {
+                    (c, nc) = (c + l, nc + 1.0);
+                } else {
+                    (w, nw) = (w + l, nw + 1.0);
+                }
+            }
+        }
+        w / nw - c / nc
+    };
+    let mut report = Report::new("gameplay cues stay readable");
+    let mut matrix = Matrix::full(&[Category::World, Category::Actor]);
+    for case in &mut matrix.cases {
+        case.config.pack.cues = vec!["**".into()];
+    }
+    for (label, img, is) in [
+        ("gray crack decal", gray, &thin as &dyn Fn(u32, u32) -> bool),
+        (
+            "cracked sandstone",
+            sand,
+            &crack as &dyn Fn(u32, u32) -> bool,
+        ),
+    ] {
+        let rendered = matrix.check(&mut report, &img, |case, out| {
+            let c0 = contrast(&dimmed(case, &img), is);
+            let c1 = contrast(out, is);
+            ensure(c1 >= k.technique.cue_min_contrast * c0, || {
+                format!("{label}: crack contrast {c0:.3} -> {c1:.3}")
+            })
+        });
+        if !rendered {
+            return;
+        }
+    }
+    report.finish();
+}
+
+#[test]
 fn rule_thin_structures_survive() {
     // Thin, elongated objects (tool handles, poles, rails, ropes: 3 texels wide) keep their
     // contrast against a busy wall in every style and mood, backgrounds included: the pitchfork

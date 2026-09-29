@@ -139,6 +139,18 @@ impl Planner {
         if image.width == 0 || image.height == 0 {
             return None;
         }
+        // Gameplay cues (cracks in bombable walls) keep their value structure: painted, but not
+        // compressed, abstracted, grouped or lifted, with smaller marks and no accents.
+        let cue = ctx.config.pack.is_cue(ctx.rel);
+        if cue {
+            tr.value_contrast = 0.0;
+            tr.abstraction = 0.0;
+            tr.grouping = 0.0;
+            tr.floor_scale = 0.0;
+            tr.accent = 0.0;
+            tr.delight = 0.0;
+            tr.radius_scale *= 0.3;
+        }
         // Pale water (falls, foam, rapids) keeps its own tone: the reference lean is for pooled
         // water seen over depth.
         let mut pale_note = "";
@@ -198,7 +210,11 @@ impl Planner {
         let bleed = bleed::plan(style, &facts);
         let watercolor = watercolor::plan(style, &tr, &facts);
         let tint_safe = tint::plan(image, &tr, &facts);
-        let speck = speck::plan(style, ctx, &facts);
+        let mut speck = speck::plan(style, ctx, &facts);
+        if cue {
+            // (Cracks are connected, but a cue's small dark marks stay whatever their size.)
+            speck.radius = 0.0;
+        }
         let terracotta = terracotta::plan(image, style, ctx, facts.tint_safe);
 
         let mut params = Params {
@@ -270,7 +286,10 @@ impl Planner {
                 busy,
                 speckle,
                 marks_scale,
-                grouping: grouping.note + &terracotta.note + pale_note,
+                grouping: grouping.note
+                    + &terracotta.note
+                    + pale_note
+                    + if cue { " cue" } else { "" },
                 analysis: t_start.elapsed(),
             },
         })

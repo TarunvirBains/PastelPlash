@@ -34,6 +34,10 @@ pub struct Pack {
     /// Path globs of files that never get the large-scale abstraction pass (signs whose thin
     /// painted borders and lettering must stay).
     pub no_abstraction: Vec<String>,
+    /// Path globs of gameplay cues: textures whose markings tell the player something (cracks in
+    /// bombable walls). Painted with their value structure intact: no value compression,
+    /// abstraction, grouping, de-lighting, lift, accents or speck cleaning, and smaller paint marks.
+    pub cues: Vec<String>,
     /// Path globs of files that never turn terracotta (area opt-out).
     pub no_terracotta: Vec<String>,
     /// When not empty, only files matching one of these globs may turn terracotta (area opt-in).
@@ -123,6 +127,7 @@ impl Default for Pack {
             brushwork: Vec::new(),
             no_grouping: Vec::new(),
             no_abstraction: Vec::new(),
+            cues: Vec::new(),
             no_terracotta: Vec::new(),
             terracotta_only: Vec::new(),
             detect_fluids: true,
@@ -184,6 +189,12 @@ impl Pack {
     pub fn abstraction_allowed(&self, path: &Path) -> bool {
         let p = path.to_string_lossy().replace('\\', "/");
         !self.no_abstraction.iter().any(|g| glob_match(g, &p))
+    }
+
+    /// True if a `cues` glob matches the file (a gameplay cue).
+    pub fn is_cue(&self, path: &Path) -> bool {
+        let p = path.to_string_lossy().replace('\\', "/");
+        self.cues.iter().any(|g| glob_match(g, &p))
     }
 
     /// Mood by the first matching mood rule, else the base mood.

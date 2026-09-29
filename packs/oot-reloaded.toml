@@ -7,6 +7,17 @@ default_category = "skip"
 # thin painted borders stay legible.
 no_grouping = ["alt/**/*Sign*", "alt/**/*Lettering*", "alt/**/*Text*"]
 no_abstraction = ["alt/**/*Sign*", "alt/**/*Lettering*", "alt/**/*Text*"]
+# Gameplay cues: the cracks of bombable walls and rocks must stay readable (the survey found the
+# Death Mountain Crater crack decal lifted from black to gray and the Desert Colossus and Zora's
+# Fountain cracks abstracted away). Painted with their value structure intact.
+cues = [
+    "alt/**/*Bombable*",
+    "alt/**/*Bombwall*",
+    "alt/**/*BombWall*",
+    "alt/**/*Bombiwa*",
+    "alt/objects/object_bombiwa/**",
+    "alt/objects/object_bwall/**",
+]
 
 # Eyes and mouths are swapped per frame by the engine (blinks, glances): never restyle them.
 [[rules]]

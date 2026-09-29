@@ -124,6 +124,9 @@ ink_max_darkening = 0.12
 # lightness contrast (the tone mapping compresses all value contrast on purpose).
 thin_min_contrast = 0.8
 thin_min_value_contrast = 0.6
+# Gameplay cues (the pack map's `cues`: cracks in bombable walls) stay readable: crack-vs-wall
+# lightness contrast keeps at least cue_min_contrast of the source's.
+cue_min_contrast = 0.8
 
 # Identity: it must still look and feel like the source game. Each texture's alpha-weighted mean
 # OKLab color stays within max_mean_delta_e of the source's (for relit actors, of the source

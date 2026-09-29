@@ -205,3 +205,23 @@ fn oot_reloaded_eye_frames_are_never_restyled() {
         Category::Actor
     );
 }
+
+#[test]
+fn oot_reloaded_bombable_walls_are_gameplay_cues() {
+    // The cracks of bombable walls and rocks are painted with their value structure intact
+    // (rules::rule_gameplay_cues_stay_readable); the surrounding walls are not cues.
+    let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("packs/oot-reloaded.toml");
+    let pack = Config::load(None, None, Some(&file)).unwrap().pack;
+    for path in [
+        "alt/objects/object_spot11_obj/gDesertColossusBombableWallTex",
+        "alt/objects/gameplay_field_keep/gBgBombwallNormalTex",
+        "alt/objects/object_jya_obj/gBombiwaRockTex",
+        "alt/objects/object_bombiwa/object_bombiwa_Tex_000020",
+        "alt/objects/object_bwall/object_bwall_Tex_000150",
+        "alt/objects/object_spot17_obj/gCraterBombableWallCracksTex",
+        "alt/objects/object_spot08_obj/gZorasFountainBombableWallTex",
+    ] {
+        assert!(pack.is_cue(Path::new(path)), "{path}");
+    }
+    assert!(!pack.is_cue(Path::new("alt/objects/object_spot17_obj/gCraterRockTex")));
+}
