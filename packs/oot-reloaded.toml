@@ -279,6 +279,14 @@ glob = "alt/objects/object_bdan_objects/gJabuObjectsTex_03498"
 kind = "water"
 
 [[fluids]]
+glob = "alt/objects/object_hakach_objects/gBotwWater*Tex"                 # Bottom of the Well water
+kind = "water"
+
+[[fluids]]
+glob = "alt/objects/object_mizu_objects/object_mizu_objectsTex_007520"   # Water Temple water plane
+kind = "water"
+
+[[fluids]]
 glob = "alt/objects/object_ydan_objects/gYdanHasiWaterTex"
 kind = "water"
 

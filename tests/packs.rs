@@ -161,3 +161,21 @@ fn oot_reloaded_nocturne_areas_have_their_casts() {
             .is_base()
     );
 }
+
+#[test]
+fn oot_reloaded_actor_drawn_water_is_water() {
+    // Water planes drawn by actors are not seen by the fluid detector (world only): without a
+    // pack-map rule they took the actor path, and the engine-tinted dark well water
+    // (gBotwWater2Tex) was raised to the tint-safe actor gray, near white.
+    use pastelplash::config::FluidRuleKind;
+    let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("packs/oot-reloaded.toml");
+    let pack = Config::load(None, None, Some(&file)).unwrap().pack;
+    for path in [
+        "alt/objects/object_hakach_objects/gBotwWater1Tex",
+        "alt/objects/object_hakach_objects/gBotwWater2Tex",
+        "alt/objects/object_mizu_objects/object_mizu_objectsTex_007520",
+    ] {
+        let kind = pack.fluid_rule_for(Path::new(path)).and_then(|r| r.kind);
+        assert!(matches!(kind, Some(FluidRuleKind::Water)), "{path}: {kind:?}");
+    }
+}
