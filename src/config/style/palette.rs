@@ -127,10 +127,9 @@ pub struct Cast {
     pub strength: f32,
     /// OKLCH hue of the cast (e.g. 275 indigo, 250 midnight blue, 305 midnight purple).
     pub hue: f32,
-    /// OKLab chroma of the shared cast vector at full strength (muted below `tint_full_l`).
+    /// The moonlight's color: the OKLab chroma white takes under it at full strength (a linear-RGB
+    /// filter of the cast hue; every color shifts the same way, darks less).
     pub tint: f32,
-    /// Output lightness at and above which the cast vector is at full size.
-    pub tint_full_l: f32,
     /// Exposure: lightness above the palette floor is scaled by this at full strength (< 1
     /// dims the area; value order is kept).
     pub exposure: f32,
@@ -155,7 +154,6 @@ impl Default for Cast {
             strength: 0.0,
             hue: 275.0,
             tint: 0.02,
-            tint_full_l: 0.45,
             exposure: 1.0,
             chroma: 1.0,
             dark_cap: 0.12,
@@ -353,9 +351,6 @@ impl Palette {
                 "palette.cast.exposure = {} must be within (0, 1]",
                 k.exposure
             )
-        })?;
-        check(k.tint_full_l > 0.0, || {
-            "palette.cast.tint_full_l must be > 0".into()
         })?;
         Ok(())
     }

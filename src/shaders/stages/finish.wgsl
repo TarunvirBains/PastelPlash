@@ -134,27 +134,28 @@ fn band_weight(lo: f32, hi: f32, f: f32, h: f32) -> f32 {
     return smoothstep(-f, 0.0, x) * (1.0 - smoothstep(span, span + f, x));
 }
 
-// The shared moonlight cast of a mood (same math as `palette::apply_cast`): exposure down above
-// the palette floor, chroma scaled, one shared a/b vector toward the cast hue; colored darks keep
-// a deep colored shadow; near-neutral darks blend (continuously) into a muted midnight capped by
-// lightness; warm darks are never dull (no mud). `lf` is the mapped lab color and, in w, the
-// lightness floor (dimmed the same way).
+// The shared moonlight cast of a mood (same math as `palette::apply_cast`): a colored light
+// (linear RGB times the cast's filter), exposure down above the palette floor, chroma scaled;
+// colored sources keep most of their color; near-neutral darks blend (continuously) into a muted
+// midnight capped by lightness; warm darks are never dull (no mud). `lf` is the mapped lab color
+// and, in w, the lightness floor (dimmed the same way).
 fn finish_cast(lf: vec4<f32>, src: vec3<f32>, tint_safe: bool) -> vec4<f32> {
     if (!(P.cast_on > 0.0)) { return lf; }
-    let l2 = cast_exposure(lf.x);
     let floor_l = cast_exposure(lf.w);
-    if (tint_safe) { return vec4<f32>(l2, lf.yz, floor_l); }
+    if (tint_safe) { return vec4<f32>(cast_exposure(lf.x), lf.yz, floor_l); }
+    let filt = vec3<f32>(P.cast_fr, P.cast_fg, P.cast_fb);
+    let lit = linear_to_oklab(max(oklab_to_linear(lf.xyz) * filt, vec3<f32>(0.0)));
+    let l2 = cast_exposure(lit.x);
     let c_src = length(src.yz);
     let dark = 1.0 - smoothstep(P.cast_dark_below - 0.03, P.cast_dark_below + 0.05, l2);
     let mud_dark = 1.0 - smoothstep(P.cast_dark_below + 0.02, P.cast_dark_below + 0.1, l2);
     let c_rel = c_src * max(1.0, 0.55 / (max(src.x, 0.0) + 0.05));
     let neutral = 1.0 - smoothstep(0.012, 0.03, c_rel);
-    let tint = P.cast_s * P.cast_tint * min(l2 / P.cast_tint_l, 1.0);
     let kd = hue_dir(P.cast_hue);
-    var abn = lf.yz * (1.0 - P.cast_s * (1.0 - P.cast_chroma)) + kd * tint;
+    var abn = lit.yz * (1.0 - P.cast_s * (1.0 - P.cast_chroma));
     let keep = smoothstep(0.03, 0.05, c_src) * min(0.65 * c_src, 0.052);
     let len = max(length(abn), 1e-9);
-    let cn = max(max(len, keep), P.cast_dark_chroma * mud_dark * (1.0 - neutral));
+    let cn = max(len, keep);
     abn = abn / len * cn;
     let cm = max(P.cast_dark_cap * l2, P.cast_dark_min);
     let w = neutral * dark;

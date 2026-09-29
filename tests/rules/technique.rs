@@ -471,3 +471,53 @@ fn rule_no_blur_edges_stay_crisp_noise_becomes_flat() {
         report.finish();
     }
 }
+
+#[test]
+fn rule_no_negative_dark_and_light_stay_one_family() {
+    // Within one material, dark and light masses stay in the same color family (no warm-light /
+    // cool-dark temperature split beyond the source's) and value stays the main carrier: the
+    // darks are not lifted up toward the lights. (Darks may gain chroma along their own hue — a
+    // dull warm dark must, or it is mud — but not turn cooler or warmer than their lights.)
+    use pastelplash::report::{dark_light_split, split_hue};
+    let k = contract();
+    let mut report = Report::new("no negative: dark and light stay one family");
+    let matrix = Matrix::full(&STYLIZED);
+    // Halves grayer than this have no hue to split.
+    let min_c = k.tolerance.chroma;
+    for (label, img) in [
+        ("olive bark", bark(256, 111)),
+        ("warm wood", grooved_wood(256, 112)),
+    ] {
+        let rendered = matrix.check(&mut report, &img, |case, out| {
+            // The reference: the source as the mood dims it, with darks at least at the contract's
+            // min_l (lifting crushed blacks that far is required, not a "negative").
+            let mut src = dimmed(case, &img);
+            for p in &mut src.pixels {
+                let [l, a, b] = pastelplash::color::srgb_to_oklab([p[0], p[1], p[2]]);
+                if l < k.palette.min_l {
+                    let rgb = pastelplash::color::oklab_to_srgb([k.palette.min_l, a, b]);
+                    for c in 0..3 {
+                        p[c] = rgb[c].clamp(0.0, 1.0);
+                    }
+                }
+            }
+            let (l0, k0, d0) = dark_light_split(&img, &src);
+            let (l1, k1, d1) = dark_light_split(&img, out);
+            // A source half too gray to have a hue counts as the other half's family.
+            let h0 = split_hue(l0, k0, min_c).unwrap_or(0.0);
+            if let Some(h1) = split_hue(l1, k1, min_c) {
+                let dh = pastelplash::color::hue_diff(h0, h1).abs();
+                ensure(dh <= k.technique.split_max_hue_change, || {
+                    format!("{label}: dark/light hue split {h0:.0} -> {h1:.0} degrees")
+                })?;
+            }
+            ensure(d1 >= k.technique.split_min_separation * d0, || {
+                format!("{label}: dark/light separation {d0:.3} -> {d1:.3}")
+            })
+        });
+        if !rendered {
+            return;
+        }
+    }
+    report.finish();
+}

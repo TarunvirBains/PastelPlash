@@ -187,19 +187,28 @@ fn band_weight([from, to]: [f32; 2], f: f32, h: f32) -> f32 {
     smoothstep(-f, 0.0, x) * (1.0 - smoothstep(span, span + f, x))
 }
 
+/// The linear-RGB filter of a colored light: the color white takes under it (OKLCH hue `hue`,
+/// chroma `chroma`), normalized to luminance 1 (it tints; exposure is separate).
+pub fn cast_filter(hue: f32, chroma: f32) -> [f32; 3] {
+    let f = color::oklab_to_linear(color::oklch_to_oklab([1.0, chroma, hue])).map(|v| v.max(1e-4));
+    let y = 0.2126 * f[0] + 0.7152 * f[1] + 0.0722 * f[2];
+    f.map(|v| v / y)
+}
+
 /// The shared moonlight cast (`palette.cast`, a mood's device) on a palette-mapped OKLCH color.
 /// Applied per texel after the palette LUT (in `finish`; this is the same math for the CPU rule
 /// tests), because its dark handling switches with the source's chroma and hue, which a baked
 /// LUT cannot interpolate faithfully. `[l_src, c_src]` are the source texel's OKLab lightness
 /// and chroma; `scale` is the category's `cast` treatment.
 ///
-/// Exposure scales lightness down above the palette floor (value order and the dark floor stay);
-/// chroma scales proportionally; one shared a/b vector toward the cast hue is added (muted in
-/// the darks), so every color shifts the same way and hue differences survive. Darks: near-neutral
-/// sources are capped at `dark_cap × L` (a muted midnight, never ink) and topped up to `dark_min`
-/// along the cast; warm darks (hue in `warm_band`) and clearly colored darks keep at least
-/// `dark_chroma` (deep colored shadows, never brown mud); colored sources keep the retention share
-/// of their chroma.
+/// Moonlight is a colored light: linear RGB is multiplied by a filter of the cast hue (the color
+/// white takes under it, chroma `tint`, normalized to luminance 1), so every color shifts the same
+/// way, hue families survive (a dark olive stays olive, just cooler) and chroma falls with
+/// lightness on its own. Then exposure scales lightness down above the palette floor (value order
+/// and the dark floor stay) and chroma scales proportionally. Darks: near-neutral sources blend
+/// into a muted midnight (chroma `dark_cap × L`, at least `dark_min`); warm darks (hue in
+/// `warm_band`) keep at least `dark_chroma` (never brown mud); every dark at least `dark_min`;
+/// colored sources keep the retention share of their chroma.
 pub fn apply_cast(
     p: &Palette,
     scale: f32,
@@ -208,29 +217,27 @@ pub fn apply_cast(
 ) -> [f32; 3] {
     let k = &p.cast;
     // The mood's dark handling applies whenever it has a cast (it replaces the palette's own
-    // dark floors); exposure, desaturation and the cast vector scale with the category.
+    // dark floors); the light, exposure and desaturation scale with the category.
     if cast_strength(p, 1.0) <= 0.0 {
         return [ll, cc, hh];
     }
     let s = cast_strength(p, scale);
-    let l2 = cast_exposure(p, scale, ll);
+    let filter = cast_filter(k.hue, s * k.tint);
+    let lin = color::oklab_to_linear(color::oklch_to_oklab([ll, cc, hh]));
+    let lit = color::linear_to_oklab([0, 1, 2].map(|i| (lin[i] * filter[i]).max(0.0)));
+    let l2 = cast_exposure(p, scale, lit[0]);
     let dark = 1.0 - smoothstep(p.dark_below - 0.03, p.dark_below + 0.05, l2);
     let mud_dark = 1.0 - smoothstep(p.dark_below + 0.02, p.dark_below + 0.1, l2);
     // Near-neutral by lightness-relative chroma, like the palette (a near-black navy is navy).
     let c_rel = c_src * (0.55 / (l_src.max(0.0) + 0.05)).max(1.0);
     let neutral = 1.0 - smoothstep(0.012, 0.03, c_rel);
-    // Every color: its own chroma scaled, plus the one shared cast vector.
-    let c2 = cc * (1.0 - s * (1.0 - k.chroma));
-    let tint = s * k.tint * (l2 / k.tint_full_l.max(1e-3)).min(1.0);
-    let (sh, ch) = hh.to_radians().sin_cos();
     let (sk, ck) = k.hue.to_radians().sin_cos();
-    let (an, bn) = (c2 * ch + tint * ck, c2 * sh + tint * sk);
-    // Clearly colored sources keep most of their color, and colored darks a deep colored shadow.
+    let cs = 1.0 - s * (1.0 - k.chroma);
+    let (an, bn) = (lit[1] * cs, lit[2] * cs);
+    // Clearly colored sources keep most of their color (darks are not saturated beyond it: dark
+    // and light masses stay one family).
     let keep = smoothstep(0.03, 0.05, c_src) * (0.65 * c_src).min(0.052);
-    let cn = an
-        .hypot(bn)
-        .max(keep)
-        .max(k.dark_chroma * mud_dark * (1.0 - neutral));
+    let cn = an.hypot(bn).max(keep);
     let len = an.hypot(bn).max(1e-9);
     let (an, bn) = (an / len * cn, bn / len * cn);
     // Near-neutral darks: a muted midnight along the cast, chroma at most dark_cap × L.

@@ -46,8 +46,8 @@ pub(super) fn write_cast(p: &mut Params, style: &Style, tr: &Treatment, has_lut:
         0.0
     };
     p.cast_hue = k.hue.to_radians();
-    p.cast_tint = k.tint;
-    p.cast_tint_l = k.tint_full_l.max(1e-3);
+    let f = crate::palette::cast_filter(k.hue, p.cast_s * k.tint);
+    (p.cast_fr, p.cast_fg, p.cast_fb) = (f[0], f[1], f[2]);
     p.cast_exposure = k.exposure;
     p.cast_chroma = k.chroma;
     p.cast_dark_cap = k.dark_cap;

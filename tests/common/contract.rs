@@ -174,6 +174,8 @@ pub struct TechniqueRules {
     pub adaptive_min_effect: f32,
     pub small_object_min_contrast: f32,
     pub text_min_contrast: f32,
+    pub split_max_hue_change: f32,
+    pub split_min_separation: f32,
 }
 
 #[derive(Debug, Deserialize)]

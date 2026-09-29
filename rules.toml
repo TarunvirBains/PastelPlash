@@ -77,6 +77,13 @@ small_object_min_contrast = 0.5
 # Legibility: small lettering on a busy (grouped, abstracted) sign keeps at least this share of
 # its contrast against the board around it.
 text_min_contrast = 0.6
+# No "negative": within one material the dark and light masses stay one color family and value
+# stays the main carrier. Split at the source's (smoothed) median lightness, the hue difference
+# between the light half's and the dark half's mean colors changes by at most split_max_hue_change
+# degrees (no warm-light / cool-dark temperature split), and the light-minus-dark lightness keeps
+# at least split_min_separation of the source's.
+split_max_hue_change = 25.0
+split_min_separation = 0.6
 
 # Identity: it must still look and feel like the source game. Each texture's alpha-weighted mean
 # OKLab color stays within max_mean_delta_e of the source's (for relit actors, of the source

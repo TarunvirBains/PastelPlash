@@ -301,6 +301,20 @@ pub fn moss_on_wood(size: u32, seed: u32) -> Image {
     })
 }
 
+/// Warm wood planks with deep dark grooves (a pre-rendered house wall, a plank floor).
+pub fn grooved_wood(size: u32, seed: u32) -> Image {
+    image(size, size, |x, y| {
+        let (fx, fy) = (x as f32, y as f32);
+        let v = fy / size as f32 * 7.0 + 0.6 * smooth_noise(fx, fy, 5, size, seed);
+        let ridge = (v * std::f32::consts::TAU).sin() * 0.5 + 0.5;
+        let groove = 1.0 - ((ridge - 0.2) / 0.25).clamp(0.0, 1.0);
+        let n = noise(x, y, seed + 1);
+        let l = 0.58 * (1.0 - groove) + 0.14 * groove + 0.08 * (n - 0.5);
+        let [r, g, b] = from_oklch(l.clamp(0.03, 0.95), 0.045 - 0.02 * groove, 68.0 + 6.0 * n);
+        [r, g, b, 1.0]
+    })
+}
+
 /// Olive moss: mottled olive-green (hues across `hue`), mid-dark, like OoT Reloaded's mossy ground
 /// and Deku Tree moss.
 pub fn olive_moss(size: u32, seed: u32, hue: [f32; 2]) -> Image {

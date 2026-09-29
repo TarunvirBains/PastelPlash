@@ -36,10 +36,10 @@ struct Params {
     grp_range: f32, grp_color: f32, grp_family: f32, grp_stroke: f32,
     grp_sal0: f32, grp_sal1: f32, grp_count: f32, _pad10: f32,
     grp_l: vec4<f32>, grp_a: vec4<f32>, grp_b: vec4<f32>,
-    cast_s: f32, cast_hue: f32, cast_tint: f32, cast_tint_l: f32,
+    cast_s: f32, cast_hue: f32, cast_fr: f32, cast_fg: f32,
     cast_exposure: f32, cast_chroma: f32, cast_dark_cap: f32, cast_dark_min: f32,
     cast_dark_chroma: f32, cast_pivot: f32, cast_dark_below: f32, cast_warm0: f32,
-    cast_warm1: f32, cast_on: f32, _pad12: f32, _pad13: f32,
+    cast_warm1: f32, cast_on: f32, cast_fb: f32, _pad13: f32,
 };
 
 struct Band { y0: i32, y1: i32, _a: i32, _b: i32 };

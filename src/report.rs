@@ -175,6 +175,66 @@ pub fn coarse_l_pattern(
     (corr as f32, ratio as f32)
 }
 
+/// The dark/light split of a texture: its opaque texels are divided at the median of the
+/// source's lightness (smoothed over 5×5, so the masses are the texture's shapes, not grain).
+/// Returns, for `img` (the source itself or a render of it): the mean OKLab a/b of the light half
+/// and of the dark half, and the light-half mean L minus the dark-half mean L. A "negative" look —
+/// warm lights over cool darks, lifted darks crowding the lights — shows as halves whose hues
+/// moved apart and a lightness separation that shrank.
+pub fn dark_light_split(
+    src: &crate::image::Image,
+    img: &crate::image::Image,
+) -> ([f32; 2], [f32; 2], f32) {
+    let (w, h) = (src.width as usize, src.height as usize);
+    let l: Vec<f32> = src
+        .pixels
+        .iter()
+        .map(|p| color::srgb_to_oklab([p[0], p[1], p[2]])[0])
+        .collect();
+    let smooth: Vec<f32> = (0..w * h)
+        .map(|i| {
+            let (x, y) = ((i % w) as isize, (i / w) as isize);
+            let mut s = 0.0;
+            let mut n = 0.0;
+            for dy in -2..=2isize {
+                for dx in -2..=2isize {
+                    let (xx, yy) = (x + dx, y + dy);
+                    if xx < 0 || yy < 0 || xx >= w as isize || yy >= h as isize {
+                        continue;
+                    }
+                    s += l[yy as usize * w + xx as usize];
+                    n += 1.0;
+                }
+            }
+            s / n
+        })
+        .collect();
+    let mut opaque: Vec<f32> = smooth
+        .iter()
+        .zip(&src.pixels)
+        .filter(|(_, p)| p[3] >= 0.5)
+        .map(|(s, _)| *s)
+        .collect();
+    if opaque.len() < 4 {
+        return ([0.0; 2], [0.0; 2], 0.0);
+    }
+    let mid = median(&mut opaque);
+    let mut acc = [[0.0f64; 4]; 2];
+    for ((p, &s), q) in src.pixels.iter().zip(&smooth).zip(&img.pixels) {
+        if p[3] < 0.5 {
+            continue;
+        }
+        let lab = color::srgb_to_oklab([q[0], q[1], q[2]]);
+        let k = usize::from(s > mid);
+        for c in 0..3 {
+            acc[k][c] += lab[c] as f64;
+        }
+        acc[k][3] += 1.0;
+    }
+    let m = |k: usize, c: usize| (acc[k][c] / acc[k][3].max(1.0)) as f32;
+    ([m(1, 1), m(1, 2)], [m(0, 1), m(0, 2)], m(1, 0) - m(0, 0))
+}
+
 /// Which part of the color difference [`coarse_delta_e`] measures.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CoarsePart {
@@ -445,7 +505,20 @@ pub fn metrics(src: &Path, out: &Path, baseline: Option<&Path>) -> Result<String
         } else {
             (f32::NAN, f32::NAN)
         };
-        let l90 = format!("{l90:.3}, L pattern r {pcorr:.2} range {prange:.2}");
+        let split = if same {
+            let (l0, k0, d0) = dark_light_split(&ia, &ia);
+            let (l1, k1, d1) = dark_light_split(&ia, &ib);
+            format!(
+                " | halves light {} dark {} -> light {} dark {}, ΔL {d0:.3}->{d1:.3}",
+                ab_lch(l0),
+                ab_lch(k0),
+                ab_lch(l1),
+                ab_lch(k1)
+            )
+        } else {
+            String::new()
+        };
+        let l90 = format!("{l90:.3}, L pattern r {pcorr:.2} range {prange:.2}{split}");
         let _ = writeln!(
             text,
             "{:<44} L std 7x7 {:.4}->{:.4}, 25x25 {:.4}->{:.4} | coarse Δab p90 {c90:.3} max \
@@ -667,6 +740,23 @@ pub fn report(dir: &Path, reference: &Reference) -> Result<String> {
     let lc = local_contrast(dir, &[3, 12])?;
     let _ = writeln!(out, "local L std: 7x7 {:.4}, 25x25 {:.4}", lc[0], lc[1]);
     Ok(out)
+}
+
+/// "C/h°" of an OKLab a/b pair.
+fn ab_lch([a, b]: [f32; 2]) -> String {
+    format!(
+        "{:.3}/{:.0}",
+        a.hypot(b),
+        b.atan2(a).to_degrees().rem_euclid(360.0)
+    )
+}
+
+/// The hue difference (degrees, signed, light minus dark) between the two halves of
+/// [`dark_light_split`], or `None` when either half is too gray to have a hue.
+pub fn split_hue(light: [f32; 2], dark: [f32; 2], min_chroma: f32) -> Option<f32> {
+    let c = |v: [f32; 2]| v[0].hypot(v[1]);
+    let h = |v: [f32; 2]| v[1].atan2(v[0]).to_degrees();
+    (c(light) >= min_chroma && c(dark) >= min_chroma).then(|| color::hue_diff(h(dark), h(light)))
 }
 
 #[cfg(test)]
