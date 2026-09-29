@@ -181,8 +181,10 @@ fn finish_temperature(gp: vec2<f32>, lab: vec3<f32>, tint_safe: bool) -> vec3<f3
 // Accent darks from high-frequency detail (crevices, gaps between painted shapes), in cool
 // colored shadow. Thresholds come from the image's own histogram (accent_hist/threshold).
 // `lf` is the lab color and, in w, the lightness floor (lowered under an accent).
+// Engine-tinted (tint-safe) textures get none: an accent there cannot take its cool hue, so it
+// would be a neutral near-black line (ink) under the tint, e.g. on vertex-colored cracked ground.
 fn finish_accent(p: vec2<i32>, lf: vec4<f32>, tint_safe: bool) -> vec4<f32> {
-    if (!(P.accent_fraction > 0.0 && P.accent_depth > 0.0)) { return lf; }
+    if (!(P.accent_fraction > 0.0 && P.accent_depth > 0.0) || tint_safe) { return lf; }
     var lab = lf.xyz;
     var floor_l = lf.w;
     let lo = bitcast<f32>(atomicLoad(&hist[256]));
@@ -191,21 +193,17 @@ fn finish_accent(p: vec2<i32>, lf: vec4<f32>, tint_safe: bool) -> vec4<f32> {
     if (t > 0.0) {
         let l_acc = min(lab.x, P.accent_min_l);
         let l_new = mix(lab.x, l_acc, t);
-        if (tint_safe) {
-            lab = vec3<f32>(l_new, lab.yz);
-        } else {
-            // Interpolate chroma and hue (shortest arc) so mixes never pass through gray.
-            // Hue leads lightness, so a darkening texel has already left its own hue
-            // family (no dark greens, even half-way into an accent).
-            let th = min(1.0, 3.0 * t);
-            let ch = length(lab.yz);
-            let h = atan2(lab.z, lab.y);
-            var dh = P.accent_hue - h;
-            dh = dh - 6.2831853 * round(dh / 6.2831853);
-            let h2 = select(P.accent_hue, h + dh * th, ch > 1e-4);
-            let c2 = mix(ch, P.accent_chroma, th);
-            lab = vec3<f32>(l_new, hue_dir(h2) * c2);
-        }
+        // Interpolate chroma and hue (shortest arc) so mixes never pass through gray. Hue
+        // leads lightness, so a darkening texel has already left its own hue family (no dark
+        // greens, even half-way into an accent).
+        let th = min(1.0, 3.0 * t);
+        let ch = length(lab.yz);
+        let h = atan2(lab.z, lab.y);
+        var dh = P.accent_hue - h;
+        dh = dh - 6.2831853 * round(dh / 6.2831853);
+        let h2 = select(P.accent_hue, h + dh * th, ch > 1e-4);
+        let c2 = mix(ch, P.accent_chroma, th);
+        lab = vec3<f32>(l_new, hue_dir(h2) * c2);
         floor_l = min(floor_l, l_new);
     }
     return vec4<f32>(lab, floor_l);

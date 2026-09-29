@@ -395,3 +395,28 @@ pub fn near_neutral_darks(size: u32, seed: u32) -> Image {
 pub fn lch(p: [f32; 4]) -> [f32; 3] {
     color::oklab_to_oklch(color::srgb_to_oklab([p[0], p[1], p[2]]))
 }
+
+/// Vertex-colored cracked dirt (Kokiri Forest's path): a light, grainy gray with thin, branching
+/// mid-gray cracks; grayscale, so the engine's tint colors it. `is_crack` tells the crack texels.
+pub fn cracked_ground(size: u32, seed: u32) -> (Image, impl Fn(u32, u32) -> bool) {
+    let s = size as f32;
+    let is_crack = move |x: u32, y: u32| {
+        let (fx, fy) = (x as f32, y as f32);
+        let a = (fy - (0.35 * s + 0.08 * s * (fx / s * 9.0).sin() + 0.4 * fx)).abs() < 1.2;
+        let b = (fx - (0.6 * s + 0.06 * s * (fy / s * 11.0).sin())).abs() < 1.0 && fy > 0.3 * s;
+        let c = (fy - (0.8 * s - 0.5 * fx + 0.05 * s * (fx / s * 13.0).cos())).abs() < 1.0
+            && fx > 0.2 * s
+            && fx < 0.7 * s;
+        (a && fx < 0.9 * s) || b || c
+    };
+    let img = image(size, size, |x, y| {
+        let t = smooth_noise(x as f32, y as f32, 8, size, seed);
+        let v = if is_crack(x, y) {
+            0.5 + 0.05 * t
+        } else {
+            0.78 + 0.1 * t + 0.05 * (noise(x, y, seed + 1) - 0.5)
+        };
+        [v, v, v, 1.0]
+    });
+    (img, is_crack)
+}

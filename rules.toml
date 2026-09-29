@@ -88,6 +88,9 @@ split_min_separation = 0.6
 # speck_max_contrast of their contrast against their surroundings (thin sticks, handles and
 # lettering keep theirs: small_object_min_contrast, text_min_contrast).
 speck_max_contrast = 0.5
+# Thin cracks on engine-tinted (gray, vertex-colored) ground stay soft painted cracks: their darkest
+# texels (p2 of L) darken by at most ink_max_darkening (no near-black ink lines).
+ink_max_darkening = 0.12
 
 # Identity: it must still look and feel like the source game. Each texture's alpha-weighted mean
 # OKLab color stays within max_mean_delta_e of the source's (for relit actors, of the source

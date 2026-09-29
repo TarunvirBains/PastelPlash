@@ -177,6 +177,7 @@ pub struct TechniqueRules {
     pub split_max_hue_change: f32,
     pub split_min_separation: f32,
     pub speck_max_contrast: f32,
+    pub ink_max_darkening: f32,
 }
 
 #[derive(Debug, Deserialize)]

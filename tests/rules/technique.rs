@@ -576,3 +576,38 @@ fn rule_specks_are_cleaned() {
         report.finish();
     }
 }
+
+#[test]
+fn rule_no_ink_lines_on_tinted_ground() {
+    // Engine-tinted (vertex-colored) gray ground with thin cracks: the cracks stay soft painted
+    // cracks. Their darkest texels (p2 of L) darken by at most technique.ink_max_darkening (as the mood dims the source; in
+    // v5/v6a, accent darks turned them into near-black ink: a gray accent cannot take its cool
+    // hue, and the engine's tint darkens it further).
+    let k = contract();
+    let (mut img, is_crack) = cracked_ground(256, 161);
+    img.tint_safe = Some(true);
+    let darkest = |im: &Image| {
+        let mut l: Vec<f32> = (0..256 * 256u32)
+            .filter(|i| is_crack(i % 256, i / 256))
+            .map(|i| lch(im.pixels[i as usize])[0])
+            .collect();
+        l.sort_by(f32::total_cmp);
+        l[l.len() / 50]
+    };
+    let mut report = Report::new("no ink lines on tinted ground");
+    let rendered = Matrix::full(&[Category::World, Category::Background]).check(
+        &mut report,
+        &img,
+        |case, out| {
+            // Against the source as the mood's moonlight dims it.
+            let l0 = darkest(&dimmed(case, &img));
+            let l1 = darkest(out);
+            ensure(l0 - l1 <= k.technique.ink_max_darkening, || {
+                format!("darkest crack texels L {l0:.3} -> {l1:.3}")
+            })
+        },
+    );
+    if rendered {
+        report.finish();
+    }
+}
