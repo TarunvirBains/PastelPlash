@@ -1,4 +1,5 @@
-//! GPU access through `wgpu` on DirectX 12, plus a compute self-test used by `gpu-info`.
+//! GPU access through `wgpu` (DirectX 12 on Windows, Vulkan elsewhere), plus a compute
+//! self-test used by `gpu-info`.
 
 use anyhow::{Context, Result, bail};
 use wgpu::util::DeviceExt;
@@ -30,19 +31,25 @@ pub struct Gpu {
 }
 
 impl Gpu {
-    /// Opens the high-performance DX12 adapter with its full limits.
+    /// Opens the GPU with its full limits: the high-performance adapter of the platform's
+    /// backend (DX12 on Windows, Vulkan elsewhere), or the one `WGPU_BACKEND` and
+    /// `WGPU_ADAPTER_NAME` select.
     pub async fn new() -> Result<Self> {
+        let backends = backends();
         let mut desc = wgpu::InstanceDescriptor::new_without_display_handle();
-        desc.backends = wgpu::Backends::DX12;
+        desc.backends = backends;
         desc.backend_options.dx12.shader_compiler = DX12_COMPILER;
         let instance = wgpu::Instance::new(desc);
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
-                ..Default::default()
-            })
-            .await
-            .context("no DX12 adapter found")?;
+        let adapter = match std::env::var("WGPU_ADAPTER_NAME") {
+            Ok(name) => adapter_by_name(&instance, backends, &name).await?,
+            Err(_) => instance
+                .request_adapter(&wgpu::RequestAdapterOptions {
+                    power_preference: wgpu::PowerPreference::HighPerformance,
+                    ..Default::default()
+                })
+                .await
+                .with_context(|| format!("no {backends:?} adapter found"))?,
+        };
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 required_limits: adapter.limits(),
@@ -58,14 +65,50 @@ impl Gpu {
     }
 }
 
+/// The backend: `WGPU_BACKEND` (e.g. `dx12`, `vulkan`), else DX12 on Windows and Vulkan
+/// elsewhere.
+fn backends() -> wgpu::Backends {
+    wgpu::Backends::from_env().unwrap_or(if cfg!(windows) {
+        wgpu::Backends::DX12
+    } else {
+        wgpu::Backends::VULKAN
+    })
+}
+
+/// The first adapter whose name contains `name` (case-insensitive), e.g. `llvmpipe` (Mesa's
+/// software Vulkan) or `Microsoft Basic Render Driver` (WARP, DX12 in software).
+async fn adapter_by_name(
+    instance: &wgpu::Instance,
+    backends: wgpu::Backends,
+    name: &str,
+) -> Result<wgpu::Adapter> {
+    let want = name.to_lowercase();
+    let adapters = instance.enumerate_adapters(backends).await;
+    let names: Vec<String> = adapters.iter().map(|a| a.get_info().name).collect();
+    adapters
+        .into_iter()
+        .find(|a| a.get_info().name.to_lowercase().contains(&want))
+        .with_context(|| {
+            format!("WGPU_ADAPTER_NAME={name:?} matches no {backends:?} adapter (have: {names:?})")
+        })
+}
+
 /// Prints the adapter and runs a compute shader end to end, checking every result.
 pub fn info() -> Result<()> {
     pollster::block_on(async {
         let gpu = Gpu::new().await?;
         let info = gpu.adapter.get_info();
         println!(
-            "adapter: {} ({:?}, driver {}), shader compiler {DX12_COMPILER:?}",
-            info.name, info.backend, info.driver_info
+            "adapter: {} ({:?}, {:?}, driver {}){}",
+            info.name,
+            info.backend,
+            info.device_type,
+            info.driver_info,
+            if info.backend == wgpu::Backend::Dx12 {
+                format!(", shader compiler {DX12_COMPILER:?}")
+            } else {
+                String::new()
+            }
         );
         self_test(&gpu)
     })

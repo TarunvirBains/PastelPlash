@@ -42,7 +42,7 @@ pastelplash process <input> <output> [options]
   --pack <file>       pack map (e.g. packs/oot-reloaded.toml)
   -j, --jobs <n>      worker threads (default: all cores)
 
-pastelplash gpu-info  print the DX12 adapter and run a compute self-test
+pastelplash gpu-info  print the GPU adapter (DX12 on Windows, Vulkan elsewhere) and run a compute self-test
 ```
 
 Walking rules: `.png` matched case-insensitively; an output folder nested inside the input is skipped; files are

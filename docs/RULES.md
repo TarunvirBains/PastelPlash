@@ -54,7 +54,10 @@ There are four kinds of change, and each has its own place:
     rule passes. Then re-capture.
   - A new driver, wgpu or toolchain can move bits too: the manifest in the hashes file records
     adapter, driver, wgpu, toolchain and shader compiler, and a failure names what drifted.
-- **GPU tests skip cleanly** without an adapter (for example in CI); the CPU checks always run.
+- **GPU tests skip cleanly** without an adapter; the CPU checks always run. `WGPU_BACKEND`
+  (`dx12`, `vulkan`) and `WGPU_ADAPTER_NAME` (a case-insensitive part of the adapter's name, e.g.
+  `llvmpipe` or `Microsoft Basic Render Driver`) pick the adapter for the tests and the CLI alike;
+  from WSL pass them through `WSLENV` like the variables above.
 - **No third-party images.** Test textures are generated procedurally. Never commit texture pack,
   game or museum images to this repository.
 
