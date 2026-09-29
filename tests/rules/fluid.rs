@@ -94,10 +94,20 @@ fn rule_caustic_water_stays_luminous_and_smooth() {
             ensure(grit <= f.depth_max_grit, || {
                 format!("depth grit {grit:.4} (max {})", f.depth_max_grit)
             })?;
-            // No cell outlines: depth texels darker than the (dimmed) source.
+            // No cell outlines: depth texels darker than the (dimmed) source, beyond the depth's
+            // own median change (the body may lean darker as a whole).
             let n = depth.iter().filter(|&&d| d).count();
+            let dl: Vec<f32> = (0..size * size)
+                .map(|i| l[i] - lch(src.pixels[i])[0])
+                .collect();
+            let shift = median(
+                (0..size * size)
+                    .filter(|&i| depth[i])
+                    .map(|i| dl[i])
+                    .collect(),
+            );
             let dark = (0..size * size)
-                .filter(|&i| depth[i] && l[i] < lch(src.pixels[i])[0] - f.outline_drop)
+                .filter(|&i| depth[i] && dl[i] < shift - f.outline_drop)
                 .count();
             ensure(dark as f32 <= f.max_outline_share * n as f32, || {
                 format!(
@@ -105,10 +115,32 @@ fn rule_caustic_water_stays_luminous_and_smooth() {
                     f.outline_drop
                 )
             })?;
-            let all = |i: &Image| mean_l(i, &w, |_| true);
-            let (m0, m1) = (all(&src), all(out));
-            ensure((m1 - m0).abs() <= f.max_mean_l, || {
-                format!("mean L {m0:.3} -> {m1:.3}")
+            // The body leans toward the reference lightness; the highlights stay bright.
+            let style = case.config.style.for_mood(&case.mood).unwrap();
+            let tr = case.config.target.treatment(case.category);
+            let wt = &style.palette.water;
+            let pull = wt.lightness_pull * tr.reference;
+            let t = pastelplash::palette::cast_exposure(&style.palette, tr.cast, wt.lightness);
+            let body = |i: &Image| mean_l(i, &w, |t| t < 0.02);
+            let (b0, b1) = (body(&src), body(out));
+            let tol = k.tolerance.lightness;
+            if pull > 0.0 {
+                let want = f.body_min_lean * pull * (t - b0);
+                let moved = b1 - b0;
+                ensure(
+                    moved * want.signum() >= want.abs() - tol
+                        && (b1 - t) * (b0 - t) >= -tol * (b0 - t).abs(),
+                    || format!("body L {b0:.3} -> {b1:.3}, reference {t:.3}, pull {pull:.2}"),
+                )?;
+            } else {
+                ensure((b1 - b0).abs() <= f.max_mean_l, || {
+                    format!("body L {b0:.3} -> {b1:.3} with no pull")
+                })?;
+            }
+            let hl = |i: &Image| mean_l(i, &w, |t| t > 0.6);
+            let (h0, h1) = (hl(&src), hl(out));
+            ensure(h1 >= h0 - f.highlight_max_drop, || {
+                format!("highlight L {h0:.3} -> {h1:.3}")
             })
         });
     if rendered {
@@ -121,8 +153,15 @@ fn rule_engine_tinted_gray_water_stays_gray() {
     let k = contract();
     let (img, _) = caustic_water(192, 22, 0.0);
     let mut report = Report::new("engine-tinted gray water stays gray");
-    let rendered = Matrix::full(&FLUIDS).check(&mut report, &img, |_, out| {
-        few(out, 0.0, |p| lch(p)[1] > k.tolerance.chroma)
+    let b0 = pastelplash::palette::water_body_l(&img.pixels);
+    let rendered = Matrix::full(&FLUIDS).check(&mut report, &img, |case, out| {
+        few(out, 0.0, |p| lch(p)[1] > k.tolerance.chroma)?;
+        // Its value multiplies the engine tint: it darkens only a little (beyond the mood).
+        let b0 = dimmed_l(case, b0);
+        let b1 = pastelplash::palette::water_body_l(&out.pixels);
+        ensure(b1 >= b0 - k.fluid.tint_safe_max_darkening, || {
+            format!("gray body L {b0:.3} -> {b1:.3}")
+        })
     });
     if rendered {
         report.finish();
@@ -213,4 +252,11 @@ fn rule_lava_keeps_its_glow_and_heat_colors() {
     if rendered {
         report.finish();
     }
+}
+
+/// Lightness `l` as the case's mood dims it (its moonlight exposure; `l` without a cast).
+fn dimmed_l(case: &Case, l: f32) -> f32 {
+    let style = case.config.style.for_mood(&case.mood).unwrap();
+    let scale = case.config.target.treatment(case.category).cast;
+    pastelplash::palette::cast_exposure(&style.palette, scale, l)
 }

@@ -284,6 +284,74 @@ pub fn apply_cast(
     [l2, c3, h3]
 }
 
+/// Median OKLab lightness of the opaque texels (a water texture's body; 0 when empty).
+pub fn water_body_l(pixels: &[[f32; 4]]) -> f32 {
+    let mut ls: Vec<f32> = pixels
+        .iter()
+        .filter(|p| p[3] >= 0.5)
+        .map(|p| color::srgb_to_oklab([p[0], p[1], p[2]])[0])
+        .collect();
+    if ls.is_empty() {
+        return 0.0;
+    }
+    let i = ls.len() / 2;
+    *ls.select_nth_unstable_by(i, f32::total_cmp).1
+}
+
+/// What [`lean_water_lightness`] did: the body lightness before and after, and the target.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct WaterLean {
+    pub target: f32,
+    pub body: f32,
+    pub highlight: f32,
+    pub shift: f32,
+}
+
+/// Leans a water texture's body lightness toward the reference (`palette.water.lightness`, as
+/// the mood's moonlight dims it: `target`), `pull` of the way (per image, after the palette):
+/// the body (the median lightness of the opaque texels) and everything darker shift by the same
+/// amount, the shift fades out toward the caustic highlights (the 98th percentile), which stay
+/// where they are. The mapping is monotone (value order kept), a/b are untouched (engine-tinted
+/// gray water stays gray), so highlight contrast above the body grows when the body darkens.
+/// Pixels are gamma sRGB with straight alpha, as the stage's output.
+pub fn lean_water_lightness(pixels: &mut [[f32; 4]], target: f32, pull: f32) -> WaterLean {
+    let mut ls: Vec<f32> = pixels
+        .iter()
+        .filter(|p| p[3] >= 0.5)
+        .map(|p| color::srgb_to_oklab([p[0], p[1], p[2]])[0])
+        .collect();
+    if ls.len() < 16 || pull <= 0.0 {
+        return WaterLean::default();
+    }
+    ls.sort_by(f32::total_cmp);
+    let q = |f: f32| ls[((ls.len() - 1) as f32 * f) as usize];
+    let (body, highlight) = (q(0.5), q(0.98));
+    // (Lightening is capped so the mapping stays monotone.)
+    let shift = (pull.clamp(0.0, 1.0) * (target - body)).min(0.5 * (highlight - body));
+    if shift.abs() < 1e-4 || highlight <= body + 1e-3 {
+        return WaterLean {
+            target,
+            body,
+            highlight,
+            shift: 0.0,
+        };
+    }
+    for p in pixels.iter_mut() {
+        let lab = color::srgb_to_oklab([p[0], p[1], p[2]]);
+        let w = 1.0 - smoothstep(body, highlight, lab[0]);
+        let rgb = color::oklab_to_srgb([(lab[0] + shift * w).clamp(0.0, 1.0), lab[1], lab[2]]);
+        for k in 0..3 {
+            p[k] = rgb[k].clamp(0.0, 1.0);
+        }
+    }
+    WaterLean {
+        target,
+        body,
+        highlight,
+        shift,
+    }
+}
+
 /// Group parameters blended by weight (`None` if no group covers the hue).
 #[derive(Default)]
 struct Blend {
@@ -759,6 +827,7 @@ mod tests {
             hue: 140.0,
             chroma: [0.035, 0.06],
             pull: 0.5,
+            ..Default::default()
         };
         let m = Mapping {
             reference_scale: 1.0,
@@ -794,6 +863,29 @@ mod tests {
                 "L {l}: C {c} h {h}"
             );
         }
+    }
+
+    #[test]
+    fn the_water_body_leans_toward_the_reference_and_highlights_stay() {
+        // A gray ramp: body (median) 0.5, highlights up to 0.95.
+        let mut px: Vec<[f32; 4]> = (0..=100)
+            .map(|i| {
+                let l = 0.3 + 0.65 * i as f32 / 100.0;
+                let v = color::oklab_to_srgb([l, 0.0, 0.0]);
+                [v[0], v[1], v[2], 1.0]
+            })
+            .collect();
+        let before: Vec<f32> = px.iter().map(|p| lch(*p)[0]).collect();
+        let lean = lean_water_lightness(&mut px, 0.35, 0.8);
+        let after: Vec<f32> = px.iter().map(|p| lch(*p)[0]).collect();
+        assert!(
+            (lean.shift - 0.8 * (0.35 - lean.body)).abs() < 1e-4,
+            "{lean:?}"
+        );
+        assert!((after[0] - (before[0] + lean.shift)).abs() < 0.01);
+        assert!((after[100] - before[100]).abs() < 0.01, "highlight moved");
+        assert!(after.windows(2).all(|w| w[1] >= w[0] - 1e-4), "value order");
+        assert!(px.iter().all(|p| lch(*p)[1] < 0.002), "gray stays gray");
     }
 
     #[test]

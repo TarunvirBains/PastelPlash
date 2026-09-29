@@ -66,6 +66,8 @@ pub struct FluidRule {
     pub water_chroma: Option<[f32; 2]>,
     /// Pull toward the reference for this area (0..1).
     pub water_pull: Option<f32>,
+    /// Reference water body lightness for this area.
+    pub water_lightness: Option<f32>,
 }
 
 /// Scales the paint-mark size (the painting Kuwahara radius) of matching files, e.g. for

@@ -1,4 +1,4 @@
-# PastelPlash style rules
+| Engine-tinted gray water stays gray and darkens by ≤ `tint_safe_max_darkening` beyond the mood. | The engine supplies the color and multiplies the value.# PastelPlash style rules
 
 **North star:** it still looks and feels like the source game — for OoT, like OoT — just a
 dreamlike version evoking impressionism and watercolor, in the direction of *Skyward Sword*. It
@@ -191,20 +191,27 @@ into outlined cells that slide around (cracked stone, lizard skin).
 - **Treatment** (built in, `Treatment::default_for`; a target may override within the contract):
   no value grouping (policy), abstraction, value compression, accents, wet edges or granulation;
   small paint marks (no tiling multiplier), gentle strokes. Engine-tinted gray fluids take the
-  tint-safe path (lightness only). **Water** keeps its source lightness (each area keeps its
-  depth; a mood's night exposure still applies) and leans toward the style's reference water
-  tone (`palette.water`, per-area override in the pack map: `water_hue`, `water_chroma`,
-  `water_pull` on a `[[fluids]]` rule). The shipped tone is dark muted jade, hue 140, chroma
-  0.035–0.06, pulled halfway: Skyward Sword's Ancient Cistern water (sun and shade, hue and
-  chroma only: h 115–140, C 0.036–0.06) and the N64 Deku Tree basement water (h 143, C 0.04)
-  agree. **Lava is emissive**: no palette,
-  no moonlight, no mood at all (`Category::is_emissive`): glow and heat colors stay.
+  tint-safe path (lightness only). **Water** leans toward the style's reference water tone
+  (`palette.water`, per-area override in the pack map: `water_hue`, `water_chroma`, `water_pull`,
+  `water_lightness` on a `[[fluids]]` rule): hue and chroma in the palette; the **body
+  lightness** per image (`lightness`, `lightness_pull`, after the palette and the mood's night
+  exposure): the median and everything darker shift toward the reference, the shift fades out
+  toward the caustic highlights (98th percentile), which stay where they are. Engine-tinted
+  gray water darkens by at most `tint_safe_max_darkening` (the engine tint supplies its value).
+  The water sheets are often drawn translucent by the game (OoT: the Kokiri pond at prim alpha
+  0.39; the texture's own alpha is 1 and unused by its combiner), so the bed shows through and
+  the texture's lightness moves the on-screen water only by that share. The shipped tone is
+  dark muted jade, hue 140, chroma 0.035–0.06, pulled halfway, body lightness 0.36 pulled 0.8:
+  Skyward Sword's Ancient Cistern water (sun and shade: h 115–140, C 0.036–0.06, L 0.45–0.50)
+  and the N64 Deku Tree basement water (h 143, C 0.04, L 0.34–0.36) agree on the hue; the
+  lightness follows the N64 (the pond read light over its pale bed). **Lava is emissive**: no
+  palette, no moonlight, no mood at all (`Category::is_emissive`): glow and heat colors stay.
 
 | Rule | Why | Enforced by |
 |---|---|---|
 | Fluid treatments stay within `[fluid]` (no wet edges, granulation, value compression, abstraction, accents; small marks); lava has no palette and no cast; fluids are never grouped. | Caustics are light, not cells. | `fluid_treatments_stay_within_the_contract` |
-| **Caustics stay luminous, depth stays smooth, no cell outlines:** on a synthetic caustic texture, highlight-line contrast keeps ≥ `highlight_min_contrast` of the (mood-dimmed) source's, depth grit ≤ `depth_max_grit`, at most `max_outline_share` of depth texels darker than the source by `outline_drop`, mean L within `max_mean_l`. Rendered as World, the same texture fails. | "Why is our water so ugly? The N64 water looks better." | `rule_caustic_water_stays_luminous_and_smooth` |
-| Engine-tinted gray water stays gray. | The engine supplies the color. | `rule_engine_tinted_gray_water_stays_gray` |
+| **Caustics stay luminous, depth stays smooth, no cell outlines:** on a synthetic caustic texture, highlight-line contrast keeps ≥ `highlight_min_contrast` of the (mood-dimmed) source's, depth grit ≤ `depth_max_grit`, at most `max_outline_share` of depth texels darker than the source by `outline_drop` beyond the depth's median change; the body moves toward the reference lightness by ≥ `body_min_lean` of the pull and never past it (no pull: within `max_mean_l`), the highlight lines drop ≤ `highlight_max_drop`. Rendered as World, the same texture fails. | "Why is our water so ugly? The N64 water looks better." | `rule_caustic_water_stays_luminous_and_smooth` |
+| Engine-tinted gray water stays gray and darkens by ≤ `tint_safe_max_darkening` beyond the mood. | The engine supplies the color and multiplies the value. | `rule_engine_tinted_gray_water_stays_gray` |
 | Water leans toward the reference tone (when the style pulls). | SS and the N64 agree on dark muted jade. | `rule_water_leans_toward_the_reference_tone` |
 | **Lava keeps its glow and heat colors** in every style and mood (nocturne included): vein mean L drops ≤ `lava_max_darkening`, vein chroma kept ≥ `lava_min_chroma_retention`, vein hue moves ≤ `lava_max_hue_shift`. | Glowing things stay glowing. | `rule_lava_keeps_its_glow_and_heat_colors` |
 

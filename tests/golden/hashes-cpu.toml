@@ -1,7 +1,7 @@
 # Golden CPU hashes (tests/golden_hash.rs). Generated; do not edit by hand.
 
 [config]
-"pack/oot-reloaded" = "e62e07670bf830c6"
+"pack/oot-reloaded" = "9fc5a899c2942d1f"
 "target/soh-celshade" = "fdac62f4939727ff"
 
 [luts]
@@ -1188,19 +1188,19 @@
 hlsl = "d574b7cffec00339"
 
 [styles]
-"impressionist/base" = "29bd73dc511d37f2"
-"impressionist/base-dark-greens" = "4091b091c0ccedd9"
-"impressionist/nocturne" = "2e6b31f87d104b88"
-"impressionist/nocturne:0.50" = "e53f807b928108e9"
-"ss-baseline/base" = "ec9f9dd983935f1c"
-"ss-baseline/base-dark-greens" = "f161157a25ee1035"
-"ss-baseline/nocturne" = "5f441cf1a7eed8b4"
-"ss-baseline/nocturne:0.50" = "a2a5c472ef92eaa2"
-"ss-impressionist/base" = "3d0a215fab5e8474"
-"ss-impressionist/base-dark-greens" = "67dd17b22843cfa3"
-"ss-impressionist/nocturne" = "1deb78f6b4cef9b3"
-"ss-impressionist/nocturne:0.50" = "43c6cbf8f61af198"
-"watercolor/base" = "21c85083248c77c3"
-"watercolor/base-dark-greens" = "cac52c165420c2fc"
-"watercolor/nocturne" = "4f4df89074f751de"
-"watercolor/nocturne:0.50" = "d49481c062863838"
+"impressionist/base" = "eb5466246f918a71"
+"impressionist/base-dark-greens" = "2f0779dcc8817874"
+"impressionist/nocturne" = "c63b8b85a756cead"
+"impressionist/nocturne:0.50" = "84fa1ea150f790a6"
+"ss-baseline/base" = "2c95f680c6768d17"
+"ss-baseline/base-dark-greens" = "e182ca241a5b130c"
+"ss-baseline/nocturne" = "3399da31f207a251"
+"ss-baseline/nocturne:0.50" = "f42e7326a1270357"
+"ss-impressionist/base" = "ccf8daafef750811"
+"ss-impressionist/base-dark-greens" = "4d9c72351e1d8e08"
+"ss-impressionist/nocturne" = "2952fc2a23afac28"
+"ss-impressionist/nocturne:0.50" = "d2ea3be4b7ee3113"
+"watercolor/base" = "1a540a9cb10a7b7c"
+"watercolor/base-dark-greens" = "417c0874cc51a6d5"
+"watercolor/nocturne" = "602d3601bb6ee68b"
+"watercolor/nocturne:0.50" = "bad9294c22943113"

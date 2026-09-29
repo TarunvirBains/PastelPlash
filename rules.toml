@@ -267,12 +267,20 @@ max_radius_scale = 0.5
 # their lightness contrast over the depth; the depth's texel-level grit stays at most
 # depth_max_grit (OKLab L, 1-texel high-pass std); at most max_outline_share of the depth texels
 # come out darker than the source (as the mood dims it) by more than outline_drop (no cell
-# outlines); the mean lightness stays within max_mean_l of the source's (water keeps its depth).
+# outlines, measured against the depth's own median change); the body (the depth between the
+# lines) moves toward the style's reference water lightness (as the mood dims it): at least
+# body_min_lean of the configured pull, never past the reference, and without a pull (other
+# liquids) within max_mean_l of the source; the highlight lines lose at most highlight_max_drop
+# of their lightness (they stay bright while the body darkens). Engine-tinted gray water darkens
+# by at most tint_safe_max_darkening (the engine tint supplies its final value).
 highlight_min_contrast = 0.8
 depth_max_grit = 0.012
 outline_drop = 0.06
 max_outline_share = 0.01
 max_mean_l = 0.03
+body_min_lean = 0.5
+highlight_max_drop = 0.03
+tint_safe_max_darkening = 0.1
 # Lava is emissive (every style and mood, nocturne included): vein texels are never darkened by
 # more than max_darkening, keep at least min_chroma_retention of their chroma, and their mean
 # hue moves by at most max_hue_shift degrees (heat colors stay; no cool or pastel pull).
