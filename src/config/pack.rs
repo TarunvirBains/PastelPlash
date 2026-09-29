@@ -1,0 +1,247 @@
+//! The pack-map layer: which file is what (pure data: path globs to categories, moods, marks).
+
+use std::path::{Path, PathBuf};
+
+use serde::Deserialize;
+
+use super::Category;
+use crate::mood::Mood;
+
+/// Which file is what.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Pack {
+    pub name: String,
+    /// Path/filename glob rules, first match wins.
+    pub rules: Vec<Rule>,
+    /// CSV of `filename,category` for hand-sorted packs.
+    pub list: Option<PathBuf>,
+    /// Category for files nothing else classifies.
+    pub default_category: Category,
+    /// Filename-stem suffixes (case-insensitive) marking non-color maps, which are copied through.
+    pub non_color_suffixes: Vec<String>,
+    /// HD texels per original texel for this pack, when adapters don't supply it per image.
+    pub source_scale: Option<f32>,
+    /// Mood rules by path glob, first match wins; unmatched files get the base mood.
+    pub moods: Vec<MoodRule>,
+    /// Paint-mark size rules by path glob, first match wins; unmatched files get scale 1.
+    pub marks: Vec<MarksRule>,
+    /// Path globs of files never value-grouped (signs, lettering, symbols the detector misses).
+    pub no_grouping: Vec<String>,
+    /// Path globs of files that never get the large-scale abstraction pass (signs whose thin
+    /// painted borders and lettering must stay).
+    pub no_abstraction: Vec<String>,
+}
+
+/// Scales the paint-mark size (the painting Kuwahara radius) of matching files, e.g. for
+/// textures that tile many times, whose texture-space marks shrink in world space.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MarksRule {
+    pub glob: String,
+    pub scale: f32,
+}
+
+/// Assigns a mood (and optionally allows or denies dark greens) to matching files.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MoodRule {
+    pub glob: String,
+    pub mood: String,
+    #[serde(default = "one")]
+    pub strength: f32,
+    pub dark_greens: Option<bool>,
+}
+
+fn one() -> f32 {
+    1.0
+}
+
+impl Default for Pack {
+    fn default() -> Self {
+        Self {
+            source_scale: None,
+            moods: Vec::new(),
+            marks: Vec::new(),
+            no_grouping: Vec::new(),
+            no_abstraction: Vec::new(),
+            name: String::new(),
+            rules: Vec::new(),
+            list: None,
+            default_category: Category::World,
+            non_color_suffixes: ["_n", "_nrm", "_normal", "_spec", "_rough"]
+                .map(String::from)
+                .into(),
+        }
+    }
+}
+
+impl Pack {
+    /// Category by the first matching rule, else [`Pack::default_category`].
+    pub fn classify(&self, path: &Path) -> Category {
+        let p = path.to_string_lossy().replace('\\', "/");
+        self.rules
+            .iter()
+            .find(|r| glob_match(&r.glob, &p))
+            .map_or(self.default_category, |r| r.category)
+    }
+
+    /// Paint-mark scale by the first matching marks rule, else 1.
+    pub fn marks_scale_for(&self, path: &Path) -> f32 {
+        let p = path.to_string_lossy().replace('\\', "/");
+        self.marks
+            .iter()
+            .find(|r| glob_match(&r.glob, &p))
+            .map_or(1.0, |r| r.scale)
+    }
+
+    /// False if a `no_grouping` glob matches the file.
+    pub fn grouping_allowed(&self, path: &Path) -> bool {
+        let p = path.to_string_lossy().replace('\\', "/");
+        !self.no_grouping.iter().any(|g| glob_match(g, &p))
+    }
+
+    /// False if a `no_abstraction` glob matches the file.
+    pub fn abstraction_allowed(&self, path: &Path) -> bool {
+        let p = path.to_string_lossy().replace('\\', "/");
+        !self.no_abstraction.iter().any(|g| glob_match(g, &p))
+    }
+
+    /// Mood by the first matching mood rule, else the base mood.
+    pub fn mood_for(&self, path: &Path) -> Mood {
+        let p = path.to_string_lossy().replace('\\', "/");
+        self.moods
+            .iter()
+            .find(|r| glob_match(&r.glob, &p))
+            .map_or_else(Mood::default, |r| Mood {
+                name: r.mood.clone(),
+                strength: r.strength,
+                dark_greens: r.dark_greens,
+            })
+    }
+
+    /// True if the file stem ends in one of [`Pack::non_color_suffixes`].
+    pub fn is_non_color_map(&self, path: &Path) -> bool {
+        let Some(stem) = path.file_stem() else {
+            return false;
+        };
+        let stem = stem.to_string_lossy().to_lowercase();
+        self.non_color_suffixes
+            .iter()
+            .any(|s| stem.ends_with(&s.to_lowercase()))
+    }
+}
+
+/// Case-sensitive glob over `/`-separated paths: `*` and `?` stay within a segment, `**`
+/// crosses segments.
+pub fn glob_match(pattern: &str, path: &str) -> bool {
+    fn go(p: &[u8], s: &[u8]) -> bool {
+        match p {
+            [] => s.is_empty(),
+            [b'*', b'*', rest @ ..] => {
+                let rest = rest.strip_prefix(b"/").unwrap_or(rest);
+                (0..=s.len()).any(|i| go(rest, &s[i..]))
+            }
+            [b'*', rest @ ..] => (0..=s.len())
+                .take_while(|&i| i == 0 || s[i - 1] != b'/')
+                .any(|i| go(rest, &s[i..])),
+            [b'?', rest @ ..] => !s.is_empty() && s[0] != b'/' && go(rest, &s[1..]),
+            [c, rest @ ..] => !s.is_empty() && s[0] == *c && go(rest, &s[1..]),
+        }
+    }
+    go(pattern.as_bytes(), path.as_bytes())
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Rule {
+    pub glob: String,
+    pub category: Category,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn globs() {
+        assert!(glob_match(
+            "alt/scenes/**",
+            "alt/scenes/shared/spot04_scene/x"
+        ));
+        assert!(glob_match(
+            "alt/objects/object_link_boy/*",
+            "alt/objects/object_link_boy/gTex"
+        ));
+        assert!(!glob_match(
+            "alt/objects/object_link_boy/*",
+            "alt/objects/object_link_boy/a/b"
+        ));
+        assert!(glob_match(
+            "alt/**/*Eyes*",
+            "alt/objects/object_link_boy/gLinkAdultEyesOpenTex"
+        ));
+        assert!(glob_match(
+            "**/spot04_scene/**",
+            "alt/scenes/nonmq/spot04_scene/t"
+        ));
+        assert!(!glob_match(
+            "alt/textures/vr_*/**",
+            "alt/textures/parameter_static/x"
+        ));
+    }
+
+    #[test]
+    fn pack_rules_classify_first_match_wins() {
+        let pack: Pack = toml::from_str(
+            "default_category = 'world'\n\
+             [[rules]]\nglob = '**/*Eyes*'\ncategory = 'skip'\n\
+             [[rules]]\nglob = 'alt/objects/**'\ncategory = 'actor'",
+        )
+        .unwrap();
+        assert_eq!(
+            pack.classify(Path::new("alt/objects/o/gEyesTex")),
+            Category::Skip
+        );
+        assert_eq!(
+            pack.classify(Path::new("alt/objects/o/gBodyTex")),
+            Category::Actor
+        );
+        assert_eq!(pack.classify(Path::new("alt/scenes/s/t")), Category::World);
+    }
+
+    #[test]
+    fn pack_mood_rules_first_match_wins() {
+        let pack: Pack = toml::from_str(
+            "[[moods]]\nglob = 'alt/scenes/*/ydan_scene/*Moss*'\nmood = 'nocturne'\n\
+             dark_greens = false\n\
+             [[moods]]\nglob = 'alt/scenes/*/ydan_scene/**'\nmood = 'nocturne'\nstrength = 0.6",
+        )
+        .unwrap();
+        let m = pack.mood_for(Path::new("alt/scenes/shared/ydan_scene/wall"));
+        assert_eq!(
+            (m.name.as_str(), m.strength, m.dark_greens),
+            ("nocturne", 0.6, None)
+        );
+        let moss = pack.mood_for(Path::new("alt/scenes/nonmq/ydan_scene/gMossTex"));
+        assert_eq!((moss.strength, moss.dark_greens), (1.0, Some(false)));
+        assert!(
+            pack.mood_for(Path::new("alt/scenes/shared/spot04_scene/x"))
+                .is_base()
+        );
+    }
+
+    #[test]
+    fn non_color_maps_by_suffix() {
+        let pack = Pack::default();
+        assert!(pack.is_non_color_map(Path::new("rock_N.png")));
+        assert!(pack.is_non_color_map(Path::new("dir/metal_rough.PNG")));
+        assert!(!pack.is_non_color_map(Path::new("normal.png")));
+        assert!(!pack.is_non_color_map(Path::new("grass.png")));
+        let none = Pack {
+            non_color_suffixes: vec![],
+            ..Pack::default()
+        };
+        assert!(!none.is_non_color_map(Path::new("rock_n.png")));
+    }
+}
