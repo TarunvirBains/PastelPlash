@@ -73,6 +73,12 @@ struct DevCropArgs {
     y: u32,
     /// Square side.
     size: u32,
+    /// Composite over this sRGB gray (0..1) at `--alpha`, like a translucent surface over a bed.
+    #[arg(long)]
+    over: Option<f32>,
+    /// Opacity of the texture when composited with `--over`.
+    #[arg(long, default_value_t = 1.0)]
+    alpha: f32,
 }
 
 #[derive(Args)]
@@ -386,7 +392,17 @@ fn main() -> ExitCode {
                     a.x < img.width && a.y < img.height,
                     "rectangle outside image"
                 );
-                let c = pastelplash::compare::crop(&img, a.x, a.y, a.size);
+                let mut c = pastelplash::compare::crop(&img, a.x, a.y, a.size);
+                if let Some(bed) = a.over {
+                    // Blended on gamma values, as the N64-style framebuffer blend does.
+                    for p in &mut c.pixels {
+                        let t = a.alpha * p[3];
+                        for v in p.iter_mut().take(3) {
+                            *v = *v * t + bed * (1.0 - t);
+                        }
+                        p[3] = 1.0;
+                    }
+                }
                 pastelplash::png_io::write(&c, &a.output)
             })
             .map(|()| ExitCode::SUCCESS),
