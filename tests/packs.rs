@@ -176,6 +176,9 @@ fn oot_reloaded_actor_drawn_water_is_water() {
         "alt/objects/object_mizu_objects/object_mizu_objectsTex_007520",
     ] {
         let kind = pack.fluid_rule_for(Path::new(path)).and_then(|r| r.kind);
-        assert!(matches!(kind, Some(FluidRuleKind::Water)), "{path}: {kind:?}");
+        assert!(
+            matches!(kind, Some(FluidRuleKind::Water)),
+            "{path}: {kind:?}"
+        );
     }
 }
