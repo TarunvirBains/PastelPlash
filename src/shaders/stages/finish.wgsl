@@ -450,16 +450,57 @@ fn blown_ring(p: vec2<i32>, r: f32) -> f32 {
     return n;
 }
 
+// Glitter: a blown-white source texel with at most two blown texels on the rings at the speck
+// radius and 1.5× it, on a textured surface (the other ring texels at the speck radius span a
+// wide lightness range), is a highlight on grit, not a glint: once the surface around it is
+// painted it would stand alone as a white fleck (the light treehouse bark). Larger highlights
+// (more blown neighbors) and glints on smooth surfaces are no glitter.
+fn glitter(p: vec2<i32>) -> bool {
+    let hi = 254.0 / 255.0;
+    if (!(P.speck_r > 0.0) || !all(textureLoad(texD, p, 0).rgb >= vec3<f32>(hi))) { return false; }
+    if (blown_ring(p, P.speck_r) > 2.0 || blown_ring(p, 1.5 * P.speck_r) > 2.0) { return false; }
+    var lo_l = 1.0;
+    var hi_l = 0.0;
+    for (var k = 0; k < 8; k++) {
+        let ang = f32(k) * 0.78539816;
+        let q = textureLoad(texD, addr(p + vec2<i32>(round(vec2<f32>(cos(ang), sin(ang)) * P.speck_r))), 0);
+        if (all(q.rgb >= vec3<f32>(hi))) { continue; }
+        let l = lightness(q);
+        lo_l = min(lo_l, l);
+        hi_l = max(hi_l, l);
+    }
+    return hi_l - lo_l >= 0.25;
+}
+
+// The painted color around a glitter texel: the mean of the painted rings at the speck radius and
+// 1.5× it, leaving out texels blown in the source.
+fn glitter_fill(p: vec2<i32>, c: vec4<f32>) -> vec4<f32> {
+    var sum = vec3<f32>(0.0);
+    var n = 0.0;
+    for (var k = 0; k < 16; k++) {
+        let r = select(P.speck_r, 1.5 * P.speck_r, k >= 8);
+        let ang = f32(k) * 0.78539816 + select(0.0, 0.39269908, k >= 8);
+        let o = vec2<i32>(round(vec2<f32>(cos(ang), sin(ang)) * r));
+        if (all(textureLoad(texD, addr(p + o), 0).rgb >= vec3<f32>(254.0 / 255.0))) { continue; }
+        sum += loadA(p + o).rgb;
+        n += 1.0;
+    }
+    if (n <= 0.0) { return c; }
+    return vec4<f32>(sum / n, c.a);
+}
+
 // No new clipping: an output channel stays inside 8-bit 1..254 wherever the source channel was;
 // where the source was clipped it may stay so.
 // Source-blown whites: small compact ones (glints, sparkles, snow, stars: under half of a ring
 // of neighbors at `clip_r` is blown too) keep their clean white; large blown regions may only
 // darken.
-fn finish_clip(p: vec2<i32>, rgb: vec3<f32>) -> vec3<f32> {
+fn finish_clip(p: vec2<i32>, rgb: vec3<f32>, glitter: bool) -> vec3<f32> {
     let s = textureLoad(texD, p, 0).rgb;
     let lo = 1.0 / 255.0;
     let hi = 254.0 / 255.0;
     if (all(s >= vec3<f32>(hi))) {
+        // Blown grit on a textured surface was painted like the surface (see `glitter`).
+        if (glitter) { return min(rgb, vec3<f32>(hi)); }
         let blown = blown_ring(p, P.clip_r);
         // Speck-sized blown grit (isolated at the speck radius; despeckled) is no glint: it only
         // keeps inside 8-bit range.
@@ -504,8 +545,11 @@ fn finish(@builtin(global_invocation_id) gid: vec3<u32>) {
     let gp = gpos(p);
     let tint_safe = P.tint_safe != 0;
 
-    // Thin structures keep their value contrast.
-    let thin = thin_mask(p);
+    // Blown grit on a textured surface is painted like the surface around it.
+    let glit = glitter(p);
+    if (glit) { c = glitter_fill(p, c); }
+    // Thin structures keep their value contrast (glitter is no structure).
+    let thin = select(thin_mask(p), vec4<f32>(0.0), glit);
     c = finish_smear(p, c);
     c = finish_value(p, c, thin.w);
     c = finish_glare(p, c);
@@ -529,6 +573,6 @@ fn finish(@builtin(global_invocation_id) gid: vec3<u32>) {
         lab = vec3<f32>(finish_tint_safe(p, src.x), lab.yz);
     }
 
-    let rgb = finish_clip(p, linear_to_srgb(clamp(oklab_to_linear(lab), vec3<f32>(0.0), vec3<f32>(1.0))));
+    let rgb = finish_clip(p, linear_to_srgb(clamp(oklab_to_linear(lab), vec3<f32>(0.0), vec3<f32>(1.0))), glit);
     textureStore(outTex, p, vec4<f32>(rgb, c.a));
 }

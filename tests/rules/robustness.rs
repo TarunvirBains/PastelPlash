@@ -282,3 +282,76 @@ fn rule_no_glitter_on_bright_surfaces() {
         report.finish();
     }
 }
+
+#[test]
+fn rule_no_glitter_on_light_textured_surfaces() {
+    // Single blown-white texels scattered over a gritty, textured surface (the light treehouse
+    // bark, spot04_room_0Tex_016508) are photographic highlights on grit, not glints: painted,
+    // they stand alone as glitter. They blend into the surface: at most
+    // technique.glitter_max_contrast lighter than the painted surface around them. A larger
+    // highlight area on the same surface stays light.
+    let k = contract();
+    let is_spot = |x: u32, y: u32| {
+        matches!((x % 13, y % 11), (4, 3) | (8, 3) | (4, 7)) && x > 8 && y > 8 && x < 120
+    };
+    let is_patch = |x: u32, y: u32| (140..156).contains(&x) && (40..56).contains(&y);
+    let img = image(192, 192, |x, y| {
+        if is_spot(x, y) || is_patch(x, y) {
+            return [1.0, 1.0, 1.0, 1.0];
+        }
+        let v = 0.74
+            + 0.1 * smooth_noise(x as f32, y as f32, 8, 192, 191)
+            + 0.3 * (noise(x, y, 192) - 0.5);
+        let [r, g, b] = from_oklch(v.clamp(0.3, 0.95), 0.03, 85.0);
+        [r, g, b, 1.0]
+    });
+    let spot_contrast = |im: &Image| {
+        let (mut d, mut n) = (0.0f32, 0.0f32);
+        for y in 9..183u32 {
+            for x in 9..183u32 {
+                if !is_spot(x, y) {
+                    continue;
+                }
+                let ring: f32 = [
+                    (3i32, 0i32),
+                    (-3, 0),
+                    (0, 3),
+                    (0, -3),
+                    (2, 2),
+                    (-2, 2),
+                    (2, -2),
+                    (-2, -2),
+                ]
+                .iter()
+                .map(|&(dx, dy)| {
+                    lch(im.pixels[((y as i32 + dy) * 192 + x as i32 + dx) as usize])[0]
+                })
+                .sum::<f32>()
+                    / 8.0;
+                d += lch(im.pixels[(y * 192 + x) as usize])[0] - ring;
+                n += 1.0;
+            }
+        }
+        d / n
+    };
+    let patch_l = |im: &Image| lch(im.pixels[(48 * 192 + 148) as usize])[0];
+    let c0 = spot_contrast(&img);
+    let mut report = Report::new("no glitter on light textured surfaces");
+    let rendered = Matrix::full(&[Category::World, Category::Background]).check(
+        &mut report,
+        &img,
+        |_, out| {
+            let c1 = spot_contrast(out);
+            let p = patch_l(out);
+            ensure(c1 <= k.technique.glitter_max_contrast, || {
+                format!(
+                    "single blown texels stand out: {c1:.3} above the surface (source {c0:.3}, max {}; highlight L {p:.3})",
+                    k.technique.glitter_max_contrast
+                )
+            })
+        },
+    );
+    if rendered {
+        report.finish();
+    }
+}

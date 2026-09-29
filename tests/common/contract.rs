@@ -223,6 +223,7 @@ pub struct VividRules {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TechniqueRules {
+    pub glitter_max_contrast: f32,
     pub max_kuwahara_radius: f32,
     pub max_edge_darkening: f32,
     pub max_granulation: f32,

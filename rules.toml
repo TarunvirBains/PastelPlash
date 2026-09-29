@@ -65,6 +65,10 @@ max_amount = 0.8
 max_chroma = 0.3
 
 [technique]
+# Single blown-white texels on a gritty, textured surface blend in: at most this much lighter
+# (OKLab L) than the painted surface around them (glitter on the light treehouse bark; the rest
+# is the tone curve on a mix of light and dark grains, not a fleck).
+glitter_max_contrast = 0.09
 max_kuwahara_radius = 32.0
 max_edge_darkening = 0.10
 max_granulation = 0.05
