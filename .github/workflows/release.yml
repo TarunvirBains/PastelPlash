@@ -1,0 +1,176 @@
+name: Release
+
+# A `v*` tag builds the Windows and Linux binaries, packages them with the licenses, README and
+# sample configs, and creates a GitHub release with SHA256 checksums. Versions below 1.0 (and
+# versions with a pre-release suffix such as 1.2.0-rc.1) are published as GitHub pre-releases.
+#
+# crates.io: the `publish` job runs for tags that are not pre-releases, or when started by hand
+# (workflow_dispatch) on the ref to publish. It needs the CARGO_REGISTRY_TOKEN secret and is
+# skipped with a notice without it.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: "Only run cargo publish --dry-run"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  meta:
+    name: version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: version
+        name: Read the version and check it against the tag
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+          [[ -n "$version" ]] || { echo "::error::no version in Cargo.toml"; exit 1; }
+          if [[ "$GITHUB_REF_TYPE" == tag && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match Cargo.toml version $version"
+            exit 1
+          fi
+          # Below 1.0, or with a pre-release suffix: a pre-release.
+          if [[ "$version" == 0.* || "$version" == *-* ]]; then prerelease=true; else prerelease=false; fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+          echo "version $version, pre-release: $prerelease"
+
+  build:
+    name: build (${{ matrix.target }})
+    needs: meta
+    if: github.event_name == 'push'
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          # x86_64-pc-windows-gnu, not -msvc: it is the pinned build target (.cargo/config.toml)
+          # that the tests and the CPU golden hashes run on, so the shipped .exe is the tested
+          # build. It links only system DLLs (the UCRT, DirectX, Win32), no mingw runtime DLLs.
+          - target: x86_64-pc-windows-gnu
+            os: windows-latest
+            archive: zip
+          # The oldest supported Ubuntu image, so the binary runs on older glibc versions too.
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-22.04
+            archive: tar.gz
+    runs-on: ${{ matrix.os }}
+    env:
+      CARGO_BUILD_TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: msys2/setup-msys2@v2
+        if: runner.os == 'Windows'
+        id: msys2
+        with:
+          msystem: UCRT64
+          release: false
+          install: mingw-w64-ucrt-x86_64-gcc
+      - name: Put the mingw-w64 toolchain on PATH
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Add-Content -Path $env:GITHUB_PATH -Value "${{ steps.msys2.outputs.msys2-location }}\ucrt64\bin"
+          Add-Content -Path $env:GITHUB_ENV -Value "CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=gcc"
+      - run: rustup toolchain install
+      - run: cargo build --release --locked
+      - name: Package
+        shell: bash
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+          TARGET: ${{ matrix.target }}
+          ARCHIVE: ${{ matrix.archive }}
+        run: |
+          name="pastelplash-$VERSION-$TARGET"
+          exe=pastelplash
+          [[ "$TARGET" == *windows* ]] && exe=pastelplash.exe
+          mkdir -p "dist/$name"
+          cp "target/$TARGET/release/$exe" README.md LICENSE-MIT LICENSE-APACHE "dist/$name/"
+          cp -r styles targets packs reference "dist/$name/"
+          cd dist
+          if [[ "$ARCHIVE" == zip ]]; then
+            7z a -tzip "$name.zip" "$name" > /dev/null
+          else
+            tar czf "$name.tar.gz" "$name"
+          fi
+          rm -r "$name"
+          ls -l
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: GitHub release
+    needs: [meta, build]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        working-directory: dist
+        run: |
+          sha256sum -- * > SHA256SUMS
+          cat SHA256SUMS
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PRERELEASE: ${{ needs.meta.outputs.prerelease }}
+        run: |
+          flags=()
+          [[ "$PRERELEASE" == true ]] && flags+=(--prerelease)
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --verify-tag --title "PastelPlash $GITHUB_REF_NAME" --generate-notes "${flags[@]}"
+
+  publish:
+    name: publish to crates.io
+    needs: [meta, release]
+    if: >-
+      !cancelled() && !failure() &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'push' && needs.meta.outputs.prerelease == 'false'))
+    runs-on: ubuntu-latest
+    env:
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      # cargo publish verifies the package with a build; build it natively rather than for the
+      # pinned Windows target.
+      CARGO_BUILD_TARGET: x86_64-unknown-linux-gnu
+    steps:
+      - name: Check for the registry token
+        if: env.CARGO_REGISTRY_TOKEN == ''
+        run: echo "::notice::CARGO_REGISTRY_TOKEN is not set; skipping cargo publish"
+      - uses: actions/checkout@v5
+        if: env.CARGO_REGISTRY_TOKEN != ''
+      - run: rustup toolchain install
+        if: env.CARGO_REGISTRY_TOKEN != ''
+      - name: cargo publish
+        if: env.CARGO_REGISTRY_TOKEN != ''
+        env:
+          DRY_RUN: ${{ inputs.dry-run }}
+        run: |
+          if [[ "$DRY_RUN" == true ]]; then
+            cargo publish --locked --dry-run
+          else
+            cargo publish --locked
+          fi
