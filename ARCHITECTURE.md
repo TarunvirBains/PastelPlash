@@ -77,8 +77,8 @@ reach), and per-image quantities and noise use full-image coordinates.
 - **Layers.** A style is a stack of TOML layers merged at full strength with
   `layers::merge`: a palette base, overlays (e.g. `styles/overlays/impressionist-brushwork.toml`),
   then the file's own keys. `extends = [...]` names the layers; a style that is only `extends` +
-  `name` is an alias for that stack. `StyleStack` is the programmatic form (a future
-  `--style a+b` is a synthetic stack).
+  `name` is an alias for that stack. `StyleStack` is the programmatic form; `--style a+b` (`Style::stacked`) is a synthetic stack:
+  a style, then layers by name (an overlay in `styles/overlays/`, a built-in style or a file).
 - **Merge semantics.** Numbers (and equal-length number arrays such as tone curves) interpolate
   by strength; other values switch at 0.5; keys only in the overlay appear from 0.5. Arrays of
   tables merge **by `name`**: a layer may declare only the palette groups it changes; unnamed

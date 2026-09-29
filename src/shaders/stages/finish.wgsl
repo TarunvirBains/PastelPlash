@@ -450,6 +450,25 @@ fn blown_ring(p: vec2<i32>, r: f32) -> f32 {
     return n;
 }
 
+// Terracotta (qualifying world textures only; the gate is on the CPU): an earth texel's hue first
+// gathers toward the texture's mean earth hue, then the family turns so the mean lands on the
+// target, with a little more chroma. Weighted by how far inside the earth band (feathered) and
+// how colored the texel is; neutral texels stay.
+fn finish_terracotta(lab: vec3<f32>, tint_safe: bool) -> vec3<f32> {
+    if (!(P.tc_amount > 0.0) || tint_safe) { return lab; }
+    let c = length(lab.yz);
+    let h = degrees(atan2(lab.z, lab.y));
+    let hh = select(h, h + 360.0, h < 0.0);
+    let band = smoothstep(P.tc_band0, P.tc_band0 + P.tc_feather, hh)
+        * (1.0 - smoothstep(P.tc_band1 - P.tc_feather, P.tc_band1, hh));
+    let w = P.tc_amount * band * smoothstep(0.5 * P.tc_min_c, P.tc_min_c, c);
+    if (w <= 0.0) { return lab; }
+    let turn = (P.tc_hue - P.tc_mean) + P.tc_gather * (P.tc_mean - hh);
+    let h2 = radians(hh + w * turn);
+    let c2 = c * (1.0 + w * P.tc_boost);
+    return vec3<f32>(lab.x, c2 * cos(h2), c2 * sin(h2));
+}
+
 // Glitter: a blown-white source texel with at most two blown texels on the rings at the speck
 // radius and 1.5× it, on a textured surface (the other ring texels at the speck radius span a
 // wide lightness range), is a highlight on grit, not a glint: once the surface around it is
@@ -556,6 +575,7 @@ fn finish(@builtin(global_invocation_id) gid: vec3<u32>) {
     let src = srgb_to_oklab(c.rgb);
     var lf = finish_palette(c, src, tint_safe);
     lf = finish_cast(lf, src, tint_safe);
+    lf = vec4<f32>(finish_terracotta(lf.xyz, tint_safe), lf.w);
     lf = vec4<f32>(finish_temperature(gp, lf.xyz, tint_safe), lf.w);
     lf = finish_accent(p, lf, tint_safe);
     var lab = lf.xyz;

@@ -466,3 +466,97 @@ mod tests {
         assert!(chroma_p99(&green) > 0.1);
     }
 }
+
+/// Earth colors of an image (for per-texture palette gates such as terracotta).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EarthStats {
+    /// Share of the opaque texels colored at least `min_chroma` with a hue in the band.
+    pub share: f32,
+    /// Median OKLab lightness of those earth texels (0 when there are none).
+    pub median_l: f32,
+    /// Their chroma-weighted mean hue in degrees (the band's middle when there are none).
+    pub mean_hue: f32,
+}
+
+/// The earth share, median lightness and mean hue of `image` (sampled; see [`EarthStats`]).
+pub fn earth_stats(image: &Image, band: [f32; 2], min_chroma: f32) -> EarthStats {
+    let step = stride(image, 65_536.0);
+    let (w, h) = (image.width as usize, image.height as usize);
+    let (mut opaque, mut ls, mut sa, mut sb) = (0usize, Vec::new(), 0.0f64, 0.0f64);
+    for y in (0..h).step_by(step) {
+        for x in (0..w).step_by(step) {
+            let p = px(image, x, y);
+            if p[3] < 0.5 {
+                continue;
+            }
+            opaque += 1;
+            let lab = color::srgb_to_oklab([p[0], p[1], p[2]]);
+            let [l, c, hue] = color::oklab_to_oklch(lab);
+            if c >= min_chroma && (band[0]..=band[1]).contains(&hue) {
+                ls.push(l);
+                sa += lab[1] as f64;
+                sb += lab[2] as f64;
+            }
+        }
+    }
+    let mid = 0.5 * (band[0] + band[1]);
+    if ls.is_empty() {
+        return EarthStats {
+            share: 0.0,
+            median_l: 0.0,
+            mean_hue: mid,
+        };
+    }
+    let share = ls.len() as f32 / opaque.max(1) as f32;
+    let i = ls.len() / 2;
+    let median_l = *ls.select_nth_unstable_by(i, f32::total_cmp).1;
+    EarthStats {
+        share,
+        median_l,
+        mean_hue: (sb.atan2(sa).to_degrees() as f32).rem_euclid(360.0),
+    }
+}
+
+/// Grain: how directional the texture's lightness structure is, 0 (isotropic: mottled earth,
+/// rock) to 1 (every edge runs one way: bark, planks, wood grain). The energy-weighted mean
+/// coherence of the structure tensor on a 128 px thumbnail, smoothed over 7×7 texels.
+pub fn grain(image: &Image) -> f32 {
+    let t = crate::fluid::thumbnail(image, 128);
+    let (w, h) = (t.width as usize, t.height as usize);
+    if w < 8 || h < 8 {
+        return 0.0;
+    }
+    let l: Vec<f32> = t
+        .pixels
+        .iter()
+        .map(|p| color::srgb_to_oklab([p[0], p[1], p[2]])[0])
+        .collect();
+    let at = |x: usize, y: usize| l[y.min(h - 1) * w + x.min(w - 1)];
+    let mut j = vec![[0.0f32; 3]; w * h];
+    for y in 0..h {
+        for x in 0..w {
+            let gx = at(x + 1, y) - at(x.saturating_sub(1), y);
+            let gy = at(x, y + 1) - at(x, y.saturating_sub(1));
+            j[y * w + x] = [gx * gx, gy * gy, gx * gy];
+        }
+    }
+    let (mut num, mut den) = (0.0f64, 0.0f64);
+    for y in (3..h - 3).step_by(2) {
+        for x in (3..w - 3).step_by(2) {
+            let mut s = [0.0f32; 3];
+            for yy in y - 3..=y + 3 {
+                for xx in x - 3..=x + 3 {
+                    let v = j[yy * w + xx];
+                    for k in 0..3 {
+                        s[k] += v[k];
+                    }
+                }
+            }
+            let tr = s[0] + s[1];
+            let coh = ((s[0] - s[1]).powi(2) + 4.0 * s[2] * s[2]).sqrt();
+            num += coh as f64;
+            den += tr as f64;
+        }
+    }
+    if den <= 0.0 { 0.0 } else { (num / den) as f32 }
+}

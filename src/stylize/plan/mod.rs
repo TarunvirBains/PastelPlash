@@ -19,6 +19,7 @@ mod palette;
 mod speck;
 mod strokes;
 mod temperature;
+mod terracotta;
 mod tint;
 mod value;
 mod watercolor;
@@ -184,6 +185,7 @@ impl Planner {
         let watercolor = watercolor::plan(style, &tr, &facts);
         let tint_safe = tint::plan(image, &tr, &facts);
         let speck = speck::plan(style, ctx, &facts);
+        let terracotta = terracotta::plan(image, style, ctx, facts.tint_safe);
 
         let mut params = Params {
             full_x: facts.w as i32,
@@ -208,6 +210,7 @@ impl Planner {
         watercolor.write(&mut params, style, &facts);
         tint_safe.write(&mut params);
         speck.write(&mut params);
+        terracotta.write(&mut params, style);
 
         // Filter reach: how far a texel's result depends on its neighbors (chunk overlap).
         let reach = [
@@ -250,7 +253,7 @@ impl Planner {
                 busy,
                 speckle,
                 marks_scale,
-                grouping: grouping.note,
+                grouping: grouping.note + &terracotta.note,
                 analysis: t_start.elapsed(),
             },
         })

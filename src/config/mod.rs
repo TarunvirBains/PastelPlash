@@ -26,7 +26,8 @@ pub use pack::{
 };
 pub use style::{
     Abstraction, Cast, Contrast, Delight, Grouping, HueGroup, Kuwahara, Marks, Palette, Scale,
-    Strokes, Style, Temperature, Tiling, Tint, ValueContrast, Warmth, WaterTone, Watercolor,
+    Strokes, Style, Temperature, Terracotta, Tiling, Tint, ValueContrast, Warmth, WaterTone,
+    Watercolor,
 };
 pub use target::{Exposure, Resolution, Target, Treatment};
 
@@ -42,6 +43,11 @@ impl Config {
     pub fn load(style: Option<&Path>, target: Option<&Path>, pack: Option<&Path>) -> Result<Self> {
         let mut config = Self {
             style: match style {
+                // `a+b` that is not a file is a stack of styles and layers (`--style
+                // ss-terracotta+impressionist`).
+                Some(path) if !path.exists() && path.to_string_lossy().contains('+') => {
+                    Style::stacked(&path.to_string_lossy())?
+                }
                 // A bare name that is not a file is a built-in style (`--style impressionist`).
                 Some(path)
                     if !path.exists()

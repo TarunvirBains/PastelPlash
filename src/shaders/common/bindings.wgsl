@@ -43,6 +43,9 @@ struct Params {
     ts_on: f32, ts_shift: f32, ts_amp: f32, ts_max: f32,
     speck_r: f32, speck_thr: f32, clip_r: f32, thin_r: f32,
     thin_amount: f32, cast_black1: f32, cast_black_chroma: f32, _pad17: f32,
+    tc_amount: f32, tc_hue: f32, tc_mean: f32, tc_gather: f32,
+    tc_band0: f32, tc_band1: f32, tc_feather: f32, tc_min_c: f32,
+    tc_boost: f32, _pad18: f32, _pad19: f32, _pad20: f32,
 };
 
 struct Band { y0: i32, y1: i32, _a: i32, _b: i32 };

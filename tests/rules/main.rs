@@ -307,6 +307,10 @@ pub fn tweaked(config: &Config, section: &str, key: &str, value: f64) -> Config 
             if let Some(s) = mood.get_mut(section).and_then(Value::as_table_mut) {
                 s.remove(key);
             }
+            let path = format!("{section}.{key}");
+            if let Some(hold) = mood.get_mut("hold").and_then(Value::as_array_mut) {
+                hold.retain(|v| v.as_str() != Some(path.as_str()));
+            }
         }
     }
     let mut style = pastelplash::config::Style::parse(&toml::to_string(&raw).unwrap()).unwrap();

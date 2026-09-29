@@ -208,8 +208,8 @@ struct O2rArgs {
     /// Also copy every unprocessed entry, producing a complete standalone pack.
     #[arg(long)]
     complete: bool,
-    /// Style config (TOML file) or built-in style name; default: the built-in default style
-    /// (impressionist).
+    /// Style config (TOML file), built-in style name, or a stack `a+b` (a style plus layers, e.g.
+    /// ss-terracotta+impressionist); default: the built-in default style (impressionist).
     #[arg(long, value_name = "FILE|NAME")]
     style: Option<PathBuf>,
     #[arg(long, value_name = "FILE")]
@@ -300,8 +300,8 @@ struct ProcessArgs {
     /// Follow symlinks when walking.
     #[arg(long)]
     follow_links: bool,
-    /// Style config (TOML file) or built-in style name; default: the built-in default style
-    /// (impressionist).
+    /// Style config (TOML file), built-in style name, or a stack `a+b` (a style plus layers, e.g.
+    /// ss-terracotta+impressionist); default: the built-in default style (impressionist).
     #[arg(long, value_name = "FILE|NAME")]
     style: Option<PathBuf>,
     /// Target renderer profile (TOML).

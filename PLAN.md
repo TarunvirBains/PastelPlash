@@ -36,8 +36,8 @@ pastelplash process <input> <output> [options]
   --copy-other        copy non-PNG files through, so the output is a complete drop-in pack
   --follow-links      follow symlinks when walking (off by default; loops are detected and skipped)
   --style <file|name> style config or built-in style name (default: impressionist); a style that
-                      is only `extends` + `name` is an alias for its layer stack
-                      (planned: --style a+b stacks layers directly)
+                      is only `extends` + `name` is an alias for its layer stack; `a+b` stacks a
+                      style and layers directly (e.g. ss-terracotta+impressionist)
   --target <file>     target renderer profile (e.g. targets/soh-celshade.toml)
   --pack <file>       pack map (e.g. packs/oot-reloaded.toml)
   -j, --jobs <n>      worker threads (default: all cores)

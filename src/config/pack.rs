@@ -34,6 +34,10 @@ pub struct Pack {
     /// Path globs of files that never get the large-scale abstraction pass (signs whose thin
     /// painted borders and lettering must stay).
     pub no_abstraction: Vec<String>,
+    /// Path globs of files that never turn terracotta (area opt-out).
+    pub no_terracotta: Vec<String>,
+    /// When not empty, only files matching one of these globs may turn terracotta (area opt-in).
+    pub terracotta_only: Vec<String>,
     /// Detect fluids (water, lava) among world textures by their look (`crate::fluid`).
     pub detect_fluids: bool,
     /// Fluid rules by path glob, first match wins: confirm or override the detector, and give
@@ -119,6 +123,8 @@ impl Default for Pack {
             brushwork: Vec::new(),
             no_grouping: Vec::new(),
             no_abstraction: Vec::new(),
+            no_terracotta: Vec::new(),
+            terracotta_only: Vec::new(),
             detect_fluids: true,
             fluids: Vec::new(),
             name: String::new(),
@@ -164,6 +170,14 @@ impl Pack {
     pub fn grouping_allowed(&self, path: &Path) -> bool {
         let p = path.to_string_lossy().replace('\\', "/");
         !self.no_grouping.iter().any(|g| glob_match(g, &p))
+    }
+
+    /// Whether the area opt-in and opt-out lists let the file turn terracotta.
+    pub fn terracotta_allowed(&self, path: &Path) -> bool {
+        let p = path.to_string_lossy().replace('\\', "/");
+        !self.no_terracotta.iter().any(|g| glob_match(g, &p))
+            && (self.terracotta_only.is_empty()
+                || self.terracotta_only.iter().any(|g| glob_match(g, &p)))
     }
 
     /// False if a `no_abstraction` glob matches the file.

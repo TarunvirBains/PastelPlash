@@ -1,0 +1,4 @@
+# SS terracotta: ss-baseline's palette plus the terracotta layer (a warm rose-sienna on
+# grain-free, mid-value earth browns, per texture: Faron Woods earth).
+extends = ["ss-baseline.toml", "overlays/terracotta.toml"]
+name = "ss-terracotta"

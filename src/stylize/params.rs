@@ -161,6 +161,19 @@ pub(super) struct Params {
     cast_black1: f32,
     cast_black_chroma: f32,
     _pad17: f32,
+
+    tc_amount: f32,
+    tc_hue: f32,
+    tc_mean: f32,
+    tc_gather: f32,
+    tc_band0: f32,
+    tc_band1: f32,
+    tc_feather: f32,
+    tc_min_c: f32,
+    tc_boost: f32,
+    _pad18: f32,
+    _pad19: f32,
+    _pad20: f32,
 }
 }
 

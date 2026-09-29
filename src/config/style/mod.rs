@@ -20,6 +20,7 @@ mod palette;
 mod scale;
 mod strokes;
 mod temperature;
+mod terracotta;
 mod tiling;
 mod value;
 mod watercolor;
@@ -33,6 +34,7 @@ pub use palette::{Cast, HueGroup, Palette, Tint, Warmth, WaterTone};
 pub use scale::Scale;
 pub use strokes::Strokes;
 pub use temperature::Temperature;
+pub use terracotta::Terracotta;
 pub use tiling::Tiling;
 pub use value::{Contrast, ValueContrast};
 pub use watercolor::Watercolor;
@@ -61,6 +63,7 @@ pub struct Style {
     pub grouping: Grouping,
     pub marks: Marks,
     pub watercolor: Watercolor,
+    pub terracotta: Terracotta,
     /// Named moods: partial overrides of this style (see `src/mood.rs`). The style itself is
     /// the `base` mood.
     pub moods: BTreeMap<String, toml::Table>,
@@ -116,6 +119,53 @@ impl Style {
         let path = PathBuf::from(format!("{name}.toml"));
         let raw = layers::load(&path, &builtin::read)?;
         Self::from_table(raw).with_context(|| format!("parsing built-in style {name}"))
+    }
+
+    /// A stack named `a+b+…` (`--style ss-terracotta+impressionist`): the first part is a style
+    /// (a file, or a built-in name), each later part a layer merged over it at full strength: a
+    /// file, an overlay in `styles/overlays/` by name (`impressionist` names the
+    /// `impressionist-brushwork` overlay), or a built-in style. A palette layer times a
+    /// brushwork layer without a file for every combination.
+    pub fn stacked(spec: &str) -> Result<Self> {
+        let parts: Vec<&str> = spec.split('+').map(str::trim).collect();
+        anyhow::ensure!(
+            parts.len() >= 2 && parts.iter().all(|p| !p.is_empty()),
+            "style stack {spec:?}: name two or more styles or layers joined by `+`"
+        );
+        let mut stack = layers::StyleStack::new();
+        for (i, part) in parts.iter().enumerate() {
+            let path = Path::new(part);
+            let table = if path.is_file() {
+                layers::load(path, &|p: &Path| {
+                    fs::read_to_string(p).with_context(|| format!("reading {}", p.display()))
+                })?
+            } else {
+                let candidates: Vec<String> = if i == 0 {
+                    vec![format!("{part}.toml")]
+                } else {
+                    vec![
+                        format!("overlays/{part}.toml"),
+                        format!("overlays/{part}-brushwork.toml"),
+                        format!("{part}.toml"),
+                    ]
+                };
+                let found = candidates
+                    .iter()
+                    .find(|c| builtin::read(Path::new(c)).is_ok())
+                    .with_context(|| {
+                        format!(
+                            "style stack {spec:?}: {part:?} is no file, built-in style or overlay"
+                        )
+                    })?;
+                layers::load(Path::new(found), &builtin::read)?
+            };
+            stack.push(table);
+        }
+        let mut raw = stack
+            .resolve()
+            .with_context(|| format!("merging the style stack {spec:?}"))?;
+        raw.insert("name".into(), toml::Value::String(spec.to_string()));
+        Self::from_table(raw).with_context(|| format!("parsing the style stack {spec:?}"))
     }
 
     /// Parses a style, keeping its TOML so moods can be derived from it.
@@ -216,6 +266,50 @@ impl Style {
         self.strokes.validate()?;
         self.temperature.validate()?;
         self.delight.validate()?;
+        self.terracotta.validate()?;
         self.grouping.validate()
+    }
+}
+
+#[cfg(test)]
+mod stack_tests {
+    use super::*;
+
+    fn same(a: &Style, b: &Style) {
+        let strip = |s: &Style| {
+            let mut s = s.clone();
+            s.name.clear();
+            if let Some(r) = s.raw.as_mut() {
+                r.remove("name");
+            }
+            s
+        };
+        assert_eq!(strip(a), strip(b));
+    }
+
+    #[test]
+    fn a_stack_equals_the_style_file_of_the_same_layers() {
+        same(
+            &Style::stacked("watercolor+impressionist").unwrap(),
+            &Style::builtin("impressionist").unwrap(),
+        );
+        same(
+            &Style::stacked("ss-baseline+impressionist").unwrap(),
+            &Style::builtin("ss-impressionist").unwrap(),
+        );
+        same(
+            &Style::stacked("ss-terracotta+impressionist").unwrap(),
+            &Style::builtin("ss-terracotta-impressionist").unwrap(),
+        );
+        same(
+            &Style::stacked("ss-baseline+terracotta").unwrap(),
+            &Style::builtin("ss-terracotta").unwrap(),
+        );
+        assert_eq!(
+            Style::stacked("ss-baseline+terracotta").unwrap().name,
+            "ss-baseline+terracotta"
+        );
+        assert!(Style::stacked("ss-baseline+nope").is_err());
+        assert!(Style::stacked("ss-baseline+").is_err());
     }
 }
