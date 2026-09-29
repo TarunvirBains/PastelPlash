@@ -85,7 +85,7 @@ transparency becomes an alpha channel. Ancillary chunks (`gAMA`, `sRGB`, `iCCP`,
 
 ## Style rules
 
-The hard limits of the style (no dark greens, pastel floors, cool accent darks, the actor lightness ceiling,
+The hard limits of the style (colored darks, chroma floors, cool accent darks, the actor lightness ceiling,
 no blur, …) live in the style contract `rules.toml` and are enforced by tests over every style in `styles/`.
 See [docs/RULES.md](docs/RULES.md) for each rule, why it exists, and the test that enforces it.
 
@@ -106,7 +106,7 @@ Verified from source (`libultraship` `src/fast/shaders/*/default.shader.*`, `soh
 - Two tones via smoothstep on half-Lambert N·L; texture is only **multiplied** (`texel.rgb *= mix(shadow, lit, ramp)`),
   never posterized. Defaults: `RampCenter` 0.5, `RampSoftness` 0.02, `HighlightIntensity` 0.6, `ShadowIntensity` 0.6.
   Lit ≈ `ambient + 0.6·key`, shadow ≈ `ambient + 0.24·key`.
-- Lit factor can exceed 1 in bright scenes ⇒ pale pastel actor textures can clip ⇒ lightness ceiling for `actor`.
+- Lit factor can exceed 1 in bright scenes ⇒ pale actor textures can clip ⇒ lightness ceiling for `actor`.
 - No outlines, rim light, specular, grading or post-process. `HighlightBands` is a debug view — keep it off.
 - `ShadowIntensity` is a tuning lever for SS-style light shadows; calibrate alongside the textures.
 

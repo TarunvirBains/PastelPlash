@@ -43,7 +43,6 @@ There are three kinds of change, and each has its own place:
 | `watercolor` (default) | The source's own rich color, painted: gentle SS hue nudges, crushed darks lifted into colored shadows, softer internal value contrast, watercolor technique. |
 | `impressionist` | Extends `watercolor`; differs only in bolder brushwork, slightly stronger warm/cool and a few more accents. |
 | `ss-baseline` | Extends `watercolor`; nudged further toward Skyward Sword (stronger hue pulls, mild lift). |
-| `pastel` (opt-in) | Light and dreamy: every hue lifted toward SS's pastel lightness, at SS's chroma — never gray. Moves furthest from the source, so it has its own identity bound. |
 
 A **mood** is a named partial override of a style (`[moods.<name>]` in the style file), assigned
 to files by the pack map (`[[moods]]` rules with a glob and a strength 0–1). The style as written
@@ -68,7 +67,7 @@ All lightness (L) and chroma (C) values are OKLCH. "Tolerance" means `[tolerance
 
 | Rule | Why | Enforced by |
 |---|---|---|
-| **Mean color stays.** Each texture's alpha-weighted mean OKLab color stays within `identity.max_mean_delta_e` of the source's (opt-in styles such as `pastel` have their own larger bound). | Kokiri green stays Kokiri green; Death Mountain stays brown. The game must stay recognizable. | `rules_render::rule_identity_is_kept` |
+| **Mean color stays.** Each texture's alpha-weighted mean OKLab color stays within `identity.max_mean_delta_e` of the source's (`ss-baseline`, which moves further toward SS, has its own larger bound). | Kokiri green stays Kokiri green; Death Mountain stays brown. The game must stay recognizable. | `rules_render::rule_identity_is_kept` |
 | **Hue families stay.** Per hue group, the mean hue moves by at most `identity.max_group_hue_shift`; any colored texel by at most `palette.max_hue_shift`. | SS hue nudges are nudges, not a repaint. | `rule_identity_is_kept`, `rules_config::rule_hue_shifts_are_bounded` |
 | **Recognizable from across the room.** On a 16×16 grid, each cell's dark-half and light-half mean colors (split at the cell's median L) stay close to the source's: chroma change p90 ≤ `identity.coarse_max_color`, lightness change p90 ≤ `identity.coarse_max_lightness` (per-style overrides for opt-in looks). Brushwork only moves texels within a cell and doesn't register. | A mean color can match while the texture is transformed: v2's navy grooves over tan averaged back to brown. The half-means don't. | `rule_coarse_identity_is_kept` |
 | **Warmth is targeted.** Earth warmth changes only sources whose hue is in its band (exactly nothing outside it), weighted by chroma, and never pushes an earth hue past its target. | A safe, deterministic warm-up for OoT's olive ground, unlike an untargeted tint. | `rule_warmth_is_targeted`, `rule_warmth_stays_in_band` |

@@ -471,7 +471,7 @@ proptest! {
 
     #[test]
     fn rule_pastel_is_not_gray(l in 0.15f32..0.95, c in 0.05f32..0.25, h in 0.0f32..360.0) {
-        // Colored sources keep their color in every style, including pastel.
+        // Colored sources keep their color in every style: lifted colors never go chalky.
         let k = contract();
         let rgb = from_oklch(l, c, h);
         let [_, c_src, _] = lch([rgb[0], rgb[1], rgb[2], 1.0]);

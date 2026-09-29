@@ -49,7 +49,7 @@ fi
 [[ -n "${SOH_DIR:-}" && -d "$SOH_DIR" ]] || { echo "set SOH_DIR to your Ship of Harkinian folder" >&2; exit 1; }
 PACK=${PACK:-"$SOH_DIR/mods/OoT_Reloaded_v11.0.0_4K.o2r"}
 [[ -f "$PACK" ]] || { echo "pack not found: $PACK" >&2; exit 1; }
-STYLES=${STYLES:-"watercolor impressionist ss-baseline pastel"}
+STYLES=${STYLES:-"watercolor impressionist ss-baseline"}
 INSTALL=${INSTALL:-variants}
 INSTALL_STYLE=${INSTALL_STYLE:-watercolor}
 OUT_DIR=${OUT_DIR:-"$REPO/target/mods"}

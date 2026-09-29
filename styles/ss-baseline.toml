@@ -1,6 +1,6 @@
 # SS middle ground: the default watercolor's painted OoT look, nudged further toward Skyward
 # Sword — stronger pulls to SS's hue families, SS-level chroma floors, a mild lift and softer
-# contrast. Still recognizably OoT; for the full light take, see pastel.toml.
+# contrast. Still recognizably OoT.
 extends = "watercolor.toml"
 name = "ss-baseline"
 

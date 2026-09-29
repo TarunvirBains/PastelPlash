@@ -1,7 +1,7 @@
 # PastelPlash style contract: the hard limits every style in `styles/` (in every mood it defines)
 # and every target in `targets/` must stay within. The rule tests (tests/rules_*.rs) read these
-# bounds; they never hard-code values. Bounds are wide enough for every shipped style, from the
-# rich-color default to pastel.
+# bounds; they never hard-code values. Bounds are wide enough for every shipped style (the
+# watercolor base, impressionist, ss-baseline) and no wider.
 #
 # Tuning a style inside these bounds needs no test changes. Changing a bound here changes what
 # PastelPlash's style *is*: do it deliberately, in its own reviewed commit. See docs/RULES.md.
@@ -74,8 +74,6 @@ adaptive_min_effect = 0.2
 # Small salient objects (thin sticks, small bright shapes) on a busy wall keep at least this
 # share of their contrast against their surroundings.
 small_object_min_contrast = 0.5
-# pastel lifts every dark to its light floor by design, so dark objects keep less contrast.
-small_object_styles = { pastel = 0.2 }
 
 # Identity: it must still look and feel like the source game. Each texture's alpha-weighted mean
 # OKLab color stays within max_mean_delta_e of the source's (for relit actors, of the source
@@ -100,14 +98,9 @@ coarse_min_pattern_range = 0.45
 
 [identity.styles]
 ss-baseline = 0.15
-pastel = 0.45
-
-[identity.coarse_color_styles]
-pastel = 0.12
 
 [identity.coarse_lightness_styles]
 ss-baseline = 0.25
-pastel = 0.7   # pastel lifts near-black to its 0.55 floor by design
 
 # Applies to every file in targets/.
 [target]

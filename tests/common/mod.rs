@@ -75,8 +75,6 @@ pub struct IdentityRules {
     #[serde(default)]
     pub styles: std::collections::BTreeMap<String, f32>,
     #[serde(default)]
-    pub coarse_color_styles: std::collections::BTreeMap<String, f32>,
-    #[serde(default)]
     pub coarse_lightness_styles: std::collections::BTreeMap<String, f32>,
 }
 
@@ -84,10 +82,7 @@ impl IdentityRules {
     /// The coarse (chroma, lightness) bounds for a style.
     pub fn coarse_bounds(&self, style: &str) -> (f32, f32) {
         (
-            self.coarse_color_styles
-                .get(style)
-                .copied()
-                .unwrap_or(self.coarse_max_color),
+            self.coarse_max_color,
             self.coarse_lightness_styles
                 .get(style)
                 .copied()
@@ -175,8 +170,6 @@ pub struct TechniqueRules {
     pub value_mean_tolerance: f32,
     pub adaptive_min_effect: f32,
     pub small_object_min_contrast: f32,
-    #[serde(default)]
-    pub small_object_styles: std::collections::BTreeMap<String, f32>,
 }
 
 #[derive(Debug, Deserialize)]

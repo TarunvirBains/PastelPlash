@@ -147,14 +147,7 @@ fn rule_coarse_light_pattern_survives() {
             return;
         };
         let (corr, range) = coarse_l_pattern(&img, &out, 16);
-        let style_name = label.split(" [").next().unwrap_or_default();
-        let (_, max_l) = k.identity.coarse_bounds(style_name);
-        // Opt-in light styles lift everything and legitimately shrink the range.
-        let min_range = if max_l > k.identity.coarse_max_lightness {
-            0.2
-        } else {
-            k.identity.coarse_min_pattern_range
-        };
+        let min_range = k.identity.coarse_min_pattern_range;
         assert!(
             corr >= k.identity.coarse_min_pattern_corr,
             "{label}: lichen pattern correlation {corr:.2}"
@@ -214,13 +207,7 @@ fn rule_small_objects_survive() {
             return;
         };
         let (s1, q1) = (contrast(&out, &is_stick), contrast(&out, &is_square));
-        let style_name = label.split(" [").next().unwrap_or_default();
-        let keep = k
-            .technique
-            .small_object_styles
-            .get(style_name)
-            .copied()
-            .unwrap_or(k.technique.small_object_min_contrast);
+        let keep = k.technique.small_object_min_contrast;
         assert!(
             s1 >= keep * c_stick,
             "{label}: stick contrast {c_stick:.3} -> {s1:.3}"

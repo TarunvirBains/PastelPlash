@@ -432,8 +432,8 @@ mod tests {
     use super::*;
     use crate::config::Style;
 
-    fn skyward() -> Palette {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("styles/pastel.toml");
+    fn default_palette() -> Palette {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("styles/watercolor.toml");
         Style::load(&path).unwrap().palette
     }
 
@@ -455,7 +455,7 @@ mod tests {
     fn zero_strength_is_identity() {
         let p = Palette {
             strength: 0.0,
-            ..skyward()
+            ..default_palette()
         };
         for rgb in [
             [0.1, 0.5, 0.2],
@@ -472,7 +472,8 @@ mod tests {
 
     #[test]
     fn no_dark_greens_and_value_order_is_kept() {
-        let p = skyward();
+        let mut p = default_palette();
+        p.dark_greens = false;
         let m = mapping(&p);
         let greens = [
             [0.02, 0.08, 0.01],
@@ -484,7 +485,7 @@ mod tests {
         let mut prev = 0.0;
         for rgb in greens {
             let [l, _, h] = lch(m.map(rgb));
-            assert!(l >= 0.72, "{rgb:?} -> L {l}");
+            assert!(l >= p.light_green_floor - 1e-3, "{rgb:?} -> L {l}");
             assert!(l > prev, "order lost at {rgb:?}");
             assert!((100.0..175.0).contains(&h), "{rgb:?} -> hue {h}");
             prev = l;
@@ -492,8 +493,8 @@ mod tests {
     }
 
     #[test]
-    fn every_hue_is_pastel() {
-        let p = skyward();
+    fn crushed_darks_of_every_hue_are_lifted() {
+        let p = default_palette();
         let m = mapping(&p);
         for rgb in [
             [0.3, 0.02, 0.02],
@@ -502,7 +503,7 @@ mod tests {
             [0.25, 0.12, 0.04],
         ] {
             let [l, c, _] = lch(m.map(rgb));
-            assert!(l >= 0.5, "{rgb:?} -> L {l}");
+            assert!(l >= p.l_floor - 1e-3, "{rgb:?} -> L {l}");
             assert!(c <= 0.16, "{rgb:?} -> C {c}");
         }
     }
@@ -530,7 +531,7 @@ mod tests {
 
     #[test]
     fn mapping_is_continuous_across_hue() {
-        let p = skyward();
+        let p = default_palette();
         let m = mapping(&p);
         let mut prev = m.map(color::oklch_to_srgb_gamut([0.5, 0.08, 0.0]));
         for i in 1..=720 {
@@ -552,7 +553,7 @@ mod tests {
 
     #[test]
     fn denying_dark_greens_lifts_only_green_groups() {
-        let mut p = skyward();
+        let mut p = default_palette();
         for g in &mut p.groups {
             g.l_floor = 0.3;
         }
@@ -604,10 +605,10 @@ mod tests {
 
     #[test]
     fn extrapolation_stays_in_gamut_and_gets_lighter() {
-        let base = skyward();
+        let base = default_palette();
         let more = Palette {
             strength: 2.0,
-            ..skyward()
+            ..default_palette()
         };
         let lut = mapping(&more).bake();
         assert!(
