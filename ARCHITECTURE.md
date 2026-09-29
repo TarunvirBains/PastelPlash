@@ -9,7 +9,8 @@ intent and phases in [PLAN.md](PLAN.md).
 ```
 src/
   main.rs                 CLI (clap)
-  driver.rs               per-file flow shared by every front end: classify → mood → run
+  driver.rs               per-file flow shared by every front end: classify → material → mood → run
+  fluid.rs                fluid detection (water, lava) from the pixels, on a thumbnail
   process.rs              front end: PNG folder in, PNG folder out
   adapters/o2r.rs         front end: libultraship .o2r archives (the only place OTEX exists)
   pipeline.rs             Stage trait, Pipeline, FileContext
@@ -17,7 +18,7 @@ src/
     mod.rs                Config::load (style, target, pack map), validation helpers
     layers.rs             merge(), StyleStack, `extends` resolution
     builtin.rs            the shipped styles, compiled in
-    category.rs           Category + policy (is_stylized, may_tile, may_group)
+    category.rs           Category + policy (is_stylized, may_tile, may_group, is_fluid, is_emissive)
     target.rs             Target, Treatment (per category), Exposure
     pack.rs               Pack map: path globs → category, mood, marks, opt-outs (pure data)
     style/                Style and one module per section (struct + Default + validate())
@@ -32,7 +33,7 @@ src/
   shaders/stages/*.wgsl   one file per pass or finish stage, concatenated in a fixed order
   analysis.rs grouping.rs palette.rs exposure.rs lut.rs color.rs   CPU math
   image.rs png_io.rs walk.rs                                        I/O
-  report.rs compare.rs                                              dev tools
+  report.rs compare.rs audit.rs                                     dev tools
 ```
 
 ## Pass graph

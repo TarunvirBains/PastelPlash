@@ -286,6 +286,8 @@ pub struct Mapping<'a> {
     pub floor_c_scale: f32,
     /// Scales the dark chroma floor (target `dark_chroma`).
     pub dark_c_scale: f32,
+    /// Scales the pull toward the reference water tone (target `reference`).
+    pub reference_scale: f32,
 }
 
 impl<'a> Mapping<'a> {
@@ -299,6 +301,7 @@ impl<'a> Mapping<'a> {
             hue_scale: tr.hue,
             floor_c_scale: tr.chroma_floor,
             dark_c_scale: tr.dark_chroma,
+            reference_scale: tr.reference,
         }
     }
 }
@@ -487,6 +490,21 @@ impl Mapping<'_> {
         let ll = ll.clamp(lowest, ceiling);
         let mut cc = cc.min(vivid_cap);
         let mut hh = hh;
+        // 8. Reference water tone: hue and chroma move toward it as one a/b blend, lightness
+        // stays.
+        let wt = &p.water;
+        let pull = (wt.pull * self.reference_scale * s.min(1.0)).clamp(0.0, 1.0);
+        if pull > 0.0 {
+            let target_c = cc.clamp(wt.chroma[0], wt.chroma[1]);
+            let (sh, ch) = hh.to_radians().sin_cos();
+            let (st, ct) = wt.hue.to_radians().sin_cos();
+            let a = lerp(cc * ch, target_c * ct, pull);
+            let b = lerp(cc * sh, target_c * st, pull);
+            cc = a.hypot(b);
+            if cc > 1e-6 {
+                hh = b.atan2(a).to_degrees().rem_euclid(360.0);
+            }
+        }
         // Darks are colored, never black or mud: below `dark_below`, chroma reaches at least
         // `dark_chroma` — along the source's own hue when it is clearly colored, along the shadow
         // tint's hue when it is (near-)neutral, rotating between them along the shortest arc so
@@ -500,7 +518,8 @@ impl Mapping<'_> {
                 // cast, e.g. a white curtain's fold shadows) take the shadow tint's hue, so the
                 // lift never turns a faint cast into colored stripes. (Rotating between the two
                 // would pass through unrelated hues: halfway between umber and blue is green.)
-                if c_rel < 0.03 {
+                // Water keeps the hue the reference tone gave it (never umber-brown depths).
+                if c_rel < 0.03 && pull <= 0.0 {
                     hh = p.shadow_tint.hue;
                 }
                 cc = want;
@@ -548,6 +567,7 @@ mod tests {
             warmth_scale: 1.0,
             floor_c_scale: 1.0,
             dark_c_scale: 1.0,
+            reference_scale: 0.0,
         }
     }
 
@@ -705,6 +725,50 @@ mod tests {
             chroma(&plain)
         );
         assert!((chroma(&other_hues) - chroma(&plain)).abs() < 1e-4);
+    }
+
+    #[test]
+    fn the_reference_water_tone_pulls_hue_and_chroma_and_keeps_lightness() {
+        let mut p = default_palette();
+        p.water = crate::config::WaterTone {
+            hue: 140.0,
+            chroma: [0.035, 0.06],
+            pull: 0.5,
+        };
+        let m = Mapping {
+            reference_scale: 1.0,
+            lift_scale: 0.0,
+            hue_scale: 0.0,
+            ..mapping(&p)
+        };
+        let off = Mapping {
+            reference_scale: 0.0,
+            ..m
+        };
+        for src in [[0.5, 0.03, 180.0], [0.4, 0.12, 245.0], [0.55, 0.0, 0.0]] {
+            let rgb = color::oklch_to_srgb_gamut(src);
+            let [l0, c0, h0] = lch(off.map(rgb));
+            let [l1, c1, h1] = lch(m.map(rgb));
+            assert!((l1 - l0).abs() < 0.01, "{src:?}: L {l0} -> {l1}");
+            if c0 > 0.01 {
+                assert!(
+                    hue_diff(h1, 140.0).abs() < hue_diff(h0, 140.0).abs(),
+                    "{src:?}: hue {h0} -> {h1}"
+                );
+            }
+            // Chroma moves toward the range, never away from it.
+            let dist = |c: f32| (c - c.clamp(0.035, 0.06)).abs();
+            assert!(dist(c1) <= dist(c0) + 1e-3, "{src:?}: C {c0} -> {c1}");
+        }
+        // A near-gray source takes the reference hue, not an unrelated one (nor, when dark, the
+        // umber of the colored-shadow floor).
+        for l in [0.5, 0.3] {
+            let [_, c, h] = lch(m.map(color::oklch_to_srgb_gamut([l, 0.004, 20.0])));
+            assert!(
+                c > 0.01 && hue_diff(h, 140.0).abs() < 20.0,
+                "L {l}: C {c} h {h}"
+            );
+        }
     }
 
     #[test]

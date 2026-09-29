@@ -20,7 +20,8 @@ pub(super) fn marks(
     let mut marks_scale = ctx.config.pack.marks_scale_for(ctx.rel);
     let mut speckle = 0.0;
     let mk = &style.marks;
-    if mk.tiling_multiplier != 1.0 && (wrap[0] || wrap[1]) {
+    // Fluids are not ground grit: their marks stay small (caustics would turn into cells).
+    if mk.tiling_multiplier != 1.0 && (wrap[0] || wrap[1]) && !ctx.category.is_fluid() {
         let fine = facts.l_std(image, (3.0 * f).max(1.0));
         let mid = facts.l_std(image, (12.0 * f).max(2.0));
         speckle = fine / mid.max(1e-6);

@@ -29,7 +29,7 @@ pub use delight::Delight;
 pub use grouping::Grouping;
 pub use kuwahara::Kuwahara;
 pub use marks::Marks;
-pub use palette::{Cast, HueGroup, Palette, Tint, Warmth};
+pub use palette::{Cast, HueGroup, Palette, Tint, Warmth, WaterTone};
 pub use scale::Scale;
 pub use strokes::Strokes;
 pub use temperature::Temperature;
@@ -196,6 +196,11 @@ impl Style {
         if let Some(dark) = mood.dark_greens {
             style.palette.dark_greens = dark;
         }
+        // An area's own reference water tone (a pack-map fluid rule).
+        let water = &mut style.palette.water;
+        water.hue = mood.water_hue.unwrap_or(water.hue);
+        water.chroma = mood.water_chroma.unwrap_or(water.chroma);
+        water.pull = mood.water_pull.unwrap_or(water.pull);
         style.validate().with_context(|| format!("mood {mood}"))?;
         Ok(style)
     }

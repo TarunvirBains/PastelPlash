@@ -34,6 +34,38 @@ pub struct Pack {
     /// Path globs of files that never get the large-scale abstraction pass (signs whose thin
     /// painted borders and lettering must stay).
     pub no_abstraction: Vec<String>,
+    /// Detect fluids (water, lava) among world textures by their look (`crate::fluid`).
+    pub detect_fluids: bool,
+    /// Fluid rules by path glob, first match wins: confirm or override the detector, and give
+    /// an area its own water reference tone.
+    pub fluids: Vec<FluidRule>,
+}
+
+/// What a fluid rule says a file is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FluidRuleKind {
+    Water,
+    Lava,
+    Liquid,
+    /// Never a fluid, whatever the detector says.
+    None,
+}
+
+/// Confirms or overrides fluid detection for matching files, and may override the water
+/// reference tone of the style (`palette.water`) for them.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FluidRule {
+    pub glob: String,
+    /// The file's material; unset leaves it to the detector.
+    pub kind: Option<FluidRuleKind>,
+    /// Reference water hue (OKLCH degrees) for this area.
+    pub water_hue: Option<f32>,
+    /// Reference water chroma range for this area.
+    pub water_chroma: Option<[f32; 2]>,
+    /// Pull toward the reference for this area (0..1).
+    pub water_pull: Option<f32>,
 }
 
 /// Scales the paint-mark size (the painting Kuwahara radius) of matching files, e.g. for
@@ -85,6 +117,8 @@ impl Default for Pack {
             brushwork: Vec::new(),
             no_grouping: Vec::new(),
             no_abstraction: Vec::new(),
+            detect_fluids: true,
+            fluids: Vec::new(),
             name: String::new(),
             rules: Vec::new(),
             list: None,
@@ -150,6 +184,12 @@ impl Pack {
             })
     }
 
+    /// The first fluid rule matching the file.
+    pub fn fluid_rule_for(&self, path: &Path) -> Option<&FluidRule> {
+        let p = path.to_string_lossy().replace('\\', "/");
+        self.fluids.iter().find(|r| glob_match(&r.glob, &p))
+    }
+
     /// Rejects unknown cast names and out-of-range strengths.
     pub fn validate(&self) -> anyhow::Result<()> {
         for r in &self.brushwork {
@@ -159,6 +199,22 @@ impl Pack {
                 r.glob,
                 r.strength
             );
+        }
+        for r in &self.fluids {
+            if let Some(p) = r.water_pull {
+                anyhow::ensure!(
+                    (0.0..=1.0).contains(&p),
+                    "fluids {:?}: water_pull = {p} must be within 0..=1",
+                    r.glob
+                );
+            }
+            if let Some([lo, hi]) = r.water_chroma {
+                anyhow::ensure!(
+                    0.0 <= lo && lo <= hi,
+                    "fluids {:?}: water_chroma = [{lo}, {hi}] must be increasing and >= 0",
+                    r.glob
+                );
+            }
         }
         for r in &self.moods {
             if let Some(c) = &r.cast {
@@ -317,6 +373,28 @@ mod tests {
             toml::from_str("[[moods]]\nglob = 'a/**'\nmood = 'nocturne'\ncast = 'mauve'").unwrap();
         let err = bad.validate().unwrap_err().to_string();
         assert!(err.contains("mauve") && err.contains("indigo"), "{err}");
+    }
+
+    #[test]
+    fn fluid_rules_first_match_wins_and_are_validated() {
+        let pack: Pack = toml::from_str(
+            "[[fluids]]\nglob = 'a/pool*'\nkind = 'none'\n\
+             [[fluids]]\nglob = 'a/**'\nkind = 'water'\nwater_hue = 300.0\nwater_pull = 0.3",
+        )
+        .unwrap();
+        pack.validate().unwrap();
+        assert!(pack.detect_fluids);
+        let r = pack.fluid_rule_for(Path::new("a/pool1")).unwrap();
+        assert_eq!(r.kind, Some(FluidRuleKind::None));
+        let r = pack.fluid_rule_for(Path::new("a/b/c")).unwrap();
+        assert_eq!(
+            (r.kind, r.water_hue),
+            (Some(FluidRuleKind::Water), Some(300.0))
+        );
+        assert!(pack.fluid_rule_for(Path::new("b/c")).is_none());
+        let bad: Pack =
+            toml::from_str("[[fluids]]\nglob = 'a/**'\nwater_chroma = [0.06, 0.02]").unwrap();
+        assert!(bad.validate().is_err());
     }
 
     #[test]

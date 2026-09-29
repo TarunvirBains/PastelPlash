@@ -128,7 +128,14 @@ impl Stage for Stylize {
         if !ctx.category.is_stylized() {
             return Ok(());
         }
-        let style = self.cache.style_for(&ctx.config.style, &ctx.mood)?;
+        // Emissive materials keep their own light: no mood reaches them.
+        let base = crate::config::Mood::default();
+        let mood = if ctx.category.is_emissive() {
+            &base
+        } else {
+            &ctx.mood
+        };
+        let style = self.cache.style_for(&ctx.config.style, mood)?;
         let Some(plan) = self.planner.plan(image, ctx, &style) else {
             return Ok(());
         };
@@ -196,7 +203,7 @@ impl Stage for Stylize {
              scale={:.2} r={:.1} spread={:.4} busy={:.2} speckle={:.2} marks={:.2}{}{exp_note}{} | analysis {} gpu {}",
             ctx.rel.display(),
             ctx.category,
-            ctx.mood,
+            mood,
             if wrap[0] { "u" } else { "-" },
             if wrap[1] { "v" } else { "-" },
             n.ratios[0].min(99.0),

@@ -392,6 +392,70 @@ pub fn near_neutral_darks(size: u32, seed: u32) -> Image {
     })
 }
 
+/// Weight (0..1) of a tiling network of thin lines: the borders of a periodic Voronoi diagram
+/// (caustics, lava veins), `width` texels wide, about `cells` cells across.
+pub fn line_network(size: u32, seed: u32, cells: u32, width: f32) -> Vec<f32> {
+    let s = size as f32;
+    let points: Vec<[f32; 2]> = (0..cells * cells)
+        .map(|i| {
+            let (cx, cy) = ((i % cells) as f32, (i / cells) as f32);
+            let step = s / cells as f32;
+            [
+                (cx + 0.15 + 0.7 * noise(i, 1, seed)) * step,
+                (cy + 0.15 + 0.7 * noise(i, 2, seed)) * step,
+            ]
+        })
+        .collect();
+    (0..size * size)
+        .map(|i| {
+            let (x, y) = ((i % size) as f32 + 0.5, (i / size) as f32 + 0.5);
+            let (mut d1, mut d2) = (f32::MAX, f32::MAX);
+            for p in &points {
+                let dx = (x - p[0]).abs().min(s - (x - p[0]).abs());
+                let dy = (y - p[1]).abs().min(s - (y - p[1]).abs());
+                let d = (dx * dx + dy * dy).sqrt();
+                if d < d1 {
+                    d2 = d1;
+                    d1 = d;
+                } else if d < d2 {
+                    d2 = d;
+                }
+            }
+            (-((d2 - d1) / width).powi(2)).exp()
+        })
+        .collect()
+}
+
+/// Caustic water: soft glowing lines over smooth, darker translucent depth, tiling. `chroma`
+/// 0 gives engine-tinted gray water. Returns the image and its line weights.
+pub fn caustic_water(size: u32, seed: u32, chroma: f32) -> (Image, Vec<f32>) {
+    let lines = line_network(size, seed, 6, 1.6);
+    let img = image(size, size, |x, y| {
+        let t = lines[(y * size + x) as usize];
+        let depth = smooth_noise(x as f32, y as f32, 4, size, seed + 3);
+        // Mottled depth, as painted packs have it (busy enough for value grouping).
+        let mottle = smooth_noise(x as f32, y as f32, 24, size, seed + 7);
+        let l = 0.34 + 0.08 * depth + 0.16 * mottle + 0.02 * noise(x, y, seed + 4) + 0.4 * t;
+        let [r, g, b] = from_oklch(l, chroma * (1.0 - 0.5 * t), 175.0 + 10.0 * depth);
+        [r, g, b, 1.0]
+    });
+    (img, lines)
+}
+
+/// Lava: glowing orange-yellow veins over a dark red-brown crust, tiling. Returns the image and
+/// its vein weights.
+pub fn lava(size: u32, seed: u32) -> (Image, Vec<f32>) {
+    let veins = line_network(size, seed, 5, 3.0);
+    let img = image(size, size, |x, y| {
+        let t = veins[(y * size + x) as usize];
+        let crust = smooth_noise(x as f32, y as f32, 8, size, seed + 5);
+        let l = 0.22 + 0.06 * crust + 0.02 * noise(x, y, seed + 6) + 0.55 * t;
+        let [r, g, b] = from_oklch(l, 0.08 + 0.12 * t, 30.0 + 30.0 * t);
+        [r, g, b, 1.0]
+    });
+    (img, veins)
+}
+
 pub fn lch(p: [f32; 4]) -> [f32; 3] {
     color::oklab_to_oklch(color::srgb_to_oklab([p[0], p[1], p[2]]))
 }

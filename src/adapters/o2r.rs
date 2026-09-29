@@ -288,6 +288,36 @@ pub fn export(input: &Path, out_dir: &Path, include: &[String]) -> Result<usize>
     Ok(count.into_inner())
 }
 
+/// Calls `f` with every texture of a pack whose path matches `include` (all when empty), in
+/// parallel on the current rayon pool. The pack is only read.
+pub fn for_each_texture(
+    input: &Path,
+    include: &[String],
+    f: &(dyn Fn(&str, Image) -> Result<()> + Sync),
+) -> Result<()> {
+    let archive = zip::ZipArchive::new(
+        File::open(input).with_context(|| format!("opening {}", input.display()))?,
+    )?;
+    let names: Vec<String> = archive
+        .file_names()
+        .filter(|n| !n.ends_with('/'))
+        .filter(|n| include.is_empty() || include.iter().any(|g| glob_match(g, n)))
+        .map(String::from)
+        .collect();
+    drop(archive);
+    names.par_iter().try_for_each_init(
+        || zip::ZipArchive::new(File::open(input).unwrap()).unwrap(),
+        |archive, name| -> Result<()> {
+            let mut bytes = Vec::new();
+            archive.by_name(name)?.read_to_end(&mut bytes)?;
+            match decode(&bytes) {
+                Some((_, image)) => f(name, image).with_context(|| name.clone()),
+                None => Ok(()),
+            }
+        },
+    )
+}
+
 /// Returns the bytes to write (and whether they were processed), or `None` to leave the entry
 /// out of a mod.
 fn handle(

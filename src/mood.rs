@@ -46,6 +46,11 @@ pub struct Mood {
     /// Overrides the mood's full-strength cast strength (`palette.cast.strength`, then blended
     /// by the mood's strength like any mood value).
     pub cast_strength: Option<f32>,
+    /// Overrides the style's reference water tone for this texture (`palette.water`: hue,
+    /// chroma range, pull), e.g. an area's own water color from a pack-map fluid rule.
+    pub water_hue: Option<f32>,
+    pub water_chroma: Option<[f32; 2]>,
+    pub water_pull: Option<f32>,
 }
 
 impl Default for Mood {
@@ -56,6 +61,9 @@ impl Default for Mood {
             dark_greens: None,
             cast_hue: None,
             cast_strength: None,
+            water_hue: None,
+            water_chroma: None,
+            water_pull: None,
         }
     }
 }
@@ -72,7 +80,11 @@ impl Mood {
 
     /// True if this is the base look with nothing overridden.
     pub fn is_base(&self) -> bool {
-        (self.name == BASE || self.strength <= 0.0) && self.dark_greens.is_none()
+        (self.name == BASE || self.strength <= 0.0)
+            && self.dark_greens.is_none()
+            && self.water_hue.is_none()
+            && self.water_chroma.is_none()
+            && self.water_pull.is_none()
     }
 
     /// A stable key for caches.
@@ -97,6 +109,15 @@ impl fmt::Display for Mood {
         }
         if let Some(s) = self.cast_strength {
             write!(f, "+cast@{s:.2}")?;
+        }
+        if let Some(h) = self.water_hue {
+            write!(f, "+water{h:.0}")?;
+        }
+        if let Some([a, b]) = self.water_chroma {
+            write!(f, "+waterC{a:.3}-{b:.3}")?;
+        }
+        if let Some(p) = self.water_pull {
+            write!(f, "+water@{p:.2}")?;
         }
         Ok(())
     }

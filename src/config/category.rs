@@ -18,6 +18,13 @@ pub enum Category {
     Effect,
     /// Copied through untouched.
     Skip,
+    /// Fluids (see `crate::fluid`): soft light over depth, never cut into outlined cells.
+    /// Water: pulled gently toward the style's reference water tone.
+    Water,
+    /// Emissive molten rock: keeps its glow and heat colors in every mood.
+    Lava,
+    /// Other liquids (poison, swamp, organic fluids): fluid treatment, their own color.
+    Liquid,
 }
 
 impl std::str::FromStr for Category {
@@ -32,9 +39,13 @@ impl std::str::FromStr for Category {
             "ui" => Self::Ui,
             "effect" => Self::Effect,
             "skip" => Self::Skip,
+            "water" => Self::Water,
+            "lava" => Self::Lava,
+            "liquid" => Self::Liquid,
             _ => {
                 return Err(format!(
-                    "unknown category {s:?} (actor, world, skybox, background, ui, effect, skip)"
+                    "unknown category {s:?} (actor, world, skybox, background, ui, effect, skip, water, \
+                     lava, liquid)"
                 ));
             }
         })
@@ -56,9 +67,26 @@ impl Category {
     }
 
     /// Whether soft value grouping may apply: world and background textures only (never
-    /// actors, which the cel shader bands, nor UI).
+    /// actors, which the cel shader bands, nor fluids, whose caustics it cuts into cells, nor UI).
     pub fn may_group(self) -> bool {
         matches!(self, Self::World | Self::Background)
+    }
+
+    /// Whether this is a fluid material (water, lava, other liquids).
+    pub fn is_fluid(self) -> bool {
+        matches!(self, Self::Water | Self::Lava | Self::Liquid)
+    }
+
+    /// Emissive materials keep their own light: no mood (no moonlight cast, no night exposure)
+    /// ever reaches them.
+    pub fn is_emissive(self) -> bool {
+        self == Self::Lava
+    }
+
+    /// Whether fluid detection may turn a texture of this category into a fluid (world geometry
+    /// only; anything else needs a pack-map `[[fluids]]` rule).
+    pub fn may_be_detected_fluid(self) -> bool {
+        self == Self::World
     }
 }
 
@@ -69,19 +97,27 @@ mod tests {
     #[test]
     fn categories_parse_from_cli_strings() {
         assert_eq!("Actor".parse::<Category>(), Ok(Category::Actor));
+        assert_eq!("lava".parse::<Category>(), Ok(Category::Lava));
         assert!("actors".parse::<Category>().is_err());
     }
 
     #[test]
     fn category_policy() {
         use Category::*;
-        let all = [Actor, World, Skybox, Background, Ui, Effect, Skip];
+        let all = [
+            Actor, World, Skybox, Background, Ui, Effect, Skip, Water, Lava, Liquid,
+        ];
         let pick = |f: fn(Category) -> bool| all.into_iter().filter(|&c| f(c)).collect::<Vec<_>>();
         assert_eq!(
             pick(Category::is_stylized),
-            [Actor, World, Skybox, Background]
+            [Actor, World, Skybox, Background, Water, Lava, Liquid]
         );
         assert_eq!(pick(Category::may_group), [World, Background]);
-        assert!(!Background.may_tile() && World.may_tile() && Skybox.may_tile());
+        assert_eq!(pick(Category::is_fluid), [Water, Lava, Liquid]);
+        assert_eq!(pick(Category::is_emissive), [Lava]);
+        assert_eq!(pick(Category::may_be_detected_fluid), [World]);
+        assert!(
+            !Background.may_tile() && World.may_tile() && Skybox.may_tile() && Water.may_tile()
+        );
     }
 }

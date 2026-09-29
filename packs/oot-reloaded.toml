@@ -214,3 +214,82 @@ strength = 2.5
 [[brushwork]]
 glob = "alt/objects/object_kibako*/**"
 strength = 2.5
+# Fluids: world textures are detected by their look (caustic or vein networks over a smooth body;
+# `crate::fluid`). These rules cover what the detector misses (soft flows, foam, waterfalls,
+# translucent overlays) and fluids drawn by actors (the detector only looks at world geometry).
+# From the audit of every texture in the pack, labeled by eye (docs/RULES.md "Fluids").
+[[fluids]]
+glob = "alt/objects/object_spot03_object/object_spot03_object_Tex_000*"  # Zora's River flow
+kind = "water"
+
+[[fluids]]
+glob = "alt/objects/object_spot07_object/object_spot07_object_Tex_000EE0" # Zora's Domain falls
+kind = "water"
+
+[[fluids]]
+glob = "alt/objects/object_spot07_object/object_spot07_object_Tex_004930" # ...and their foam
+kind = "water"
+
+[[fluids]]
+glob = "alt/objects/object_spot07_object/object_spot07_object_Tex_005*"
+kind = "water"
+
+[[fluids]]
+glob = "alt/objects/object_spot07_object/object_spot07_object_Tex_006530"
+kind = "water"
+
+[[fluids]]
+glob = "alt/scenes/*/Bmori1_scene/Bmori1_room_7Tex_010FD8"                # Forest Temple well
+kind = "water"
+
+[[fluids]]
+glob = "alt/scenes/shared/daiyousei_izumi_scene/daiyousei_izumi_sceneTex_00C000" # Great Fairy
+kind = "water"
+
+[[fluids]]
+glob = "alt/scenes/shared/kakusiana_scene/kakusiana_room_13Tex_00*EC8"    # grotto water sheets
+kind = "water"
+
+[[fluids]]
+glob = "alt/scenes/shared/souko_scene/souko_room_1Tex_009F28"
+kind = "water"
+
+[[fluids]]
+glob = "alt/scenes/shared/kenjyanoma_scene/kenjyanoma_room_0Tex_012D08"    # Chamber of Sages
+kind = "water"
+
+[[fluids]]
+glob = "alt/objects/object_bdan_objects/gJabuObjectsTex_03498"
+kind = "water"
+
+[[fluids]]
+glob = "alt/objects/object_ydan_objects/gYdanHasiWaterTex"
+kind = "water"
+
+[[fluids]]
+glob = "alt/objects/object_fish/gFishingAquariumWaterTex"
+kind = "water"
+
+[[fluids]]
+glob = "alt/objects/object_fish/gFishingStreamSplashTile*"
+kind = "water"
+
+[[fluids]]
+glob = "alt/objects/object_mori_tex/gMoriWaterTex"
+kind = "water"
+
+[[fluids]]
+glob = "alt/objects/object_blkobj/object_blkobjTex_00A090"               # Dark Link's water floor
+kind = "water"
+
+[[fluids]]
+glob = "alt/objects/object_hidan_objects/object_hidan_objectsTex_000240"  # Fire Temple lava
+kind = "lava"
+
+[[fluids]]
+glob = "alt/objects/object_fd/gVolvagiaBodyTex"
+kind = "lava"
+
+[[fluids]]
+glob = "alt/objects/object_fd/object_fdTex_0048A8"
+kind = "lava"

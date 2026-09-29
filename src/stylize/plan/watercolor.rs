@@ -12,6 +12,8 @@ pub(super) struct Watercolor {
     paper_px: f32,
     paper: f32,
     paper_tint: f32,
+    edge_dark: f32,
+    gran: f32,
 }
 
 pub(super) fn plan(style: &Style, tr: &Treatment, facts: &ImageFacts) -> Watercolor {
@@ -23,6 +25,8 @@ pub(super) fn plan(style: &Style, tr: &Treatment, facts: &ImageFacts) -> Waterco
         paper_px: (wc.paper_scale * f).max(0.75),
         paper: wc.paper_grain * tr.paper,
         paper_tint: wc.paper_tint * tr.paper,
+        edge_dark: wc.edge_darkening * tr.wet_edges,
+        gran: wc.granulation * tr.granulation,
     }
 }
 
@@ -35,12 +39,12 @@ impl Watercolor {
     pub fn write(&self, p: &mut Params, style: &Style, facts: &ImageFacts) {
         let wc = &style.watercolor;
         p.seed = wc.seed;
-        p.edge_dark = wc.edge_darkening;
+        p.edge_dark = self.edge_dark;
         p.edge_step = self.edge_step;
         p.edge_rel = wc.edge_relative;
         p.edge_threshold = wc.edge_threshold;
         p.edge_feather = wc.edge_feather;
-        p.gran = wc.granulation;
+        p.gran = self.gran;
         p.gran_cells_x = cells(facts.w, self.gran_px);
         p.gran_cells_y = cells(facts.h, self.gran_px);
         p.gran_valley = wc.granulation_valley.clamp(0.0, 1.0);

@@ -18,7 +18,10 @@ pub struct Target {
 
 impl Target {
     pub fn treatment(&self, category: Category) -> Treatment {
-        self.categories.get(&category).cloned().unwrap_or_default()
+        self.categories
+            .get(&category)
+            .cloned()
+            .unwrap_or_else(|| Treatment::default_for(category))
     }
 }
 
@@ -45,7 +48,7 @@ pub struct Treatment {
     pub warm_cool: f32,
     /// Multiplies the accent-dark fraction and depth.
     pub accent: f32,
-    /// Multiplies brushstroke strength.
+    /// Multiplies brushstroke strength (the value and the chroma variation).
     pub strokes: f32,
     /// Multiplies brushstroke width and length.
     pub stroke_scale: f32,
@@ -78,6 +81,15 @@ pub struct Treatment {
     pub tint_safe_gray: Option<f32>,
     /// Brightness amplitude (OKLab L) of those strokes.
     pub tint_safe_strokes: f32,
+    /// Multiplies the pull toward the style's reference water tone (`palette.water`; 0 = none).
+    pub reference: f32,
+    /// Multiplies the wet-edge darkening (0 for fluids: no outlined cells).
+    pub wet_edges: f32,
+    /// Multiplies the granulation (0 for fluids: no pigment settling in the valleys).
+    pub granulation: f32,
+    /// Map colors through the style's palette (false for emissive fluids: lava keeps its heat
+    /// colors and glow).
+    pub palette: bool,
 }
 
 impl Default for Treatment {
@@ -106,6 +118,52 @@ impl Default for Treatment {
             abstraction: 1.0,
             grouping: 1.0,
             exposure: Exposure::default(),
+            reference: 0.0,
+            wet_edges: 1.0,
+            granulation: 1.0,
+            palette: true,
+        }
+    }
+}
+
+impl Treatment {
+    /// The treatment a category gets when the target does not list it. Fluids are soft light
+    /// over depth: no de-lighting, value compression, abstraction, accents, wet edges or
+    /// granulation, small paint marks and gentle strokes; water keeps its lightness and takes
+    /// the reference water tone; lava keeps its own colors (no palette, no moonlight).
+    pub fn default_for(category: Category) -> Self {
+        let fluid = Self {
+            warm_cool: 0.0,
+            accent: 0.0,
+            value_contrast: 0.0,
+            abstraction: 0.0,
+            grouping: 0.0,
+            wet_edges: 0.0,
+            granulation: 0.0,
+            radius_scale: 0.3,
+            strokes: 0.4,
+            paper: 0.3,
+            shadow_tint: 0.0,
+            warmth: 0.0,
+            hue: 0.0,
+            floor_scale: 0.0,
+            ..Self::default()
+        };
+        match category {
+            Category::Water => Self {
+                reference: 1.0,
+                ..fluid
+            },
+            Category::Liquid => fluid,
+            // Glow is light, not pigment: no paper showing through, only faint strokes.
+            Category::Lava => Self {
+                palette: false,
+                cast: 0.0,
+                paper: 0.0,
+                strokes: 0.25,
+                ..fluid
+            },
+            _ => Self::default(),
         }
     }
 }
@@ -150,6 +208,9 @@ impl Target {
                 &format!("categories.{cat:?}.tint_safe_strokes"),
                 t.tint_safe_strokes,
             )?;
+            unit(&format!("categories.{cat:?}.reference"), t.reference)?;
+            non_negative(&format!("categories.{cat:?}.wet_edges"), t.wet_edges)?;
+            non_negative(&format!("categories.{cat:?}.granulation"), t.granulation)?;
             let p = t.exposure.protect;
             check(0.0 <= p[0] && p[0] < p[1] && p[1] <= 1.0, || {
                 format!("categories.{cat:?}.exposure.protect = {p:?} must be increasing in 0..=1")

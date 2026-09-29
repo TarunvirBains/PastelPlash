@@ -163,6 +163,43 @@ exceed 1, and it decides at runtime which side is lit and which is in shadow.
 | **Actor brushwork makes no large patches.** On a 16×16 grid, the cell-mean lightness change less the texture's mean change stays within `actor.max_patch_l` (p95). Props may take more brushwork than faces and skin through the pack map (`[[brushwork]]` rules multiply the stroke strength, at most `actor.max_brushwork`); the rule is checked at that maximum too. | The cel shader bands actors into lit and shadow at runtime; painted light and dark patches read as extra shading (camouflage). | `rule_actor_brushwork_makes_no_large_patches`, `rules_config::rule_pack_brushwork_stays_within_the_contract` |
 | **Effects are left untouched.** Category `effect` (glows, flames, sparks, dust, shadow blobs; named in the pack map) is copied through, and a gray actor or world texture that falls off radially to nothing (`analysis::radial_falloff` ≥ `facts::EFFECT_FALLOFF`) through soft alpha (`analysis::soft_alpha_share` ≥ `facts::EFFECT_SOFT_ALPHA`) is treated the same; hard-edged gray cutouts (a bomb, a statue) are objects and are restyled. | An effect's gray is light intensity and falloff, often drawn additively; brushwork turns a glow into a smudge. | `rule_effects_are_left_untouched`, `analysis::tests::soft_glows_fall_off_radially_patterns_do_not` |
 
+### Fluids
+
+Water, lava and other liquids are their own material family (categories `water`, `lava`,
+`liquid`). Painted packs draw them as soft light over depth: thin bright connected lines
+(caustics, glowing veins) over a smooth darker body, usually tiling and often scrolling in-game.
+The world treatment (value grouping, coarse simplification, big paint marks, wet edges) cut them
+into outlined cells that slide around (cracked stone, lizard skin).
+
+- **Which textures are fluids.** World textures are detected by their look (`src/fluid.rs`, on a
+  256 px thumbnail: skewed band-pass lightness, line-like and networked ridges spread over the
+  sheet, a clean body, tiling; water hue cyan to blue or near-gray; lava saturated red-orange with
+  bright veins over a darker crust). Other categories and whatever the detector misses (soft
+  flows, foam, waterfalls, translucent sheets) are named by pack-map `[[fluids]]` rules
+  (`kind = "water" | "lava" | "liquid" | "none"`), which also override the detector. Other
+  liquids are never detected alone (without a hue prior the pattern matches reliefs too).
+  Audit on OoT Reloaded, every texture labeled by eye: world precision 1.00, recall 0.81 by file
+  (all caustic water and all lava; the misses are soft flows and foam, covered by the pack map).
+- **Treatment** (built in, `Treatment::default_for`; a target may override within the contract):
+  no value grouping (policy), abstraction, value compression, accents, wet edges or granulation;
+  small paint marks (no tiling multiplier), gentle strokes. Engine-tinted gray fluids take the
+  tint-safe path (lightness only). **Water** keeps its source lightness (each area keeps its
+  depth; a mood's night exposure still applies) and leans toward the style's reference water
+  tone (`palette.water`, per-area override in the pack map: `water_hue`, `water_chroma`,
+  `water_pull` on a `[[fluids]]` rule). The shipped tone is dark muted jade, hue 140, chroma
+  0.035–0.06, pulled halfway: Skyward Sword's Ancient Cistern water (sun and shade, hue and
+  chroma only: h 115–140, C 0.036–0.06) and the N64 Deku Tree basement water (h 143, C 0.04)
+  agree. **Lava is emissive**: no palette,
+  no moonlight, no mood at all (`Category::is_emissive`): glow and heat colors stay.
+
+| Rule | Why | Enforced by |
+|---|---|---|
+| Fluid treatments stay within `[fluid]` (no wet edges, granulation, value compression, abstraction, accents; small marks); lava has no palette and no cast; fluids are never grouped. | Caustics are light, not cells. | `fluid_treatments_stay_within_the_contract` |
+| **Caustics stay luminous, depth stays smooth, no cell outlines:** on a synthetic caustic texture, highlight-line contrast keeps ≥ `highlight_min_contrast` of the (mood-dimmed) source's, depth grit ≤ `depth_max_grit`, at most `max_outline_share` of depth texels darker than the source by `outline_drop`, mean L within `max_mean_l`. Rendered as World, the same texture fails. | "Why is our water so ugly? The N64 water looks better." | `rule_caustic_water_stays_luminous_and_smooth` |
+| Engine-tinted gray water stays gray. | The engine supplies the color. | `rule_engine_tinted_gray_water_stays_gray` |
+| Water leans toward the reference tone (when the style pulls). | SS and the N64 agree on dark muted jade. | `rule_water_leans_toward_the_reference_tone` |
+| **Lava keeps its glow and heat colors** in every style and mood (nocturne included): vein mean L drops ≤ `lava_max_darkening`, vein chroma kept ≥ `lava_min_chroma_retention`, vein hue moves ≤ `lava_max_hue_shift`. | Glowing things stay glowing. | `rule_lava_keeps_its_glow_and_heat_colors` |
+
 ### Robustness
 
 | Rule | Enforced by |
