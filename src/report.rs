@@ -335,7 +335,39 @@ pub fn metrics(src: &Path, out: &Path, baseline: Option<&Path>) -> Result<String
         let (lb, la) = (one(src)?, one(out)?);
         let (ia, ib) = (png_io::read(&a)?, png_io::read(&out.join(&e.rel))?);
         let (mut dh, mut n, mut blue, mut n_dark) = (0.0f32, 0usize, 0usize, 0usize);
+        // Alpha-weighted mean L, and the darkest quarter of the source (its mean OKLCH before
+        // and after: how readable and what color the dark regions are).
+        let mut ls: Vec<f32> = ia
+            .pixels
+            .iter()
+            .filter(|p| p[3] >= 0.5)
+            .map(|p| color::srgb_to_oklab([p[0], p[1], p[2]])[0])
+            .collect();
+        let q25 = if ls.is_empty() {
+            0.0
+        } else {
+            let i = ls.len() / 4;
+            *ls.select_nth_unstable_by(i, f32::total_cmp).1
+        };
+        let (mut ml, mut w_all) = ([0.0f64; 2], 0.0f64);
+        let (mut dsum, mut n_q) = ([[0.0f64; 3]; 2], 0.0f64);
         for (p, q) in ia.pixels.iter().zip(&ib.pixels) {
+            if ia.width == ib.width && ia.height == ib.height {
+                let (x, y) = (
+                    color::srgb_to_oklab([p[0], p[1], p[2]]),
+                    color::srgb_to_oklab([q[0], q[1], q[2]]),
+                );
+                ml[0] += (x[0] * p[3]) as f64;
+                ml[1] += (y[0] * q[3]) as f64;
+                w_all += p[3] as f64;
+                if p[3] >= 0.5 && x[0] <= q25 {
+                    for k in 0..3 {
+                        dsum[0][k] += x[k] as f64;
+                        dsum[1][k] += y[k] as f64;
+                    }
+                    n_q += 1.0;
+                }
+            }
             if p[3] < 0.5 {
                 continue;
             }
@@ -365,6 +397,22 @@ pub fn metrics(src: &Path, out: &Path, baseline: Option<&Path>) -> Result<String
                 "-".into()
             },
             100.0 * blue as f32 / n_dark.max(1) as f32
+        );
+        let lch_of = |s: [f64; 3]| {
+            let v = s.map(|v| (v / n_q.max(1.0)) as f32);
+            color::oklab_to_oklch(v)
+        };
+        let (d0, d1) = (lch_of(dsum[0]), lch_of(dsum[1]));
+        let tone = format!(
+            "mean L {:.3}->{:.3} | dark quarter LCh {:.2}/{:.3}/{:.0}->{:.2}/{:.3}/{:.0}",
+            ml[0] / w_all.max(1e-9),
+            ml[1] / w_all.max(1e-9),
+            d0[0],
+            d0[1],
+            d0[2],
+            d1[0],
+            d1[1],
+            d1[2]
         );
         let base = match baseline {
             Some(b) if b.join(&e.rel).exists() => {
@@ -401,7 +449,7 @@ pub fn metrics(src: &Path, out: &Path, baseline: Option<&Path>) -> Result<String
         let _ = writeln!(
             text,
             "{:<44} L std 7x7 {:.4}->{:.4}, 25x25 {:.4}->{:.4} | coarse Δab p90 {c90:.3} max \
-             {cmax:.3}, ΔL p90 {l90} | {dark}{base}",
+             {cmax:.3}, ΔL p90 {l90} | {dark} | {tone}{base}",
             e.rel.file_stem().unwrap_or_default().to_string_lossy(),
             lb[0],
             la[0],
