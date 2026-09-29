@@ -13,6 +13,9 @@ pub enum Category {
     /// Pre-rendered scene images (painted backdrops): no tiling assumptions, no de-lighting.
     Background,
     Ui,
+    /// Effects (glows, fire, sparkles, particles, shadow blobs): the gray is the effect's
+    /// intensity and falloff, often drawn additively. Left untouched.
+    Effect,
     /// Copied through untouched.
     Skip,
 }
@@ -27,10 +30,11 @@ impl std::str::FromStr for Category {
             "skybox" => Self::Skybox,
             "background" => Self::Background,
             "ui" => Self::Ui,
+            "effect" => Self::Effect,
             "skip" => Self::Skip,
             _ => {
                 return Err(format!(
-                    "unknown category {s:?} (actor, world, skybox, background, ui, skip)"
+                    "unknown category {s:?} (actor, world, skybox, background, ui, effect, skip)"
                 ));
             }
         })
@@ -39,10 +43,10 @@ impl std::str::FromStr for Category {
 
 /// Category policy: the rules every driver and stage share, in one place.
 impl Category {
-    /// Whether the texture is restyled at all. UI (until it gets its own treatment) and skip
-    /// are copied through untouched.
+    /// Whether the texture is restyled at all. UI (until it gets its own treatment), effects
+    /// (their gray is light intensity, not paint) and skip are copied through untouched.
     pub fn is_stylized(self) -> bool {
-        !matches!(self, Self::Ui | Self::Skip)
+        !matches!(self, Self::Ui | Self::Effect | Self::Skip)
     }
 
     /// Whether the texture may tile. Pre-rendered backgrounds are whole pictures: they never
@@ -71,7 +75,7 @@ mod tests {
     #[test]
     fn category_policy() {
         use Category::*;
-        let all = [Actor, World, Skybox, Background, Ui, Skip];
+        let all = [Actor, World, Skybox, Background, Ui, Effect, Skip];
         let pick = |f: fn(Category) -> bool| all.into_iter().filter(|&c| f(c)).collect::<Vec<_>>();
         assert_eq!(
             pick(Category::is_stylized),

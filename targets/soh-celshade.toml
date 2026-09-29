@@ -20,6 +20,8 @@ paper = 0.3
 value_contrast = 0.3    # the cel shader supplies actors' light and shadow; keep their painted form
 warmth = 0.3            # a little earth warmth (leather, hair); skin keeps its own hue
 grouping = 0.0          # never value-grouped: the cel shader bands actors already
+tint_safe_gray = 0.87     # engine-tinted grays (tunics, gems): raised, the tint darkens them
+tint_safe_strokes = 0.065 # brightness-only strokes along the cloth's folds
 cast = 0.0              # no baked moonlight either: the renderer lights actors in every area
 
 [categories.world]

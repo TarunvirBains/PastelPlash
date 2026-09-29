@@ -3,7 +3,7 @@
 //! spread. Stage plans read these facts; none of them measures the image itself.
 
 use crate::analysis::{self, Lowres};
-use crate::config::{Style, Treatment};
+use crate::config::{Category, Style, Treatment};
 use crate::image::Image;
 use crate::pipeline::FileContext;
 
@@ -22,7 +22,13 @@ pub(super) struct ImageFacts {
     pub chroma_p99: f32,
     /// Lightness changes only (engine-tinted grayscale).
     pub tint_safe: bool,
+    /// A gray soft radial glow the pack map didn't name (a flare, spark, puff or shadow blob):
+    /// an effect, left untouched.
+    pub effect_like: bool,
 }
+
+/// `analysis::radial_falloff` score from which a gray actor or world texture counts as an effect.
+pub(super) const EFFECT_FALLOFF: f32 = 0.85;
 
 impl ImageFacts {
     pub fn analyze(image: &Image, ctx: &FileContext, style: &Style, tr: &Treatment) -> Self {
@@ -50,6 +56,10 @@ impl ImageFacts {
             .tint_safe
             .or(image.tint_safe)
             .unwrap_or(chroma_p99 < style.palette.tint_safe_chroma);
+        let gray = tint_safe || chroma_p99 < style.palette.tint_safe_chroma;
+        let effect_like = gray
+            && matches!(ctx.category, Category::Actor | Category::World)
+            && analysis::radial_falloff(image) >= EFFECT_FALLOFF;
         Self {
             w,
             h,
@@ -59,6 +69,7 @@ impl ImageFacts {
             wrap,
             chroma_p99,
             tint_safe,
+            effect_like,
         }
     }
 

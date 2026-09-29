@@ -18,6 +18,7 @@ mod kuwahara;
 mod palette;
 mod strokes;
 mod temperature;
+mod tint;
 mod value;
 mod watercolor;
 
@@ -134,6 +135,14 @@ impl Planner {
             return None;
         }
         let facts = ImageFacts::analyze(image, ctx, style, &tr);
+        if facts.effect_like {
+            // An unnamed effect (a soft gray glow): its gray is light, not paint.
+            println!(
+                "  {}: effect-like (radial glow): untouched",
+                ctx.rel.display()
+            );
+            return None;
+        }
 
         // Stage plans, in dependency order: the low-res field serves de-light, temperature and
         // the adaptive-contrast pivot; the busy gate (value spread) drives adaptive contrast,
@@ -170,6 +179,7 @@ impl Planner {
         let strokes = strokes::plan(style, &tr, &facts, busy);
         let bleed = bleed::plan(style, &facts);
         let watercolor = watercolor::plan(style, &tr, &facts);
+        let tint_safe = tint::plan(image, &tr, &facts);
 
         let mut params = Params {
             full_x: facts.w as i32,
@@ -192,6 +202,7 @@ impl Planner {
         strokes.write(&mut params, &facts);
         value.write(&mut params);
         watercolor.write(&mut params, style, &facts);
+        tint_safe.write(&mut params);
 
         // Filter reach: how far a texel's result depends on its neighbors (chunk overlap).
         let reach = [
@@ -206,7 +217,7 @@ impl Planner {
         let halo = (2.0 * (kuwahara.radius + abstraction.radius_coarse)
             + 3.0 * kuwahara.tensor_sigma
             + reach
-            + strokes.len
+            + strokes.len * if tint_safe.on() { 3.0 } else { 1.0 }
             + abstraction.highlight_radius * busy.ceil()
             + if grouping.amount > 0.0 {
                 grouping.radius + 1.0

@@ -17,6 +17,53 @@ category = "skip"
 glob = "alt/objects/**/*Mouth*"
 category = "skip"
 
+# Effects (glows, flames, sparks, puffs, lightning, splashes, shadow blobs): their gray is light
+# intensity and falloff, often drawn additively, not paint. Left untouched (soft gray radial glows
+# the names miss are detected too).
+[[rules]]
+glob = "alt/objects/**/*Eff*"
+category = "effect"
+
+[[rules]]
+glob = "alt/objects/**/*Flame*"
+category = "effect"
+
+[[rules]]
+glob = "alt/objects/**/*Spark*"
+category = "effect"
+
+[[rules]]
+glob = "alt/objects/**/*Glow*"
+category = "effect"
+
+[[rules]]
+glob = "alt/objects/**/*Flash*"
+category = "effect"
+
+[[rules]]
+glob = "alt/objects/**/*Hilite*"
+category = "effect"
+
+[[rules]]
+glob = "alt/objects/**/*LensFlare*"
+category = "effect"
+
+[[rules]]
+glob = "alt/objects/**/*Lightning*"
+category = "effect"
+
+[[rules]]
+glob = "alt/objects/**/*Shockwave*"
+category = "effect"
+
+[[rules]]
+glob = "alt/objects/gameplay_keep/gDust*"
+category = "effect"
+
+[[rules]]
+glob = "alt/objects/**/*Shadow*Tex"
+category = "effect"
+
 # Actors the cel shader does not relight render like world geometry.
 [[rules]]
 glob = "alt/objects/object_wood02/**"

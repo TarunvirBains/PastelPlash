@@ -72,6 +72,12 @@ pub struct Treatment {
     pub dark_chroma: f32,
     /// Multiplies a mood's moonlight cast (0 for relit categories: the renderer lights them).
     pub cast: f32,
+    /// Engine-tinted grayscale textures of this category are raised so their median gray sits
+    /// here (OKLab L) and painted with brightness-only strokes; unset: the palette's lightness
+    /// only. The engine's tint darkens them, so they may exceed the lightness ceiling.
+    pub tint_safe_gray: Option<f32>,
+    /// Brightness amplitude (OKLab L) of those strokes.
+    pub tint_safe_strokes: f32,
 }
 
 impl Default for Treatment {
@@ -95,6 +101,8 @@ impl Default for Treatment {
             cast: 1.0,
             chroma_floor: 1.0,
             dark_chroma: 1.0,
+            tint_safe_gray: None,
+            tint_safe_strokes: 0.0,
             abstraction: 1.0,
             grouping: 1.0,
             exposure: Exposure::default(),
@@ -133,6 +141,15 @@ impl Target {
             unit(&format!("categories.{cat:?}.delight"), t.delight)?;
             non_negative(&format!("categories.{cat:?}.warm_cool"), t.warm_cool)?;
             non_negative(&format!("categories.{cat:?}.floor_scale"), t.floor_scale)?;
+            if let Some(g) = t.tint_safe_gray {
+                check(g > 0.0 && g < 1.0, || {
+                    format!("categories.{cat:?}.tint_safe_gray = {g} must be within (0, 1)")
+                })?;
+            }
+            non_negative(
+                &format!("categories.{cat:?}.tint_safe_strokes"),
+                t.tint_safe_strokes,
+            )?;
             let p = t.exposure.protect;
             check(0.0 <= p[0] && p[0] < p[1] && p[1] <= 1.0, || {
                 format!("categories.{cat:?}.exposure.protect = {p:?} must be increasing in 0..=1")

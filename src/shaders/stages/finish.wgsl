@@ -326,6 +326,21 @@ fn finish_limits(lab: vec3<f32>, floor_l: f32) -> vec3<f32> {
     return vec3<f32>(clamp(l, 0.0, 1.0), lab.yz);
 }
 
+// Engine-tinted grayscale (tint-safe) textures of categories with a tint-safe gray: the painted
+// gray raised (shifted so the median sits at the target, the top soft-capped: the folds keep
+// their contrast), brightness-only strokes along the texture's own flow (cloth folds) with
+// headroom toward the cap, a few near-white highlight strokes, capped below white. Replaces the
+// palette's lightness and the ceiling.
+fn finish_tint_safe(p: vec2<i32>, l_src: f32) -> f32 {
+    let base = soft_min(clamp(l_src, 0.0, 1.0) + P.ts_shift, P.ts_max, 0.1);
+    // Soft, broad strokes: twice the style's width, three times its length, never saturated.
+    let v = strokes_at(p, vec2<f32>(P.stroke_cells_x, P.stroke_cells_y) * 0.5, 3.0 * P.stroke_len, 0.8);
+    let room = smoothstep(0.0, 0.08, P.ts_max - base);
+    var l = base + P.ts_amp * v * select(1.0, room, v > 0.0);
+    l = mix(l, P.ts_max, 0.5 * smoothstep(0.75, 1.0, v));
+    return clamp(soft_min(l, P.ts_max, 0.04), 0.0, 1.0);
+}
+
 @compute @workgroup_size(8, 8)
 fn finish(@builtin(global_invocation_id) gid: vec3<u32>) {
     let p = pixel(gid);
@@ -350,6 +365,9 @@ fn finish(@builtin(global_invocation_id) gid: vec3<u32>) {
     lab = finish_adaptive(p, lab, src);
     lab = finish_chroma_retain(p, lab, tint_safe);
     lab = finish_limits(lab, lf.w);
+    if (tint_safe && P.ts_on > 0.0) {
+        lab = vec3<f32>(finish_tint_safe(p, src.x), lab.yz);
+    }
 
     let rgb = linear_to_srgb(clamp(oklab_to_linear(lab), vec3<f32>(0.0), vec3<f32>(1.0)));
     textureStore(outTex, p, vec4<f32>(rgb, c.a));

@@ -20,10 +20,17 @@ fn flow(p: vec2<f32>) -> vec2<f32> {
 }
 
 fn strokes(p: vec2<i32>) -> f32 {
-    let cells = vec2<f32>(P.stroke_cells_x, P.stroke_cells_y);
+    return strokes_at(p, vec2<f32>(P.stroke_cells_x, P.stroke_cells_y), P.stroke_len, 1.6);
+}
+
+// Strokes with `cells` noise cells across the image (fewer = broader strokes), `len` texels
+// long; `gain` sets how quickly they saturate at ±1.
+fn strokes_at(p: vec2<i32>, cells_in: vec2<f32>, len: f32, gain: f32) -> f32 {
+    let cells = max(round(cells_in), vec2<f32>(1.0));
     let origin = vec2<f32>(f32(P.origin_x), f32(P.origin_y));
     let start = vec2<f32>(p) + 0.5;
-    let steps = i32(clamp(ceil(P.stroke_len / P.stroke_step), 1.0, 32.0));
+    let step = max(len / 16.0, 1.0);
+    let steps = i32(clamp(ceil(len / step), 1.0, 32.0));
     var sum = noise1(start + origin, cells, 29u);
     var wsum = 1.0;
     var w2 = 1.0;
@@ -35,7 +42,7 @@ fn strokes(p: vec2<i32>) -> f32 {
             var nd = flow(q);
             if (dot(nd, d) < 0.0) { nd = -nd; }
             d = nd;
-            q += d * P.stroke_step;
+            q += d * step;
             let w = 1.0 - f32(i) / f32(steps + 1);
             sum += w * noise1(q + origin, cells, 29u);
             wsum += w;
@@ -46,5 +53,5 @@ fn strokes(p: vec2<i32>) -> f32 {
     // where the flow is coherent; in isotropic areas LIC of noise reads as marbling.
     let n_eff = wsum * wsum / w2;
     let flow_weight = smoothstep(0.15, 0.6, orientation(loadC(p).xyz).z);
-    return clamp((sum / wsum - 0.5) * sqrt(n_eff) * 1.6, -1.0, 1.0) * flow_weight;
+    return clamp((sum / wsum - 0.5) * sqrt(n_eff) * gain, -1.0, 1.0) * flow_weight;
 }

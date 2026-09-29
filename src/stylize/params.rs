@@ -146,6 +146,11 @@ pub(super) struct Params {
     cast_on: f32,
     cast_fb: f32,
     _pad13: f32,
+
+    ts_on: f32,
+    ts_shift: f32,
+    ts_amp: f32,
+    ts_max: f32,
 }
 }
 

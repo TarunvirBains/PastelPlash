@@ -94,3 +94,70 @@ fn rule_actor_has_no_temperature_shift() {
     }
     report.finish();
 }
+
+#[test]
+fn rule_tint_safe_actors_are_raised_and_keep_their_folds() {
+    // Engine-tinted grayscale actor textures (Link's tunic): the gray is raised toward the
+    // target's tint-safe gray, painted with brightness-only strokes, never above the cap, and the
+    // folds stay. The output stays gray (rule_tint_safe_grayscale_stays_gray).
+    use pastelplash::report::coarse_l_pattern;
+    let k = contract();
+    let mut img = cloth_folds(192, 121);
+    img.tint_safe = Some(true);
+    let mut report = Report::new("tint-safe actors are raised and keep their folds");
+    let rendered = Matrix::full(&[Category::Actor]).check(&mut report, &img, |case, out| {
+        let Some(target) = case.config.target.treatment(Category::Actor).tint_safe_gray else {
+            return Ok(());
+        };
+        let l1 = median(out.pixels.iter().map(|&p| lch(p)[0]).collect());
+        ensure((l1 - target).abs() <= 0.05, || {
+            format!("median gray {l1:.3} (target {target})")
+        })?;
+        few(out, 0.0, |p| {
+            lch(p)[0] > k.actor.max_tint_safe_l + k.tolerance.lightness
+        })
+        .map_err(|e| format!("above the tint-safe cap: {e}"))?;
+        let (corr, _) = coarse_l_pattern(&img, out, 16);
+        ensure(corr >= k.actor.tint_safe_min_structure, || {
+            format!("folds lost: coarse correlation {corr:.2}")
+        })
+    });
+    if rendered {
+        report.finish();
+    }
+}
+
+#[test]
+fn rule_actor_brushwork_makes_no_large_patches() {
+    // The cel shader bands actors into lit and shadow at runtime: brushwork must not paint large
+    // light or dark patches of its own. Cell-mean lightness (16x16) moves together.
+    let k = contract();
+    let img = pale_skin(192, 122);
+    let cells = |im: &Image| {
+        let n = 16usize;
+        let (w, h) = (im.width as usize, im.height as usize);
+        let mut acc = vec![[0.0f32; 2]; n * n];
+        for (i, p) in im.pixels.iter().enumerate() {
+            let c = &mut acc[(i / w) * n / h * n + (i % w) * n / w];
+            c[0] += lch(*p)[0];
+            c[1] += 1.0;
+        }
+        acc.iter().map(|c| c[0] / c[1]).collect::<Vec<f32>>()
+    };
+    let c0 = cells(&img);
+    let mut report = Report::new("actor brushwork makes no large patches");
+    let rendered = Matrix::full(&[Category::Actor]).check(&mut report, &img, |_, out| {
+        let c1 = cells(out);
+        let d: Vec<f32> = c0.iter().zip(&c1).map(|(a, b)| b - a).collect();
+        let mean = d.iter().sum::<f32>() / d.len() as f32;
+        let mut dev: Vec<f32> = d.iter().map(|v| (v - mean).abs()).collect();
+        dev.sort_by(f32::total_cmp);
+        let p95 = dev[(dev.len() - 1) * 95 / 100];
+        ensure(p95 <= k.actor.max_patch_l, || {
+            format!("cell lightness moved unevenly: p95 {p95:.3}")
+        })
+    });
+    if rendered {
+        report.finish();
+    }
+}

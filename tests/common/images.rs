@@ -315,6 +315,26 @@ pub fn grooved_wood(size: u32, seed: u32) -> Image {
     })
 }
 
+/// Engine-tinted cloth: a light gray with soft diagonal folds (Link's tunic), grayscale.
+pub fn cloth_folds(size: u32, seed: u32) -> Image {
+    image(size, size, |x, y| {
+        let (fx, fy) = (x as f32, y as f32);
+        let u = (fx + 0.6 * fy) / size as f32 * 5.0 + 0.4 * smooth_noise(fx, fy, 4, size, seed);
+        let fold = (u * std::f32::consts::TAU).sin() * 0.5 + 0.5;
+        let v = 0.45 + 0.35 * fold + 0.04 * (noise(x, y, seed + 1) - 0.5);
+        [v, v, v, 1.0]
+    })
+}
+
+/// A soft gray radial glow on transparent texels (a flare, spark or puff: an effect).
+pub fn glow(size: u32) -> Image {
+    let c = size as f32 / 2.0;
+    image(size, size, |x, y| {
+        let r2 = ((x as f32 - c).powi(2) + (y as f32 - c).powi(2)) / (size as f32 * 0.18).powi(2);
+        [1.0, 1.0, 1.0, (-r2).exp()]
+    })
+}
+
 /// Olive moss: mottled olive-green (hues across `hue`), mid-dark, like OoT Reloaded's mossy ground
 /// and Deku Tree moss.
 pub fn olive_moss(size: u32, seed: u32, hue: [f32; 2]) -> Image {

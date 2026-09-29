@@ -250,7 +250,7 @@ struct ProcessArgs {
     /// Worker threads (default or 0: all cores).
     #[arg(short, long, value_name = "N")]
     jobs: Option<usize>,
-    /// Treat every PNG as this category (actor, world, skybox, background, ui, skip), overriding
+    /// Treat every PNG as this category (actor, world, skybox, background, ui, effect, skip), overriding
     /// the pack map.
     #[arg(long, value_name = "CATEGORY")]
     category: Option<Category>,

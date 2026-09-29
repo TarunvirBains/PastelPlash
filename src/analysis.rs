@@ -269,6 +269,53 @@ pub fn local_l_std(image: &Image, radius: f32, wrap: [bool; 2]) -> f32 {
     *stds.select_nth_unstable_by(i, f32::total_cmp).1
 }
 
+/// How much an image looks like a soft radial glow (an effect: a flare, spark, puff or shadow
+/// blob whose gray is light intensity): 0..1. The premultiplied intensity (luminance × alpha)
+/// is averaged over 8 rings around its intensity-weighted centroid; the score is the share of
+/// ring-to-ring steps that fall, gated to 0 unless the outer ring is under a fifth of the center
+/// (a falloff to nothing, not a pattern that happens to be brighter in the middle).
+pub fn radial_falloff(image: &Image) -> f32 {
+    let (w, h) = (image.width as usize, image.height as usize);
+    let s = stride(image, 250_000.0);
+    let intensity = |x: usize, y: usize| {
+        let p = px(image, x, y);
+        luminance(p) * p[3]
+    };
+    let (mut sx, mut sy, mut si) = (0.0f64, 0.0f64, 0.0f64);
+    for y in (0..h).step_by(s) {
+        for x in (0..w).step_by(s) {
+            let i = intensity(x, y) as f64;
+            sx += x as f64 * i;
+            sy += y as f64 * i;
+            si += i;
+        }
+    }
+    if si <= 0.0 {
+        return 0.0;
+    }
+    let (cx, cy) = ((sx / si) as f32, (sy / si) as f32);
+    let rmax = (w.min(h) as f32) * 0.5;
+    const RINGS: usize = 8;
+    let mut rings = [[0.0f64; 2]; RINGS];
+    for y in (0..h).step_by(s) {
+        for x in (0..w).step_by(s) {
+            let r = ((x as f32 - cx).powi(2) + (y as f32 - cy).powi(2)).sqrt() / rmax;
+            if r >= 1.0 {
+                continue;
+            }
+            let k = ((r * RINGS as f32) as usize).min(RINGS - 1);
+            rings[k][0] += intensity(x, y) as f64;
+            rings[k][1] += 1.0;
+        }
+    }
+    let m: Vec<f64> = rings.iter().map(|r| r[0] / r[1].max(1.0)).collect();
+    if m[0] <= 1e-4 || m[RINGS - 1] > 0.2 * m[0] {
+        return 0.0;
+    }
+    let falls = m.windows(2).filter(|p| p[1] <= p[0] * 1.02).count();
+    falls as f32 / (RINGS - 1) as f32
+}
+
 /// 99th-percentile OKLab chroma over the opaque texels (tint-safe detection).
 pub fn chroma_p99(image: &Image) -> f32 {
     let (w, h) = (image.width as usize, image.height as usize);
@@ -359,6 +406,21 @@ mod tests {
         assert!(lr.data.iter().all(|v| (v - y).abs() < 1e-4));
         assert!((lr.mean - y).abs() < 1e-4);
         assert!((lr.sample(3.0, 97.0, 200, 100, [true, false]) - y).abs() < 1e-4);
+    }
+
+    #[test]
+    fn soft_glows_fall_off_radially_patterns_do_not() {
+        let glow = image(96, 96, |x, y| {
+            let r2 = (x as f32 - 48.0).powi(2) + (y as f32 - 44.0).powi(2);
+            let v = (-r2 / 400.0).exp();
+            [1.0, 1.0, 1.0, v]
+        });
+        assert!(radial_falloff(&glow) > 0.99, "{}", radial_falloff(&glow));
+        let cloth = image(96, 96, |x, y| {
+            let v = 0.7 + 0.2 * (x as f32 * 0.3).sin() + 0.05 * noise(x, y);
+            [v, v, v, 1.0]
+        });
+        assert_eq!(radial_falloff(&cloth), 0.0);
     }
 
     #[test]

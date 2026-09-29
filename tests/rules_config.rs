@@ -379,6 +379,18 @@ fn rule_actor_targets_leave_lighting_to_the_renderer() {
             "{n}: actor cast {}",
             actor.cast
         );
+        let k = contract();
+        if let Some(g) = actor.tint_safe_gray {
+            assert!(
+                g <= k.actor.max_tint_safe_gray,
+                "{n}: actor tint_safe_gray {g}"
+            );
+        }
+        assert!(
+            actor.tint_safe_strokes <= k.actor.max_tint_safe_strokes,
+            "{n}: actor tint_safe_strokes {}",
+            actor.tint_safe_strokes
+        );
         assert!(
             actor.delight <= c.max_actor_delight,
             "{n}: actor delight {}",

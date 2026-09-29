@@ -150,3 +150,19 @@ fn rule_chunked_processing_matches_whole_image() {
         }
     }
 }
+
+#[test]
+fn rule_effects_are_left_untouched() {
+    // Effects (glows, sparks, puffs, shadow blobs) are light, not paint: their gray is intensity
+    // and falloff, often drawn additively. A soft gray radial glow the pack map didn't name is
+    // left exactly as it was, as an actor or world texture.
+    let img = glow(128);
+    let mut report = Report::new("effects are left untouched");
+    let rendered =
+        Matrix::full(&[Category::Actor, Category::World]).check(&mut report, &img, |_, out| {
+            ensure(out.pixels == img.pixels, || "an effect was restyled".into())
+        });
+    if rendered {
+        report.finish();
+    }
+}

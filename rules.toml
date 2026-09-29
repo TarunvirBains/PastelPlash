@@ -154,6 +154,17 @@ max_background_palette = 0.35
 [actor]
 retention_ratio = 0.7
 max_lightness_shift = 0.2
+# Actor brushwork makes no large light/dark patches (the cel shader bands lit and shadow): the
+# 16x16 cell-mean lightness change, less the texture's mean change, stays within max_patch_l (p95).
+max_patch_l = 0.04
+# Engine-tinted (tint-safe) actor textures may be raised to a median gray of at most
+# max_tint_safe_gray and never above max_tint_safe_l (the tint provides the headroom, so they may
+# exceed the actor ceiling); their folds stay (16x16 cell correlation with the source at least
+# tint_safe_min_structure); strokes at most max_tint_safe_strokes.
+max_tint_safe_gray = 0.92
+max_tint_safe_l = 0.96
+tint_safe_min_structure = 0.8
+max_tint_safe_strokes = 0.08
 
 # Per-mood allowances. Only in nocturne may lifted darks lean cool (indigo, violet, deep teal):
 # their hue may rotate further, but they stay colored (the dark/mud/identity rules still apply).
