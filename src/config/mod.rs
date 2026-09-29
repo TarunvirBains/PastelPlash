@@ -14,6 +14,7 @@ pub use crate::mood::Mood;
 
 mod builtin;
 mod category;
+pub mod layers;
 mod pack;
 mod style;
 mod target;

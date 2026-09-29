@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
-use super::builtin::BUILTIN_STYLES;
+use super::{builtin, layers};
 use super::{check, non_negative, unit};
 use crate::mood::Mood;
 
@@ -70,10 +70,10 @@ pub struct Style {
 }
 
 impl Style {
-    /// Loads a style file, following `extends` (a path relative to the file): the file's
-    /// settings are deep-merged over the style it extends.
+    /// Loads a style file, following `extends` (a path or a list of paths relative to the file):
+    /// the file's settings are merged over the layers it extends (see [`super::layers`]).
     pub fn load(path: &Path) -> Result<Self> {
-        let raw = Self::load_raw(path, 0, &|p: &Path| {
+        let raw = layers::load(path, &|p: &Path| {
             fs::read_to_string(p).with_context(|| format!("reading {}", p.display()))
         })?;
         Self::from_table(raw).with_context(|| format!("parsing {}", path.display()))
@@ -81,79 +81,15 @@ impl Style {
 
     /// Names of the built-in styles (`styles/*.toml` shipped in the binary).
     pub fn builtin_names() -> Vec<&'static str> {
-        BUILTIN_STYLES
-            .iter()
-            .filter(|(p, _)| !p.contains('/'))
-            .map(|(p, _)| p.trim_end_matches(".toml"))
-            .collect()
+        builtin::names()
     }
 
     /// A built-in style by name (e.g. `impressionist`), with its `extends` chain resolved from
     /// the built-in files.
     pub fn builtin(name: &str) -> Result<Self> {
         let path = PathBuf::from(format!("{name}.toml"));
-        let raw = Self::load_raw(&path, 0, &|p: &Path| {
-            let key = p.to_string_lossy().replace('\\', "/");
-            BUILTIN_STYLES
-                .iter()
-                .find(|(k, _)| *k == key)
-                .map(|(_, t)| t.to_string())
-                .with_context(|| {
-                    format!(
-                        "no built-in style {key:?} (built-in: {})",
-                        Self::builtin_names().join(", ")
-                    )
-                })
-        })?;
+        let raw = layers::load(&path, &builtin::read)?;
         Self::from_table(raw).with_context(|| format!("parsing built-in style {name}"))
-    }
-
-    fn load_raw(
-        path: &Path,
-        depth: usize,
-        read: &dyn Fn(&Path) -> Result<String>,
-    ) -> Result<toml::Table> {
-        anyhow::ensure!(
-            depth < 8,
-            "style `extends` chain too deep at {}",
-            path.display()
-        );
-        let text = read(path)?;
-        let mut raw: toml::Table =
-            toml::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
-        let Some(base) = raw.remove("extends") else {
-            return Ok(raw);
-        };
-        // A path, or a list of paths: the first is the base, each later one an overlay merged
-        // over it in order (e.g. a palette base plus a brushwork overlay), then this file.
-        let bases: Vec<&str> = match &base {
-            toml::Value::String(s) => vec![s.as_str()],
-            toml::Value::Array(a) => a.iter().filter_map(|v| v.as_str()).collect(),
-            _ => Vec::new(),
-        };
-        let paths_ok = match &base {
-            toml::Value::Array(a) => !a.is_empty() && a.iter().all(|v| v.is_str()),
-            v => v.is_str(),
-        };
-        anyhow::ensure!(
-            paths_ok,
-            "{}: `extends` must be a path or a non-empty list of paths",
-            path.display()
-        );
-        let dir = path.parent().unwrap_or(Path::new("."));
-        let mut merged: Option<toml::Table> = None;
-        for b in bases {
-            let layer = Self::load_raw(&dir.join(b), depth + 1, read)?;
-            merged = Some(match merged {
-                None => layer,
-                Some(m) => crate::mood::blend_table(&m, &layer, 1.0),
-            });
-        }
-        Ok(crate::mood::blend_table(
-            &merged.unwrap_or_default(),
-            &raw,
-            1.0,
-        ))
     }
 
     /// Parses a style, keeping its TOML so moods can be derived from it.
@@ -187,7 +123,7 @@ impl Style {
                 .raw
                 .as_ref()
                 .context("style was not loaded from TOML, so it has no moods")?;
-            let mut table = crate::mood::blend_table(raw, over, mood.strength.min(1.0) as f64);
+            let mut table = layers::merge(raw, over, mood.strength.min(1.0) as f64);
             table.remove("moods");
             let mut derived: Style = toml::Value::Table(table)
                 .try_into()
