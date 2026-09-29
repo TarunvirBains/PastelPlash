@@ -1,4 +1,4 @@
-| Engine-tinted gray water stays gray and darkens by ≤ `tint_safe_max_darkening` beyond the mood. | The engine supplies the color and multiplies the value.# PastelPlash style rules
+# PastelPlash style rules
 
 **North star:** it still looks and feels like the source game — for OoT, like OoT — just a
 dreamlike version evoking impressionism and watercolor, in the direction of *Skyward Sword*. It
