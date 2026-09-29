@@ -221,3 +221,59 @@ fn rule_actor_colors_bring_no_new_hue() {
         report.finish();
     }
 }
+
+#[test]
+fn rule_solid_actors_read_painted() {
+    // Solid actor surfaces (gear, props, clothing) sit in the painted world: their brushwork
+    // (fine-scale lightness marks the stylization adds on a smooth, evenly colored surface) is at
+    // least actor.min_mark_energy times the world's on the same surface (the world reads painted
+    // mostly through its abstracted photographic detail, which smooth models lack).
+    let k = contract();
+    let img = image(192, 192, |x, y| {
+        let t = smooth_noise(x as f32, y as f32, 3, 192, 201);
+        let [r, g, b] = from_oklch(0.55 + 0.05 * t, 0.08, 140.0);
+        [r, g, b, 1.0]
+    });
+    // Mean absolute difference between each texel's L and its 5x5 box mean.
+    let marks = |im: &Image| {
+        let (w, h) = (im.width as i32, im.height as i32);
+        let l: Vec<f32> = im.pixels.iter().map(|&p| lch(p)[0]).collect();
+        let mut sum = 0.0;
+        let mut n = 0.0;
+        for y in 4..h - 4 {
+            for x in 4..w - 4 {
+                let mut m = 0.0;
+                for dy in -2..=2 {
+                    for dx in -2..=2 {
+                        m += l[((y + dy) * w + x + dx) as usize] / 25.0;
+                    }
+                }
+                sum += (l[(y * w + x) as usize] - m).abs();
+                n += 1.0;
+            }
+        }
+        sum / n
+    };
+    let src = marks(&img);
+    let mut report = Report::new("solid actors read painted");
+    let world: std::collections::HashMap<String, f32> = {
+        let m = std::cell::RefCell::new(std::collections::HashMap::new());
+        let rendered = Matrix::base(&[Category::World]).check(&mut report, &img, |case, out| {
+            m.borrow_mut().insert(case.style.clone(), marks(out) - src);
+            Ok(())
+        });
+        if !rendered {
+            return;
+        }
+        m.into_inner()
+    };
+    let rendered = Matrix::base(&[Category::Actor]).check(&mut report, &img, |case, out| {
+        let (a, wv) = (marks(out) - src, world[&case.style]);
+        ensure(a >= k.actor.min_mark_energy * wv, || {
+            format!("actor marks {a:.4} vs world {wv:.4}")
+        })
+    });
+    if rendered {
+        report.finish();
+    }
+}

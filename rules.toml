@@ -185,9 +185,13 @@ max_lightness_shift = 0.2
 # Actor brushwork makes no large light/dark patches (the cel shader bands lit and shadow): the
 # 16x16 cell-mean lightness change, less the texture's mean change, stays within max_patch_l (p95).
 max_patch_l = 0.04
-# Props (chests, pots) may take more brushwork via the pack map, at most max_brushwork times the
-# style's strokes; they still make no large patches.
-max_brushwork = 3.0
+# The pack map may scale a file's brushwork (faces and skin lighter) by at most max_brushwork on
+# top of its category's; actors still make no large patches there.
+max_brushwork = 1.5
+# Solid actors read painted: their brushwork on a smooth surface is at least min_mark_energy times
+# the world's (world textures read painted mostly through their abstracted photographic detail,
+# which smooth models lack; strokes carry it on actors).
+min_mark_energy = 1.4
 # No new hue: a colored actor texel stays within max_local_hue_change degrees of its 9x9 source
 # neighborhood's mean hue (where that neighborhood is clearly colored).
 max_local_hue_change = 45.0
@@ -204,7 +208,7 @@ max_cool_dark_hue_shift = 40.0
 max_tint_safe_gray = 0.92
 max_tint_safe_l = 0.96
 tint_safe_min_structure = 0.8
-max_tint_safe_strokes = 0.08
+max_tint_safe_strokes = 0.1
 
 # Per-mood allowances. Only in nocturne may lifted darks lean cool (indigo, violet, deep teal):
 # their hue may rotate further, but they stay colored (the dark/mud/identity rules still apply).

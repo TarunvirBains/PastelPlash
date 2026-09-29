@@ -28,7 +28,8 @@ pub(super) fn plan(
     let ab = &style.abstraction;
     Strokes {
         strength: st.strength * tr.strokes * brushwork,
-        chroma: st.chroma * tr.strokes,
+        // Chroma variation never above the style's own (more would push vivid colors out of gamut).
+        chroma: st.chroma * (tr.strokes * brushwork).min(1.0),
         len: (st.length * f * tr.stroke_scale * (1.0 + busy * (ab.stroke_scale - 1.0))).max(1.0),
         width: (st.width * f * tr.stroke_scale).max(0.75),
         smear: st.smear * tr.strokes,

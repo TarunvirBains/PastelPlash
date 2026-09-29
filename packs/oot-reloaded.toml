@@ -201,19 +201,35 @@ glob = "alt/scenes/shared/shrine_r_scene/*Background_*"
 mood = "nocturne"
 cast = "indigo"
 
-# Props (chests, pots, crates): visibly more brushwork than faces and skin, which keep the
-# actor default. The wood grain, metal bands and lock shapes stay (the actor rules still apply).
+# Faces and skin: a lighter touch than the other solid things (the target's actor brushwork),
+# so skin never turns streaky.
 [[brushwork]]
-glob = "alt/objects/object_box/**"
-strength = 2.5
+glob = "alt/objects/**/*Skin*"
+strength = 0.25
 
 [[brushwork]]
-glob = "alt/objects/object_tsubo/**"
-strength = 2.5
+glob = "alt/objects/**/*Face*"
+strength = 0.25
 
 [[brushwork]]
-glob = "alt/objects/object_kibako*/**"
-strength = 2.5
+glob = "alt/objects/**/*Nose*"
+strength = 0.25
+
+[[brushwork]]
+glob = "alt/objects/**/*Ear*"
+strength = 0.25
+
+[[brushwork]]
+glob = "alt/objects/**/*HandTex"
+strength = 0.25
+
+[[brushwork]]
+glob = "alt/objects/**/*HandSideTex"
+strength = 0.25
+
+[[brushwork]]
+glob = "alt/objects/**/*HandThumbTex"
+strength = 0.25
 # Fluids: world textures are detected by their look (caustic or vein networks over a smooth body;
 # `crate::fluid`). These rules cover what the detector misses (soft flows, foam, waterfalls,
 # translucent overlays) and fluids drawn by actors (the detector only looks at world geometry).

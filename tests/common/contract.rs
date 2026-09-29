@@ -267,6 +267,7 @@ pub struct ActorRules {
     pub max_lightness_shift: f32,
     pub max_patch_l: f32,
     pub max_brushwork: f32,
+    pub min_mark_energy: f32,
     pub max_local_hue_change: f32,
     pub cool_dark_hue: [f32; 2],
     pub cool_dark_family: [f32; 2],
