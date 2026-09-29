@@ -277,3 +277,68 @@ fn rule_solid_actors_read_painted() {
         report.finish();
     }
 }
+
+#[test]
+fn rule_dark_tint_safe_actors_keep_their_value() {
+    // The tint-safe raise gives light cloth headroom for the engine's tint (Link's tunic). A dark
+    // engine-tinted texture (a dark plate with light lettering, a black silhouette) is raised to
+    // at most actor.max_tint_safe_gain times its own median lightness, and its lettering keeps at
+    // least technique.text_min_contrast of its contrast: no black Poe or fishing rod turned near
+    // white, no lettering clipped away at the tint-safe cap.
+    let k = contract();
+    let plate = |size: u32, seed: u32, board: f32| {
+        let mut img = image(size, size, |x, y| {
+            let v = if is_letter(x, y) {
+                0.9
+            } else {
+                board + 0.04 * (smooth_noise(x as f32, y as f32, 6, size, seed) - 0.5)
+            };
+            let [r, g, b] = from_oklch(v, 0.0, 0.0);
+            [r, g, b, 1.0]
+        });
+        img.tint_safe = Some(true);
+        img
+    };
+    let contrast = |im: &Image| {
+        let (mut o, mut no, mut s, mut ns) = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
+        for y in 4..252u32 {
+            for x in 4..252u32 {
+                let l = lch(im.pixels[(y * 256 + x) as usize])[0];
+                if is_letter(x, y) {
+                    o += l;
+                    no += 1.0;
+                } else if (x - 4..=x + 4).any(|xx| is_letter(xx, y))
+                    || (y - 4..=y + 4).any(|yy| is_letter(x, yy))
+                {
+                    s += l;
+                    ns += 1.0;
+                }
+            }
+        }
+        o / no - s / ns
+    };
+    let mut report = Report::new("dark tint-safe actors keep their value");
+    let matrix = Matrix::full(&[Category::Actor]);
+    for (label, img) in [
+        ("dark plate", plate(256, 211, 0.2)),
+        ("black plate", plate(256, 212, 0.03)),
+    ] {
+        let m0 = median(img.pixels.iter().map(|&p| lch(p)[0]).collect());
+        let c0 = contrast(&img);
+        let rendered = matrix.check(&mut report, &img, |_, out| {
+            let m1 = median(out.pixels.iter().map(|&p| lch(p)[0]).collect());
+            let bound = k.actor.max_tint_safe_gain * m0 + 2.0 * k.tolerance.lightness;
+            ensure(m1 <= bound, || {
+                format!("{label}: median {m0:.3} raised to {m1:.3} (at most {bound:.3})")
+            })?;
+            let c1 = contrast(out);
+            ensure(c1 >= k.technique.text_min_contrast * c0, || {
+                format!("{label}: lettering contrast {c0:.3} -> {c1:.3}")
+            })
+        });
+        if !rendered {
+            return;
+        }
+    }
+    report.finish();
+}

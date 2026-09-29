@@ -39,10 +39,14 @@ pub(super) fn plan(image: &Image, tr: &Treatment, facts: &ImageFacts) -> TintSaf
     }
     let i = l.len() / 2;
     let median = *l.select_nth_unstable_by(i, f32::total_cmp).1;
-    // A shift puts the median at the target (never darker); the folds keep their contrast.
+    // A shift puts the median at the target (never darker); the folds keep their contrast. Dark
+    // textures are raised to at most `tint_safe_max_gain` times their median (black stays black).
+    let room = tr
+        .tint_safe_max_gain
+        .map_or(f32::INFINITY, |g| (g - 1.0) * median);
     TintSafe {
         on: true,
-        shift: (target - median).max(0.0),
+        shift: (target - median).max(0.0).min(room),
         amp: tr.tint_safe_strokes,
     }
 }

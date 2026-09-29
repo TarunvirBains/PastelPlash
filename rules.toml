@@ -223,6 +223,11 @@ max_tint_safe_gray = 0.92
 max_tint_safe_l = 0.96
 tint_safe_min_structure = 0.8
 max_tint_safe_strokes = 0.1
+# A tint-safe raise is for light cloth (a tunic at L 0.65 raised to 0.87): the median may be raised
+# to at most max_tint_safe_gain times its own lightness, so dark and black engine-tinted textures
+# (a Poe silhouette, a black fishing rod, a dark plate with light lettering) keep their value and
+# their lettering instead of turning near white with their lights clipped at the cap.
+max_tint_safe_gain = 1.5
 
 # Per-mood allowances. Only in nocturne may lifted darks lean cool (indigo, violet, deep teal):
 # their hue may rotate further, but they stay colored (the dark/mud/identity rules still apply).

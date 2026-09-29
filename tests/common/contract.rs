@@ -302,6 +302,7 @@ pub struct ActorRules {
     pub max_tint_safe_l: f32,
     pub tint_safe_min_structure: f32,
     pub max_tint_safe_strokes: f32,
+    pub max_tint_safe_gain: f32,
 }
 
 /// The contract, parsed once.

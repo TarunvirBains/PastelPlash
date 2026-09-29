@@ -390,6 +390,12 @@ fn rule_actor_targets_leave_lighting_to_the_renderer() {
                 g <= k.actor.max_tint_safe_gray,
                 "{n}: actor tint_safe_gray {g}"
             );
+            let gain = actor.tint_safe_max_gain;
+            assert!(
+                gain.is_some_and(|x| x <= k.actor.max_tint_safe_gain),
+                "{n}: actor tint_safe_max_gain {gain:?} (at most {})",
+                k.actor.max_tint_safe_gain
+            );
         }
         assert!(
             actor.tint_safe_strokes <= k.actor.max_tint_safe_strokes,

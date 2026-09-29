@@ -166,6 +166,9 @@ pub struct Treatment {
     /// here (OKLab L) and painted with brightness-only strokes; unset: the palette's lightness
     /// only. The engine's tint darkens them, so they may exceed the lightness ceiling.
     pub tint_safe_gray: Option<f32>,
+    /// The raise lifts a texture's median gray to at most this multiple of its own (dark and
+    /// black engine-tinted textures keep their value); unset: up to `tint_safe_gray`.
+    pub tint_safe_max_gain: Option<f32>,
     /// Brightness amplitude (OKLab L) of those strokes.
     pub tint_safe_strokes: f32,
     /// Multiplies the pull toward the style's reference water tone (`palette.water`; 0 = none).
@@ -203,6 +206,7 @@ impl Default for Treatment {
             chroma_floor: 1.0,
             dark_chroma: 1.0,
             tint_safe_gray: None,
+            tint_safe_max_gain: None,
             tint_safe_strokes: 0.0,
             abstraction: 1.0,
             grouping: 1.0,
@@ -296,6 +300,11 @@ impl Target {
             if let Some(g) = t.tint_safe_gray {
                 check(g > 0.0 && g < 1.0, || {
                     format!("categories.{cat:?}.tint_safe_gray = {g} must be within (0, 1)")
+                })?;
+            }
+            if let Some(g) = t.tint_safe_max_gain {
+                check(g >= 1.0, || {
+                    format!("categories.{cat:?}.tint_safe_max_gain = {g} must be at least 1")
                 })?;
             }
             non_negative(
