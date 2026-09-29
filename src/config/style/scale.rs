@@ -31,3 +31,11 @@ impl Default for Scale {
         }
     }
 }
+
+impl Scale {
+    pub fn validate(&self) -> anyhow::Result<()> {
+        crate::config::check(self.reference_size > 0.0, || {
+            "scale.reference_size must be > 0".into()
+        })
+    }
+}

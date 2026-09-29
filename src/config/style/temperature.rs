@@ -25,3 +25,9 @@ impl Default for Temperature {
         }
     }
 }
+
+impl Temperature {
+    pub fn validate(&self) -> anyhow::Result<()> {
+        crate::config::non_negative("temperature.chroma", self.chroma)
+    }
+}

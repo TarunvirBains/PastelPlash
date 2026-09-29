@@ -2,6 +2,10 @@
 
 use serde::Deserialize;
 
+use anyhow::Result;
+
+use crate::config::{check, unit};
+
 /// Soft value grouping (notan) for busy, photographic world textures (the same trigger as
 /// [`Contrast`]): the texture's 2–4 value masses are found (1D k-means on an edge-aware smoothed
 /// lightness, never a plain blur), then each texel's lightness is pulled toward its soft-assigned
@@ -61,5 +65,28 @@ impl Default for Grouping {
             salient: [0.16, 0.26],
             stroke_value: 0.5,
         }
+    }
+}
+
+impl Grouping {
+    pub fn validate(&self) -> Result<()> {
+        let g = self;
+        unit("grouping.strength", g.strength)?;
+        unit("grouping.color", g.color)?;
+        unit("grouping.explained", g.explained)?;
+        unit("grouping.skip_explained", g.skip_explained)?;
+        check((2..=4).contains(&g.max_masses), || {
+            format!(
+                "grouping.max_masses = {} must be within 2..=4",
+                g.max_masses
+            )
+        })?;
+        check(g.softness > 0.0 && g.range > 0.0 && g.radius >= 0.0, || {
+            "grouping.softness and grouping.range must be > 0, grouping.radius >= 0".into()
+        })?;
+        check(g.salient[0] < g.salient[1], || {
+            "grouping.salient must be an increasing range".into()
+        })?;
+        Ok(())
     }
 }

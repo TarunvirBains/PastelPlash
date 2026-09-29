@@ -31,3 +31,9 @@ impl Default for Strokes {
         }
     }
 }
+
+impl Strokes {
+    pub fn validate(&self) -> anyhow::Result<()> {
+        crate::config::non_negative("strokes.strength", self.strength)
+    }
+}

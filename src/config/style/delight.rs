@@ -25,3 +25,12 @@ impl Default for Delight {
         }
     }
 }
+
+impl Delight {
+    pub fn validate(&self) -> anyhow::Result<()> {
+        crate::config::non_negative("delight.strength", self.strength)?;
+        crate::config::check(self.min_gain <= self.max_gain, || {
+            "delight.min_gain is above delight.max_gain".into()
+        })
+    }
+}

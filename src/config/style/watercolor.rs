@@ -69,3 +69,18 @@ impl Default for Watercolor {
         }
     }
 }
+
+impl Watercolor {
+    pub fn validate(&self) -> anyhow::Result<()> {
+        for (name, v) in [
+            ("watercolor.edge_darkening", self.edge_darkening),
+            ("watercolor.bleed", self.bleed),
+            ("watercolor.granulation", self.granulation),
+            ("watercolor.paper_grain", self.paper_grain),
+            ("watercolor.floor_margin", self.floor_margin),
+        ] {
+            crate::config::non_negative(name, v)?;
+        }
+        Ok(())
+    }
+}

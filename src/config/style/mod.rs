@@ -8,7 +8,7 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 
 use super::{builtin, layers};
-use super::{check, non_negative, unit};
+
 use crate::mood::Mood;
 
 mod abstraction;
@@ -143,103 +143,14 @@ impl Style {
 
     /// Rejects settings that are out of range or contradict each other.
     pub fn validate(&self) -> Result<()> {
-        let p = &self.palette;
-        unit("palette.l_floor", p.l_floor)?;
-        unit("palette.l_ceiling", p.l_ceiling)?;
-        check(p.l_floor <= p.l_ceiling, || {
-            format!(
-                "palette.l_floor ({}) is above palette.l_ceiling ({})",
-                p.l_floor, p.l_ceiling
-            )
-        })?;
-        unit("palette.floor_knee", p.floor_knee)?;
-        non_negative("palette.strength", p.strength)?;
-        check((2..=129).contains(&p.lut_size), || {
-            format!("palette.lut_size = {} must be within 2..=129", p.lut_size)
-        })?;
-        for w in p.l_curve.windows(2) {
-            check(w[1][0] > w[0][0] && w[1][1] >= w[0][1], || {
-                format!(
-                    "palette.l_curve must be increasing: {:?} then {:?}",
-                    w[0], w[1]
-                )
-            })?;
-        }
-        for pt in &p.l_curve {
-            unit("palette.l_curve input", pt[0])?;
-            unit("palette.l_curve output", pt[1])?;
-        }
-        for g in &p.groups {
-            let name = format!("palette.groups[{}]", g.name);
-            unit(&format!("{name}.l_floor"), g.l_floor)?;
-            check(g.l_floor <= p.l_ceiling, || {
-                format!(
-                    "{name}.l_floor ({}) is above palette.l_ceiling ({})",
-                    g.l_floor, p.l_ceiling
-                )
-            })?;
-            non_negative(&format!("{name}.c_scale"), g.c_scale)?;
-            unit(&format!("{name}.hue_pull"), g.hue_pull)?;
-        }
-        non_negative("palette.chroma_cap", p.chroma_cap)?;
-        unit("palette.harmonize", p.harmonize)?;
-        unit("palette.vivid", p.vivid)?;
-        check((0.0..=0.5).contains(&p.accent_fraction), || {
-            format!(
-                "palette.accent_fraction = {} must be within 0..=0.5",
-                p.accent_fraction
-            )
-        })?;
-        unit("palette.accent_min_l", p.accent_min_l)?;
-        unit("palette.accent_softness", p.accent_softness)?;
-        let k = &self.kuwahara;
-        non_negative("kuwahara.radius", k.radius)?;
-        unit("kuwahara.strength", k.strength)?;
-        check(k.min_radius <= k.max_radius, || {
-            format!(
-                "kuwahara.min_radius ({}) is above kuwahara.max_radius ({})",
-                k.min_radius, k.max_radius
-            )
-        })?;
-        check(k.anisotropy > 0.0, || {
-            "kuwahara.anisotropy must be > 0".into()
-        })?;
-        check(self.scale.reference_size > 0.0, || {
-            "scale.reference_size must be > 0".into()
-        })?;
-        let w = &self.watercolor;
-        for (name, v) in [
-            ("watercolor.edge_darkening", w.edge_darkening),
-            ("watercolor.bleed", w.bleed),
-            ("watercolor.granulation", w.granulation),
-            ("watercolor.paper_grain", w.paper_grain),
-            ("watercolor.floor_margin", w.floor_margin),
-            ("strokes.strength", self.strokes.strength),
-            ("temperature.chroma", self.temperature.chroma),
-            ("delight.strength", self.delight.strength),
-        ] {
-            non_negative(name, v)?;
-        }
-        check(self.delight.min_gain <= self.delight.max_gain, || {
-            "delight.min_gain is above delight.max_gain".into()
-        })?;
-        let g = &self.grouping;
-        unit("grouping.strength", g.strength)?;
-        unit("grouping.color", g.color)?;
-        unit("grouping.explained", g.explained)?;
-        unit("grouping.skip_explained", g.skip_explained)?;
-        check((2..=4).contains(&g.max_masses), || {
-            format!(
-                "grouping.max_masses = {} must be within 2..=4",
-                g.max_masses
-            )
-        })?;
-        check(g.softness > 0.0 && g.range > 0.0 && g.radius >= 0.0, || {
-            "grouping.softness and grouping.range must be > 0, grouping.radius >= 0".into()
-        })?;
-        check(g.salient[0] < g.salient[1], || {
-            "grouping.salient must be an increasing range".into()
-        })?;
-        Ok(())
+        // Section by section, in a fixed order (the first failure is reported).
+        self.palette.validate()?;
+        self.kuwahara.validate()?;
+        self.scale.validate()?;
+        self.watercolor.validate()?;
+        self.strokes.validate()?;
+        self.temperature.validate()?;
+        self.delight.validate()?;
+        self.grouping.validate()
     }
 }

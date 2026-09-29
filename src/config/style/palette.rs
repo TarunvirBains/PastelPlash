@@ -2,6 +2,10 @@
 
 use serde::Deserialize;
 
+use anyhow::Result;
+
+use crate::config::{check, non_negative, unit};
+
 /// A hue group of the palette: a hue range (feathered at its ends) with its own adjustments.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -232,5 +236,60 @@ impl Default for Palette {
             green_hue: [110.0, 175.0],
             light_green_floor: 0.0,
         }
+    }
+}
+
+impl Palette {
+    pub fn validate(&self) -> Result<()> {
+        let p = self;
+        unit("palette.l_floor", p.l_floor)?;
+        unit("palette.l_ceiling", p.l_ceiling)?;
+        check(p.l_floor <= p.l_ceiling, || {
+            format!(
+                "palette.l_floor ({}) is above palette.l_ceiling ({})",
+                p.l_floor, p.l_ceiling
+            )
+        })?;
+        unit("palette.floor_knee", p.floor_knee)?;
+        non_negative("palette.strength", p.strength)?;
+        check((2..=129).contains(&p.lut_size), || {
+            format!("palette.lut_size = {} must be within 2..=129", p.lut_size)
+        })?;
+        for w in p.l_curve.windows(2) {
+            check(w[1][0] > w[0][0] && w[1][1] >= w[0][1], || {
+                format!(
+                    "palette.l_curve must be increasing: {:?} then {:?}",
+                    w[0], w[1]
+                )
+            })?;
+        }
+        for pt in &p.l_curve {
+            unit("palette.l_curve input", pt[0])?;
+            unit("palette.l_curve output", pt[1])?;
+        }
+        for g in &p.groups {
+            let name = format!("palette.groups[{}]", g.name);
+            unit(&format!("{name}.l_floor"), g.l_floor)?;
+            check(g.l_floor <= p.l_ceiling, || {
+                format!(
+                    "{name}.l_floor ({}) is above palette.l_ceiling ({})",
+                    g.l_floor, p.l_ceiling
+                )
+            })?;
+            non_negative(&format!("{name}.c_scale"), g.c_scale)?;
+            unit(&format!("{name}.hue_pull"), g.hue_pull)?;
+        }
+        non_negative("palette.chroma_cap", p.chroma_cap)?;
+        unit("palette.harmonize", p.harmonize)?;
+        unit("palette.vivid", p.vivid)?;
+        check((0.0..=0.5).contains(&p.accent_fraction), || {
+            format!(
+                "palette.accent_fraction = {} must be within 0..=0.5",
+                p.accent_fraction
+            )
+        })?;
+        unit("palette.accent_min_l", p.accent_min_l)?;
+        unit("palette.accent_softness", p.accent_softness)?;
+        Ok(())
     }
 }

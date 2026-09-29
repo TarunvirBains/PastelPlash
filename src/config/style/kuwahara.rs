@@ -2,6 +2,10 @@
 
 use serde::Deserialize;
 
+use anyhow::Result;
+
+use crate::config::{check, non_negative, unit};
+
 /// Anisotropic Kuwahara filter with polynomial sector weights (Kyprianidis et al.).
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -39,5 +43,23 @@ impl Default for Kuwahara {
             max_radius: 24.0,
             min_radius: 2.0,
         }
+    }
+}
+
+impl Kuwahara {
+    pub fn validate(&self) -> Result<()> {
+        let k = self;
+        non_negative("kuwahara.radius", k.radius)?;
+        unit("kuwahara.strength", k.strength)?;
+        check(k.min_radius <= k.max_radius, || {
+            format!(
+                "kuwahara.min_radius ({}) is above kuwahara.max_radius ({})",
+                k.min_radius, k.max_radius
+            )
+        })?;
+        check(k.anisotropy > 0.0, || {
+            "kuwahara.anisotropy must be > 0".into()
+        })?;
+        Ok(())
     }
 }
