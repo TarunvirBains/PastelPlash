@@ -26,6 +26,14 @@ use pastelplash::image::Image;
 /// that passes again is reported so it can be removed.
 const EXPECTED_FAILURES: &[(&str, &str)] = &[];
 
+/// Every category the stage restyles.
+pub const STYLIZED: [Category; 4] = [
+    Category::World,
+    Category::Actor,
+    Category::Background,
+    Category::Skybox,
+];
+
 /// One render case: a style in a mood, as a category.
 pub struct Case {
     pub style: String,
@@ -239,4 +247,45 @@ fn a_report_fails_listing_every_failing_case() {
     report.check("b", Err("second".into()));
     report.check("c", Ok(()));
     report.finish();
+}
+
+/// `config` with `[section] key = value` set in the style, in the base and in every mood (moods
+/// derive from the style's TOML, so a typed field alone would not reach them).
+pub fn tweaked(config: &Config, section: &str, key: &str, value: f64) -> Config {
+    use toml::{Table, Value};
+    let mut raw = config.style.raw.clone().expect("style loaded from TOML");
+    raw.entry(section)
+        .or_insert_with(|| Value::Table(Table::new()))
+        .as_table_mut()
+        .unwrap()
+        .insert(key.into(), Value::Float(value));
+    if let Some(moods) = raw.get_mut("moods").and_then(Value::as_table_mut) {
+        for (_, mood) in moods.iter_mut() {
+            if let Some(s) = mood.get_mut(section).and_then(Value::as_table_mut) {
+                s.remove(key);
+            }
+        }
+    }
+    let mut style = pastelplash::config::Style::parse(&toml::to_string(&raw).unwrap()).unwrap();
+    style.lut = config.style.lut.clone();
+    Config {
+        style,
+        ..config.clone()
+    }
+}
+
+#[test]
+fn the_full_matrix_covers_every_mood_at_half_and_full_strength() {
+    let want: usize = styles()
+        .iter()
+        .map(|p| 1 + 2 * load(p, &default_target()).style.moods.len())
+        .sum();
+    let m = Matrix::full(&STYLIZED);
+    assert_eq!(m.cases.len(), want * STYLIZED.len());
+    assert!(
+        m.cases
+            .iter()
+            .any(|c| c.mood.name == "nocturne" && c.mood.strength == 0.5)
+    );
+    assert!(want > styles().len(), "no style defines a mood");
 }

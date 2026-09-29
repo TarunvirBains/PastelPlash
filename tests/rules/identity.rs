@@ -10,7 +10,7 @@ fn rule_coarse_identity_is_kept() {
     // dark-half and light-half mean colors stay close to the source's (brushwork doesn't count).
     let k = contract();
     let mut report = Report::new("coarse identity is kept");
-    let matrix = Matrix::base(&[Category::World]);
+    let matrix = Matrix::full(&[Category::World]);
     for (label, img) in [
         ("bark", bark(256, 11)),
         ("dark brown bark", dark_brown_bark(256, 12)),
@@ -74,7 +74,7 @@ fn rule_identity_is_kept() {
     let reference =
         pastelplash::report::Reference::load(&repo().join("reference/ss-lit.toml")).unwrap();
     let mut report = Report::new("identity is kept");
-    let matrix = Matrix::base(&[Category::World]);
+    let matrix = Matrix::full(&[Category::World]);
     for (label, img) in [
         ("tiling", tiling(256, 5)),
         ("foliage", mid_foliage(256, 6)),

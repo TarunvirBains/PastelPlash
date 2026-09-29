@@ -6,7 +6,7 @@ use super::*;
 fn rule_darks_are_colored_never_black() {
     let k = contract();
     let mut report = Report::new("darks are colored, never black");
-    let matrix = Matrix::base(&[Category::World]);
+    let matrix = Matrix::full(&[Category::World]);
     for (label, img) in [
         ("dark hues", dark_hues(192, 1)),
         ("dark foliage", dark_foliage(192, 2)),
@@ -35,7 +35,7 @@ fn rule_no_brown_mud() {
     let k = contract();
     let mut report = Report::new("no brown mud");
     let rendered =
-        Matrix::base(&[Category::World]).check(&mut report, &dull_browns(192, 4), |_, out| {
+        Matrix::full(&[Category::World]).check(&mut report, &dull_browns(192, 4), |_, out| {
             few(out, 0.0, |p| k.palette.is_mud(lch(p)))
         });
     if rendered {
@@ -48,7 +48,7 @@ fn rule_bark_does_not_turn_blue() {
     // Regression: v2 lifted bark and cliff darks toward navy. Dark bark (brown, and near-neutral
     // olive-gray with near-black grooves) must keep a warm hue in every style.
     let mut report = Report::new("bark does not turn blue");
-    let matrix = Matrix::base(&[Category::World]);
+    let matrix = Matrix::full(&[Category::World]);
     for (label, img) in [
         ("dark brown bark", dark_brown_bark(192, 1)),
         ("bark", bark(192, 2)),

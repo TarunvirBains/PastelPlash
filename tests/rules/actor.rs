@@ -20,7 +20,7 @@ fn rule_actor_keeps_color_and_value() {
     let c0 = median(img.pixels.iter().map(|&p| lch(p)[1]).collect());
     let l0 = median(img.pixels.iter().map(|&p| lch(p)[0]).collect());
     let mut report = Report::new("actor keeps color and value");
-    let rendered = Matrix::base(&[Category::Actor]).check(&mut report, &img, |case, out| {
+    let rendered = Matrix::full(&[Category::Actor]).check(&mut report, &img, |case, out| {
         let ceiling = ceiling(case);
         let c1 = median(out.pixels.iter().map(|&p| lch(p)[1]).collect());
         let l1 = median(out.pixels.iter().map(|&p| lch(p)[0]).collect());
@@ -46,7 +46,7 @@ fn rule_actor_lightness_ceiling() {
         [r, g, b, 1.0]
     });
     let mut report = Report::new("actor lightness ceiling");
-    let rendered = Matrix::base(&[Category::Actor]).check(&mut report, &img, |case, out| {
+    let rendered = Matrix::full(&[Category::Actor]).check(&mut report, &img, |case, out| {
         let ceiling = ceiling(case);
         few(out, 0.0, |p| lch(p)[0] > ceiling + k.tolerance.lightness)
             .map_err(|e| format!("above actor ceiling: {e}"))
@@ -60,7 +60,7 @@ fn rule_actor_lightness_ceiling() {
 fn rule_tint_safe_grayscale_stays_gray() {
     let k = contract();
     let mut report = Report::new("tint-safe grayscale stays gray");
-    let rendered = Matrix::base(&[Category::World, Category::Actor]).check(
+    let rendered = Matrix::full(&[Category::World, Category::Actor]).check(
         &mut report,
         &grayscale(192, 2),
         |_, out| {
@@ -79,16 +79,14 @@ fn rule_actor_has_no_temperature_shift() {
     // change an actor render at all.
     let img = dark_hues(128, 4);
     let mut report = Report::new("actor has no temperature shift");
-    for path in styles() {
-        let config = load(&path, &default_target());
-        let Some(with) = render(&path, &config, Category::Actor, &img) else {
+    for (label, path, config, mood) in style_moods() {
+        let Some(with) = render_mood(&path, &config, Category::Actor, &mood, &img) else {
             return;
         };
-        let mut cold = config.clone();
-        cold.style.temperature.chroma = 0.0;
-        let without = render(&path, &cold, Category::Actor, &img).unwrap();
+        let cold = tweaked(&config, "temperature", "chroma", 0.0);
+        let without = render_mood(&path, &cold, Category::Actor, &mood, &img).unwrap();
         report.check(
-            &name(&path),
+            &label,
             ensure(with.pixels == without.pixels, || {
                 "temperature changed an actor".into()
             }),

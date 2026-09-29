@@ -107,14 +107,12 @@ fn rule_grouping_only_touches_busy_world_textures() {
     let trunk = bark(256, 51);
     let calm = mid_foliage(256, 52);
     let mut report = Report::new("grouping only touches busy world textures");
-    for path in styles() {
-        let config = load(&path, &default_target());
+    for (label, path, config, mood) in style_moods() {
         if config.style.grouping.strength <= 0.0 {
             continue;
         }
-        let n = name(&path);
-        let mut off = config.clone();
-        off.style.grouping.strength = 0.0;
+        let n = label;
+        let off = tweaked(&config, "grouping", "strength", 0.0);
         let mut greedy = config.clone();
         greedy
             .target
@@ -122,18 +120,18 @@ fn rule_grouping_only_touches_busy_world_textures() {
             .entry(Category::Actor)
             .or_default()
             .grouping = 1.0;
-        let Some(a_on) = render(&path, &greedy, Category::Actor, &trunk) else {
+        let Some(a_on) = render_mood(&path, &greedy, Category::Actor, &mood, &trunk) else {
             return;
         };
-        let a_off = render(&path, &off, Category::Actor, &trunk).unwrap();
+        let a_off = render_mood(&path, &off, Category::Actor, &mood, &trunk).unwrap();
         report.check(
             &n,
             ensure(a_on.pixels == a_off.pixels, || {
                 "grouping changed an actor".into()
             }),
         );
-        let c_on = render(&path, &config, Category::World, &calm).unwrap();
-        let c_off = render(&path, &off, Category::World, &calm).unwrap();
+        let c_on = render_mood(&path, &config, Category::World, &mood, &calm).unwrap();
+        let c_off = render_mood(&path, &off, Category::World, &mood, &calm).unwrap();
         report.check(
             &n,
             ensure(c_on.pixels == c_off.pixels, || {
@@ -204,18 +202,16 @@ fn rule_grouping_forms_value_masses() {
         (((s0 + s1) / 2.0) as f32, (m1 - m0) as f32)
     };
     let mut report = Report::new("grouping forms value masses");
-    for path in styles() {
-        let config = load(&path, &default_target());
+    for (label, path, config, mood) in style_moods() {
         if config.style.grouping.strength <= 0.0 {
             continue;
         }
-        let n = name(&path);
-        let mut off = config.clone();
-        off.style.grouping.strength = 0.0;
-        let Some(on) = render(&path, &config, Category::World, &trunk) else {
+        let n = label;
+        let off = tweaked(&config, "grouping", "strength", 0.0);
+        let Some(on) = render_mood(&path, &config, Category::World, &mood, &trunk) else {
             return;
         };
-        let off = render(&path, &off, Category::World, &trunk).unwrap();
+        let off = render_mood(&path, &off, Category::World, &mood, &trunk).unwrap();
         let ((w_on, sep_on), (w_off, sep_off)) = (masses(&on), masses(&off));
         report.check(
             &n,
@@ -253,18 +249,16 @@ fn rule_adaptive_contrast_targets_high_contrast_textures() {
     let trunk = bark(256, 3);
     let ground = mid_foliage(256, 4);
     let mut report = Report::new("adaptive contrast targets high-contrast textures");
-    for path in styles() {
-        let config = load(&path, &default_target());
+    for (label, path, config, mood) in style_moods() {
         if config.style.contrast.strength <= 0.0 {
             continue;
         }
-        let n = name(&path);
-        let mut off = config.clone();
-        off.style.contrast.strength = 0.0;
-        let Some(on_t) = render(&path, &config, Category::World, &trunk) else {
+        let n = label;
+        let off = tweaked(&config, "contrast", "strength", 0.0);
+        let Some(on_t) = render_mood(&path, &config, Category::World, &mood, &trunk) else {
             return;
         };
-        let off_t = render(&path, &off, Category::World, &trunk).unwrap();
+        let off_t = render_mood(&path, &off, Category::World, &mood, &trunk).unwrap();
         let (s_src, s_on) = (mid_std(&trunk), mid_std(&on_t));
         report.check(
             &n,
@@ -279,8 +273,8 @@ fn rule_adaptive_contrast_targets_high_contrast_textures() {
                 "adaptivity did not compress the trunk".into()
             }),
         );
-        let on_g = render(&path, &config, Category::World, &ground).unwrap();
-        let off_g = render(&path, &off, Category::World, &ground).unwrap();
+        let on_g = render_mood(&path, &config, Category::World, &mood, &ground).unwrap();
+        let off_g = render_mood(&path, &off, Category::World, &mood, &ground).unwrap();
         report.check(
             &n,
             ensure(on_g.pixels == off_g.pixels, || {
@@ -300,7 +294,7 @@ fn rule_value_contrast_is_compressed_color_is_kept() {
     let (std0, mean0) = (local_std(&img), pastelplash::report::mean_oklab(&img)[0]);
     let c0 = median(img.pixels.iter().map(|&p| lch(p)[1]).collect());
     let mut report = Report::new("value contrast is compressed, color is kept");
-    let rendered = Matrix::base(&[Category::World]).check(&mut report, &img, |case, out| {
+    let rendered = Matrix::full(&[Category::World]).check(&mut report, &img, |case, out| {
         let style = case.config.style.for_mood(&case.mood).unwrap();
         let fine = style.value_contrast.fine;
         let std1 = local_std(out);
@@ -334,7 +328,7 @@ fn rule_vivid_colors_are_bounded() {
         [r, g, b, 1.0]
     });
     let mut report = Report::new("vivid colors are bounded");
-    let rendered = Matrix::base(&[Category::World]).check(&mut report, &img, |case, out| {
+    let rendered = Matrix::full(&[Category::World]).check(&mut report, &img, |case, out| {
         // Brushwork and pooling may add a little chroma on top of the palette's cap; the
         // contract bounds the result.
         let style = case.config.style.for_mood(&case.mood).unwrap();
@@ -353,7 +347,7 @@ fn rule_alpha_preserved_and_no_halos() {
     let k = contract();
     let img = cutout(192, 3);
     let mut report = Report::new("alpha preserved, no halos");
-    let rendered = Matrix::base(&[Category::World]).check(&mut report, &img, |_, out| {
+    let rendered = Matrix::full(&STYLIZED).check(&mut report, &img, |_, out| {
         for (a, b) in img.pixels.iter().zip(&out.pixels) {
             ensure(a[3].to_bits() == b[3].to_bits(), || "alpha changed".into())?;
         }
@@ -403,7 +397,7 @@ fn rule_tiling_textures_stay_seamless() {
         analysis::seam_ratio(&img, true),
     ];
     let mut report = Report::new("tiling textures stay seamless");
-    let rendered = Matrix::base(&[Category::World]).check(&mut report, &img, |case, out| {
+    let rendered = Matrix::full(&[Category::World]).check(&mut report, &img, |case, out| {
         for (axis, &b) in before.iter().enumerate() {
             let after = analysis::seam_ratio(out, axis == 1);
             let limit = (b * 1.5).max(case.config.style.tiling.threshold);
@@ -461,7 +455,7 @@ fn rule_no_blur_edges_stay_crisp_noise_becomes_flat() {
     let img = step_edge(512, 11);
     let (w0, s0) = (edge_width(&img), interior_std(&img));
     let mut report = Report::new("no blur: edges stay crisp, noise becomes flat");
-    let rendered = Matrix::base(&[Category::World]).check(&mut report, &img, |_, out| {
+    let rendered = Matrix::full(&[Category::World]).check(&mut report, &img, |_, out| {
         let w1 = edge_width(out);
         ensure(w1 <= k.technique.max_edge_width, || {
             format!("step edge widened {w0} -> {w1} texels")

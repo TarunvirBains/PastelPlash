@@ -6,7 +6,7 @@ use super::*;
 fn rule_deterministic() {
     let img = dark_foliage(128, 5);
     let mut report = Report::new("deterministic");
-    let rendered = Matrix::base(&[Category::World]).check(&mut report, &img, |case, a| {
+    let rendered = Matrix::full(&STYLIZED).check(&mut report, &img, |case, a| {
         let b = case.render(&img).unwrap();
         ensure(a.pixels == b.pixels, || "nondeterministic".into())
     });
@@ -18,7 +18,7 @@ fn rule_deterministic() {
 #[test]
 fn rule_output_in_gamut_and_finite() {
     let mut report = Report::new("output in gamut and finite");
-    let matrix = Matrix::base(&[Category::World]);
+    let matrix = Matrix::full(&STYLIZED);
     for (label, img) in [
         ("dark hues", dark_hues(128, 2)),
         ("cutout", cutout(128, 1)),
