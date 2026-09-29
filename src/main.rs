@@ -60,6 +60,19 @@ enum Command {
     /// A numbered contact sheet of listed textures (first TSV column: path under a folder).
     #[command(hide = true)]
     DevFluidSheet(DevFluidSheetArgs),
+    /// A rectangle of a PNG, as a PNG.
+    #[command(hide = true)]
+    DevCrop(DevCropArgs),
+}
+
+#[derive(Args)]
+struct DevCropArgs {
+    input: PathBuf,
+    output: PathBuf,
+    x: u32,
+    y: u32,
+    /// Square side.
+    size: u32,
 }
 
 #[derive(Args)]
@@ -367,6 +380,16 @@ fn main() -> ExitCode {
             )
         }
         Command::DevFluidScan(args) => dev_fluid_scan(args).map(|()| ExitCode::SUCCESS),
+        Command::DevCrop(a) => pastelplash::png_io::read(&a.input)
+            .and_then(|img| {
+                anyhow::ensure!(
+                    a.x < img.width && a.y < img.height,
+                    "rectangle outside image"
+                );
+                let c = pastelplash::compare::crop(&img, a.x, a.y, a.size);
+                pastelplash::png_io::write(&c, &a.output)
+            })
+            .map(|()| ExitCode::SUCCESS),
         Command::DevFluidSheet(args) => std::fs::read_to_string(&args.list)
             .map_err(anyhow::Error::from)
             .and_then(|text| {
