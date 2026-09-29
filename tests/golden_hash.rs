@@ -261,7 +261,65 @@ fn cpu_sections() -> Sections {
         ("luts".into(), luts),
         ("config".into(), config),
         ("shader".into(), shader),
+        ("plans".into(), plan_section()),
     ])
+}
+
+/// The job digest of every render case, on the CPU: uniform bytes, low-res field, LUT bytes,
+/// filter reach and wrap. A CPU-side regression shows here without a GPU.
+fn plan_section() -> Section {
+    use pastelplash::stylize::Planner;
+    let imgs = images();
+    let mut cases = Vec::new();
+    for (n, _, config, moods) in style_mood_list() {
+        let planner = std::sync::Arc::new(Planner::new(&config).unwrap());
+        for mood in moods {
+            let style = config.style.for_mood(&mood).unwrap();
+            for cat in CATEGORIES {
+                cases.push((
+                    format!("{n}/{mood}/{}", cat_name(cat)),
+                    planner.clone(),
+                    config.clone(),
+                    style.clone(),
+                    mood.clone(),
+                    cat,
+                ));
+            }
+        }
+    }
+    cases
+        .par_iter()
+        .flat_map_iter(|(prefix, planner, config, style, mood, cat)| {
+            let mut lut_hash = None;
+            imgs.iter()
+                .map(|(label, img)| {
+                    let ctx = FileContext {
+                        rel: Path::new("golden.png"),
+                        category: *cat,
+                        mood: mood.clone(),
+                        config,
+                    };
+                    let plan = planner.plan(img, &ctx, style).unwrap();
+                    let lut = lut_hash
+                        .get_or_insert_with(|| {
+                            plan.lut.as_ref().map_or("none".to_string(), |spec| {
+                                hex(&f32_bytes(spec.bake().data.iter().flatten().copied()))
+                            })
+                        })
+                        .clone();
+                    let digest = format!(
+                        "params:{} lowres:{} lut:{lut} halo:{} wrap:{}{}",
+                        hex(plan.params_bytes()),
+                        hex(&f32_bytes(plan.lowres.iter().copied())),
+                        plan.halo,
+                        u8::from(plan.wrap[0]),
+                        u8::from(plan.wrap[1]),
+                    );
+                    (format!("{prefix}/{label}"), digest)
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect()
 }
 
 fn toml_dir(dir: &str) -> Vec<PathBuf> {

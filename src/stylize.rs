@@ -26,7 +26,7 @@ use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
 
 use crate::analysis;
-use crate::config::{Category, Config, Mood, Style, Treatment};
+use crate::config::{Category, Config, Mood, Palette, Style, Treatment};
 use crate::gpu::Gpu;
 use crate::grouping;
 use crate::image::Image;
@@ -206,13 +206,89 @@ impl Drop for SlotGuard<'_> {
 /// Palette LUT cache key: mood key and the bits of the treatment's lift, shadow and hue scales.
 type LutKey = (String, [u32; 4]);
 
+/// Which palette LUT a job binds.
+#[derive(Debug, Clone)]
+pub enum LutSpec {
+    /// The style's `.cube` (replaces the generated palette).
+    External(Arc<Lut3d>),
+    /// Generated from the (mood's) palette under a category treatment.
+    Palette {
+        key: LutKey,
+        palette: Box<Palette>,
+        treatment: Treatment,
+    },
+}
+
+impl LutSpec {
+    /// Entries per axis.
+    pub fn size(&self) -> i32 {
+        match self {
+            Self::External(lut) => lut.size as i32,
+            Self::Palette { palette, .. } => palette.lut_size.clamp(2, 129) as i32,
+        }
+    }
+
+    /// The table (baked on the CPU for a generated palette).
+    pub fn bake(&self) -> Lut3d {
+        match self {
+            Self::External(lut) => (**lut).clone(),
+            Self::Palette {
+                palette, treatment, ..
+            } => Mapping::new(palette, treatment).bake(),
+        }
+    }
+}
+
+/// Everything per image that the GPU job needs besides the pixels, derived on the CPU.
+#[derive(Debug, Clone)]
+pub struct Plan {
+    params: Params,
+    /// Low-resolution luminance field (de-light, temperature, contrast pivot); `[0.0]` if unused.
+    pub lowres: Vec<f32>,
+    pub lut: Option<LutSpec>,
+    /// Filter reach in texels: the overlap between chunks.
+    pub halo: u32,
+    /// Axes that wrap (seamless tiling).
+    pub wrap: [bool; 2],
+    note: Note,
+}
+
+impl Plan {
+    /// The uniform block as uploaded (size, origin and wrap are set per chunk by the runner).
+    pub fn params_bytes(&self) -> &[u8] {
+        bytemuck::bytes_of(&self.params)
+    }
+}
+
+/// What the per-file log line reports about a plan.
+#[derive(Debug, Clone, Default)]
+struct Note {
+    ratios: [f32; 2],
+    tint_safe: bool,
+    chroma_p99: f32,
+    scale: f32,
+    radius: f32,
+    spread: f32,
+    busy: f32,
+    speckle: f32,
+    marks_scale: f32,
+    grouping: String,
+    analysis: Duration,
+}
+
+/// Derives [`Plan`]s on the CPU (no GPU needed).
+pub struct Planner {
+    /// Loaded `.cube` from the style (replaces the generated palette).
+    external_lut: Option<Arc<Lut3d>>,
+}
+
 pub struct Stylize {
     gpu: Gpu,
     layout: wgpu::BindGroupLayout,
     passes: Passes,
-    /// Loaded `.cube` from the style (replaces the generated palette).
+    planner: Planner,
+    /// The external `.cube` on the GPU.
     external_lut: Option<Arc<wgpu::Buffer>>,
-    external_lut_size: i32,
     /// Generated palette LUTs by (mood, lift scale bits, shadow scale bits).
     luts: Mutex<HashMap<LutKey, Arc<wgpu::Buffer>>>,
     /// Styles derived for non-base moods, by mood key.
@@ -355,13 +431,11 @@ impl Stylize {
             finish: make("finish"),
         };
 
-        let (external_lut, external_lut_size) = match &config.style.lut {
-            Some(path) => {
-                let lut = Lut3d::load(path)?;
-                (Some(Arc::new(lut_buffer(&gpu, &lut))), lut.size as i32)
-            }
-            None => (None, 0),
-        };
+        let planner = Planner::new(config)?;
+        let external_lut = planner
+            .external_lut
+            .as_ref()
+            .map(|lut| Arc::new(lut_buffer(&gpu, lut)));
 
         let limit = gpu.device.limits().max_texture_dimension_2d;
         let max_side = max_chunk.map_or(limit, |v| v.clamp(64, limit));
@@ -370,8 +444,8 @@ impl Stylize {
             gpu,
             layout,
             passes,
+            planner,
             external_lut,
-            external_lut_size,
             luts: Mutex::new(HashMap::new()),
             moods: Mutex::new(HashMap::new()),
             slots: Slots {
@@ -397,11 +471,43 @@ impl Stylize {
         Ok(std::borrow::Cow::Owned((*style).clone()))
     }
 
-    /// The palette LUT buffer and its size for a mood and category treatment, if the style has
-    /// a palette.
-    fn lut(&self, style: &Style, mood: &Mood, tr: &Treatment) -> Option<(Arc<wgpu::Buffer>, i32)> {
-        if let Some(buf) = &self.external_lut {
-            return Some((buf.clone(), self.external_lut_size));
+    /// The GPU buffer for a planned LUT (generated LUTs are baked once and cached).
+    fn lut_buffer(&self, spec: &LutSpec) -> Arc<wgpu::Buffer> {
+        let key = match spec {
+            LutSpec::External(_) => {
+                return self.external_lut.clone().expect("external LUT is loaded");
+            }
+            LutSpec::Palette { key, .. } => key,
+        };
+        if let Some(buf) = self.luts.lock().unwrap().get(key) {
+            return buf.clone();
+        }
+        // Baked outside the lock: baking runs on rayon, and a worker that steals another file's
+        // job while waiting would block on the lock it holds itself.
+        let buf = Arc::new(lut_buffer(&self.gpu, &spec.bake()));
+        self.luts
+            .lock()
+            .unwrap()
+            .entry(key.clone())
+            .or_insert(buf)
+            .clone()
+    }
+}
+
+impl Planner {
+    pub fn new(config: &Config) -> Result<Self> {
+        Ok(Self {
+            external_lut: match &config.style.lut {
+                Some(path) => Some(Arc::new(Lut3d::load(path)?)),
+                None => None,
+            },
+        })
+    }
+
+    /// The palette LUT for a mood and category treatment, if the style has a palette.
+    fn lut(&self, style: &Style, mood: &Mood, tr: &Treatment) -> Option<LutSpec> {
+        if let Some(lut) = &self.external_lut {
+            return Some(LutSpec::External(lut.clone()));
         }
         if !style.palette.enabled {
             return None;
@@ -411,20 +517,14 @@ impl Stylize {
         } else {
             mood.key()
         };
-        let key = (
-            key,
-            [tr.floor_scale, tr.shadow_tint, tr.hue, tr.warmth].map(f32::to_bits),
-        );
-        let size = style.palette.lut_size.clamp(2, 129) as i32;
-        if let Some(buf) = self.luts.lock().unwrap().get(&key) {
-            return Some((buf.clone(), size));
-        }
-        // Baked outside the lock: baking runs on rayon, and a worker that steals another file's
-        // job while waiting would block on the lock it holds itself.
-        let lut = Mapping::new(&style.palette, tr).bake();
-        let buf = Arc::new(lut_buffer(&self.gpu, &lut));
-        let buf = self.luts.lock().unwrap().entry(key).or_insert(buf).clone();
-        Some((buf, size))
+        Some(LutSpec::Palette {
+            key: (
+                key,
+                [tr.floor_scale, tr.shadow_tint, tr.hue, tr.warmth].map(f32::to_bits),
+            ),
+            palette: Box::new(style.palette.clone()),
+            treatment: tr.clone(),
+        })
     }
 }
 
@@ -445,26 +545,22 @@ fn cells(full: u32, size_px: f32) -> f32 {
 struct Job {
     params: Params,
     lowres: Vec<f32>,
-    lut: Option<(Arc<wgpu::Buffer>, i32)>,
+    lut: Option<Arc<wgpu::Buffer>>,
     halo: u32,
 }
 
-impl Stage for Stylize {
-    fn name(&self) -> &str {
-        "stylize"
-    }
-
-    fn apply(&self, image: &mut Image, ctx: &FileContext) -> Result<()> {
+impl Planner {
+    /// The plan for one file in `style` (the file's mood already applied); `None` when the stage
+    /// leaves the file alone (UI, skip, empty images).
+    pub fn plan(&self, image: &Image, ctx: &FileContext, style: &Style) -> Option<Plan> {
         if matches!(ctx.category, Category::Ui | Category::Skip) {
-            return Ok(());
+            return None;
         }
         let t_start = Instant::now();
-        let style = self.style_for(ctx)?;
-        let style = &*style;
         let tr = ctx.config.target.treatment(ctx.category);
         let (w, h) = (image.width, image.height);
         if w == 0 || h == 0 {
-            return Ok(());
+            return None;
         }
         let gm = ((w as f64) * (h as f64)).sqrt() as f32;
 
@@ -508,7 +604,6 @@ impl Stage for Stylize {
             .tint_safe
             .or(image.tint_safe)
             .unwrap_or(chroma_p99 < pal.tint_safe_chroma);
-        let t_analysis = t_start.elapsed();
 
         // Parameters.
         let k = &style.kuwahara;
@@ -663,7 +758,7 @@ impl Stage for Stylize {
             tile_y: wrap[1] as i32,
             low_w: lowres.as_ref().map_or(0, |l| l.width as i32),
             low_h: lowres.as_ref().map_or(0, |l| l.height as i32),
-            lut_size: lut.as_ref().map_or(0, |l| l.1),
+            lut_size: lut.as_ref().map_or(0, LutSpec::size),
             tint_safe: tint_safe as i32,
             seed: wc.seed,
             delight_strength,
@@ -780,11 +875,50 @@ impl Stage for Stylize {
             + if grp > 0.0 { grp_radius + 1.0 } else { 0.0 }
             + 6.0)
             .ceil() as u32;
-        let job = Job {
+        Some(Plan {
             params,
             lowres: lowres.map_or_else(|| vec![0.0], |l| l.data),
             lut,
             halo,
+            wrap,
+            note: Note {
+                ratios,
+                tint_safe,
+                chroma_p99,
+                scale: f,
+                radius,
+                spread,
+                busy,
+                speckle,
+                marks_scale,
+                grouping: grp_note,
+                analysis: t_start.elapsed(),
+            },
+        })
+    }
+}
+
+impl Stage for Stylize {
+    fn name(&self) -> &str {
+        "stylize"
+    }
+
+    fn apply(&self, image: &mut Image, ctx: &FileContext) -> Result<()> {
+        if matches!(ctx.category, Category::Ui | Category::Skip) {
+            return Ok(());
+        }
+        let style = self.style_for(ctx)?;
+        let Some(plan) = self.planner.plan(image, ctx, &style) else {
+            return Ok(());
+        };
+        let tr = ctx.config.target.treatment(ctx.category);
+        let (w, h) = (image.width, image.height);
+        let wrap = plan.wrap;
+        let job = Job {
+            params: plan.params,
+            lowres: plan.lowres,
+            lut: plan.lut.as_ref().map(|spec| self.lut_buffer(spec)),
+            halo: plan.halo,
         };
 
         let t_gpu = Instant::now();
@@ -821,24 +955,32 @@ impl Stage for Stylize {
                 };
             }
         }
+        let n = &plan.note;
         println!(
             "  {}: {w}x{h} {:?} mood={} wrap={}{} seam={:.1}/{:.1} tint_safe={} (C99 {:.3}) \
-             scale={f:.2} r={radius:.1} spread={spread:.4} busy={busy:.2} speckle={speckle:.2} marks={marks_scale:.2}{grp_note}{exp_note}{} | analysis {} gpu {}",
+             scale={:.2} r={:.1} spread={:.4} busy={:.2} speckle={:.2} marks={:.2}{}{exp_note}{} | analysis {} gpu {}",
             ctx.rel.display(),
             ctx.category,
             ctx.mood,
             if wrap[0] { "u" } else { "-" },
             if wrap[1] { "v" } else { "-" },
-            ratios[0].min(99.0),
-            ratios[1].min(99.0),
-            tint_safe,
-            chroma_p99,
+            n.ratios[0].min(99.0),
+            n.ratios[1].min(99.0),
+            n.tint_safe,
+            n.chroma_p99,
+            n.scale,
+            n.radius,
+            n.spread,
+            n.busy,
+            n.speckle,
+            n.marks_scale,
+            n.grouping,
             if chunks > 1 {
                 format!(" chunks={chunks}")
             } else {
                 String::new()
             },
-            ms(t_analysis),
+            ms(n.analysis),
             ms(t_gpu),
         );
         Ok(())
@@ -974,7 +1116,7 @@ impl Stylize {
         });
         let dummy_lut;
         let lut_buf: &wgpu::Buffer = match &job.lut {
-            Some((b, _)) => b,
+            Some(b) => b,
             None => {
                 dummy_lut = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some("no-lut"),
