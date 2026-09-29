@@ -310,7 +310,7 @@ pub fn change(a: &Image, b: &Image) -> Change {
     };
     let (w, h) = (a.width as usize, a.height as usize);
     let n = 16usize;
-    let mut cells = vec![[0.0f64; 7]; n * n];
+    let mut cells = vec![[0.0f64; 8]; n * n];
     let (mut sum, mut wsum, mut max) = (0.0f64, 0.0f64, 0.0f32);
     for (i, (p, q)) in a.pixels.iter().zip(&b.pixels).enumerate() {
         let (x, y) = (lab(*p), lab(*q));
@@ -327,12 +327,14 @@ pub fn change(a: &Image, b: &Image) -> Change {
             c[3 + k] += (y[k] * q[3]) as f64;
         }
         c[6] += p[3] as f64;
+        c[7] += q[3] as f64;
     }
     let coarse = cells
         .iter()
-        .filter(|c| c[6] > 0.0)
+        .filter(|c| c[6] > 0.0 && c[7] > 0.0)
         .map(|c| {
-            let m = |k: usize| (c[k] / c[6]) as f32;
+            // Each side's mean over its own alpha (an enlarged cutout's edge alpha differs).
+            let m = |k: usize| (c[k] / c[6 + k / 3]) as f32;
             d([m(0), m(1), m(2)], [m(3), m(4), m(5)])
         })
         .fold(0.0f32, f32::max);
