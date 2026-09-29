@@ -217,6 +217,7 @@ impl Planner {
             value.r_coarse,
             1.5 * speck.radius,
             speck.clip_radius,
+            3.2 * speck.thin_radius,
         ]
         .into_iter()
         .fold(0.0f32, f32::max);

@@ -241,6 +241,8 @@ speckle = [0.45, 0.6]
 # Dark specks up to ~2.5 reference texels (dust in a cobweb) are cleaned before painting.
 speck_radius = 2.5
 speck_depth = 0.06
+# Thin handles, poles and rails keep their value (not smoothed or compressed into the wall).
+thin_protect = 1.0
 
 # Nocturne mood (dark, haunting areas; assigned by the pack map): a Whistler/Monet nocturne
 # overlay on this style. Only these keys change; everything else (abstraction, marks, contrast,

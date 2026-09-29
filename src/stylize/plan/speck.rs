@@ -1,4 +1,5 @@
-//! Speck cleaning (in the `delight` pass) and the no-clip neighborhood (in `finish`).
+//! Speck cleaning (in the `delight` pass), the no-clip neighborhood and thin-structure
+//! protection (in `finish`).
 
 use crate::config::Category;
 use crate::config::Style;
@@ -12,6 +13,9 @@ pub(super) struct Speck {
     depth: f32,
     /// Ring radius for telling compact blown highlights from large blown regions.
     pub clip_radius: f32,
+    /// Thin-structure detection radius (texels) and protection amount.
+    pub thin_radius: f32,
+    thin_amount: f32,
 }
 
 /// World and background textures only: actors' small dots are eyes, rivets and studs.
@@ -27,6 +31,14 @@ pub(super) fn plan(style: &Style, ctx: &FileContext, facts: &ImageFacts) -> Spec
         },
         depth: mk.speck_depth,
         clip_radius: (6.0 * facts.scale).clamp(6.0, 24.0),
+        thin_radius: (2.5 * facts.scale).clamp(2.0, 8.0),
+        // World and background only: actors are banded by the cel shader, fluids and skies have
+        // no handles.
+        thin_amount: if matches!(ctx.category, Category::World | Category::Background) {
+            mk.thin_protect
+        } else {
+            0.0
+        },
     }
 }
 
@@ -35,5 +47,7 @@ impl Speck {
         p.speck_r = self.radius;
         p.speck_thr = self.depth;
         p.clip_r = self.clip_radius;
+        p.thin_r = self.thin_radius;
+        p.thin_amount = self.thin_amount;
     }
 }

@@ -155,7 +155,12 @@ pub(super) struct Params {
     speck_r: f32,
     speck_thr: f32,
     clip_r: f32,
-    _pad14: f32,
+    thin_r: f32,
+
+    thin_amount: f32,
+    _pad15: f32,
+    _pad16: f32,
+    _pad17: f32,
 }
 }
 

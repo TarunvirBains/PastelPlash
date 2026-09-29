@@ -220,6 +220,8 @@ pub struct TechniqueRules {
     pub split_min_separation: f32,
     pub speck_max_contrast: f32,
     pub ink_max_darkening: f32,
+    pub thin_min_contrast: f32,
+    pub thin_min_value_contrast: f32,
 }
 
 #[derive(Debug, Deserialize)]

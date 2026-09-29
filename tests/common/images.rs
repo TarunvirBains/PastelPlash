@@ -509,3 +509,58 @@ pub fn gold_studs(size: u32, seed: u32) -> Image {
         [r, g, b, 1.0]
     })
 }
+
+/// Thin shafts on a busy wall (tool handles, poles, rails in a painted room): a gritty bark-like
+/// wall with 3-texel shafts slightly lighter and darker than the wall (low contrast, like the
+/// pitchfork handles in Link's house), vertical and diagonal. `shaft` tells a shaft texel and
+/// its kind (+1 lighter, -1 darker, 2 a reddish shaft as light as the wall).
+pub fn wall_with_shafts(size: u32, seed: u32) -> (Image, impl Fn(u32, u32) -> i32) {
+    let wall = bark(size, seed);
+    let s = size as f32;
+    let shaft = move |x: u32, y: u32| -> i32 {
+        let (fx, fy) = (x as f32, y as f32);
+        if fy < 0.1 * s || fy > 0.9 * s {
+            return 0;
+        }
+        let d = |x0: f32, slope: f32| (fx - (x0 + slope * (fy - 0.1 * s))).abs();
+        if d(0.2 * s, 0.0) < 1.5 || d(0.62 * s, 0.25) < 1.5 {
+            1
+        } else if d(0.42 * s, 0.0) < 1.5 || d(0.8 * s, -0.2) < 1.5 {
+            -1
+        } else if d(0.32 * s, 0.0) < 1.5 || d(0.92 * s, 0.0) < 1.5 {
+            2
+        } else {
+            0
+        }
+    };
+    let img = image(size, size, |x, y| {
+        let p = wall.pixels[(y * size + x) as usize];
+        let [l, c, h] = crate::common::lch(p);
+        let sgn = shaft(x, y) as f32;
+        if sgn == 0.0 {
+            return p;
+        }
+        // Local wall lightness, blurred, plus a small offset.
+        let mut m = 0.0;
+        let mut n = 0.0;
+        for dy in -6i32..=6 {
+            for dx in -6i32..=6 {
+                let (xx, yy) = (
+                    (x as i32 + dx).clamp(0, size as i32 - 1),
+                    (y as i32 + dy).clamp(0, size as i32 - 1),
+                );
+                m += crate::common::lch(wall.pixels[(yy as u32 * size + xx as u32) as usize])[0];
+                n += 1.0;
+            }
+        }
+        let _ = l;
+        // Kind 2: a reddish handle as light as the wall around it (only its color differs).
+        let [r, g, b] = if sgn == 2.0 {
+            from_oklch(m / n, 0.09, 45.0)
+        } else {
+            from_oklch(m / n + 0.12 * sgn, c.max(0.03), h)
+        };
+        [r, g, b, 1.0]
+    });
+    (img, shaft)
+}

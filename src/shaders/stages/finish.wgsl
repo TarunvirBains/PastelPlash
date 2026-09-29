@@ -63,15 +63,98 @@ fn finish_smear(p: vec2<i32>, c: vec4<f32>) -> vec4<f32> {
     return vec4<f32>(mix(c.rgb, smear_color(p), P.smear * flow_weight), c.a);
 }
 
-// Local value-contrast compression: detail moves from light/dark into color.
-fn finish_value(p: vec2<i32>, c: vec4<f32>) -> vec4<f32> {
+// Thin, elongated structures (tool handles, poles, rails, ropes): on the unsmoothed texels
+// (texB, OKLab), a ridge across the flow direction (both sides differ from the texel in the
+// same direction: lighter, darker or of another color, e.g. a reddish handle on a mottled brown
+// wall), long and straight (the color continues for six radii along the flow both ways, where a
+// busy wall's fragments break off) and isolated (no look-alike parallel ridge within six
+// widths: not a floor's grain). Returns the mask (w) and the texel minus its
+// sides (xyz).
+fn lab_b(q: vec2<i32>) -> vec3<f32> { return srgb_to_oklab(loadB(q).rgb); }
+
+fn thin_at(p: vec2<i32>, t: vec2<f32>, n: vec2<f32>) -> vec4<f32> {
+    let c0 = lab_b(p);
+    var ridge = 0.0;
+    var delta = vec3<f32>(0.0);
+    var width = P.thin_r;
+    for (var k = 0; k < 2; k++) {
+        let d = P.thin_r * (1.0 + 0.6 * f32(k));
+        let da = c0 - lab_b(p + vec2<i32>(round(n * d)));
+        let db = c0 - lab_b(p - vec2<i32>(round(n * d)));
+        let la = length(da);
+        let lb = length(db);
+        // The same direction in OKLab, or in color alone (a handle lighter than one side and
+        // darker than the other is still redder than both).
+        let ab = max(dot(da.yz, db.yz) / max(length(da.yz) * length(db.yz), 1e-6), 0.0)
+            * smoothstep(0.01, 0.02, min(length(da.yz), length(db.yz)));
+        let same = max(max(dot(da, db) / max(la * lb, 1e-6), 0.0), ab);
+        let r = min(la, lb) * same;
+        if (r > ridge) { ridge = r; delta = 0.5 * (da + db); width = d; }
+    }
+    var along = 0.0;
+    for (var k = 1; k <= 6; k++) {
+        let d = t * f32(k) * P.thin_r;
+        along = max(along, length(lab_b(p + vec2<i32>(round(d))) - c0));
+        along = max(along, length(lab_b(p - vec2<i32>(round(d))) - c0));
+    }
+    // Look-alikes across the flow at 2..6 widths on both sides: a mottled wall may happen to
+    // match once or twice, a striped floor matches at every stripe.
+    var similar = 0.0;
+    for (var k = 2; k <= 6; k++) {
+        let d = n * f32(k) * width;
+        for (var sd = -1.0; sd <= 1.0; sd += 2.0) {
+            let q = lab_b(p + vec2<i32>(round(d * sd)));
+            similar += 1.0 - smoothstep(0.35, 0.7, length(c0 - q) / max(ridge, 1e-3));
+        }
+    }
+    let iso = 1.0 - smoothstep(1.5, 3.5, similar);
+    let m = smoothstep(0.03, 0.06, ridge) * (1.0 - smoothstep(0.4, 0.7, along / max(ridge, 1e-3))) * iso;
+    return vec4<f32>(delta, m);
+}
+
+// Part of a thin structure's source contrast added back after the tone mapping.
+const THIN_GAIN: f32 = 0.6;
+
+// Mask (w) and source contrast (xyz) of the strongest of the texel and its two neighbors
+// across the flow.
+fn thin_mask(p: vec2<i32>) -> vec4<f32> {
+    if (!(P.thin_amount > 0.0 && P.kuw_radius > 0.0) || P.tint_safe != 0) { return vec4<f32>(0.0); }
+    // The texture's own flow direction and four fixed ones (on a busy wall the flow follows the
+    // wall's mottling, not the handle in front of it).
+    var best = vec4<f32>(0.0);
+    var best_t = vec2<f32>(0.0, 1.0);
+    var best_q = p;
+    for (var j = 0; j < 5; j++) {
+        var t = orientation(loadC(p).xyz).xy;
+        if (j > 0) {
+            let ang = f32(j - 1) * 0.78539816;
+            t = vec2<f32>(cos(ang), sin(ang));
+        }
+        let n = vec2<f32>(-t.y, t.x);
+        for (var k = -1; k <= 1; k++) {
+            let pk = p + vec2<i32>(round(n * f32(k)));
+            let q = thin_at(pk, t, n);
+            if (q.w > best.w) { best = q; best_t = t; best_q = pk; }
+        }
+    }
+    // Averaged with the structure one radius further along both ways: a continuous shaft, not
+    // beads where single texels pass.
+    let n = vec2<f32>(-best_t.y, best_t.x);
+    let off = vec2<i32>(round(best_t * P.thin_r));
+    let avg = (best + thin_at(best_q + off, best_t, n) + thin_at(best_q - off, best_t, n)) / 3.0;
+    return vec4<f32>(avg.xyz, P.thin_amount * avg.w);
+}
+
+// Local value-contrast compression: detail moves from light/dark into color. `keep` (thin
+// structures) scales it down.
+fn finish_value(p: vec2<i32>, c: vec4<f32>, keep: f32) -> vec4<f32> {
     if (!(P.vc_fine > 0.0 || P.vc_mid > 0.0 || P.vc_coarse > 0.0)) { return c; }
     var v = srgb_to_oklab(c.rgb);
     let m_f = local_mean_a(p, P.vc_r_fine, v.x);
     let m_m = local_mean_a(p, P.vc_r_mid, v.x);
     let m_c = local_mean_a(p, P.vc_r_coarse, v.x);
-    let l_new = v.x - P.vc_fine * (v.x - m_f) - P.vc_mid * (m_f - m_m)
-        - P.vc_coarse * (m_m - m_c);
+    let l_new = v.x - (1.0 - keep) * (P.vc_fine * (v.x - m_f) + P.vc_mid * (m_f - m_m)
+        + P.vc_coarse * (m_m - m_c));
     let removed = abs(l_new - v.x);
     v = vec3<f32>(l_new, v.yz * (1.0 + P.vc_chroma * removed));
     return vec4<f32>(linear_to_srgb(clamp(oklab_to_linear(v), vec3<f32>(0.0), vec3<f32>(1.0))), c.a);
@@ -402,8 +485,10 @@ fn finish(@builtin(global_invocation_id) gid: vec3<u32>) {
     let gp = gpos(p);
     let tint_safe = P.tint_safe != 0;
 
+    // Thin structures keep their value contrast.
+    let thin = thin_mask(p);
     c = finish_smear(p, c);
-    c = finish_value(p, c);
+    c = finish_value(p, c, thin.w);
     c = finish_glare(p, c);
     let src = srgb_to_oklab(c.rgb);
     var lf = finish_palette(c, src, tint_safe);
@@ -417,6 +502,9 @@ fn finish(@builtin(global_invocation_id) gid: vec3<u32>) {
     lab = finish_paper(gp, lab, tint_safe);
     lab = finish_adaptive(p, lab, src);
     lab = finish_chroma_retain(p, lab, tint_safe);
+    // ...and their separation from the wall survives the tone mapping (which flattens the whole
+    // value range): part of the source ridge is added back (inside the floor and ceiling).
+    lab += THIN_GAIN * thin.w * thin.xyz;
     lab = finish_limits(lab, lf.w);
     if (tint_safe && P.ts_on > 0.0) {
         lab = vec3<f32>(finish_tint_safe(p, src.x), lab.yz);

@@ -618,3 +618,69 @@ fn rule_no_ink_lines_on_tinted_ground() {
         report.finish();
     }
 }
+
+#[test]
+fn rule_thin_structures_survive() {
+    // Thin, elongated objects (tool handles, poles, rails, ropes: 3 texels wide) keep their
+    // contrast against a busy wall in every style and mood, backgrounds included: the pitchfork
+    // handles in Link's house must not dissolve into the wall. Shaft-vs-wall contrast (texels
+    // 3..6 away across the shaft) keeps at least technique.thin_min_contrast of the source's for a
+    // shaft that differs by color, technique.thin_min_value_contrast for lighter or darker ones.
+    let k = contract();
+    let (img, shaft) = wall_with_shafts(256, 191);
+    // Lightness contrast for the light and dark shafts, color (a/b) distance for the reddish one.
+    let contrast = |im: &Image, sign: i32| {
+        let (mut o, mut no, mut s, mut ns) = ([0.0f32; 3], 0.0f32, [0.0f32; 3], 0.0f32);
+        for y in 30..226u32 {
+            for x in 8..248u32 {
+                let p = im.pixels[(y * 256 + x) as usize];
+                let lab = pastelplash::color::srgb_to_oklab([p[0], p[1], p[2]]);
+                if shaft(x, y) == sign {
+                    for k in 0..3 {
+                        o[k] += lab[k];
+                    }
+                    no += 1.0;
+                } else if shaft(x, y) == 0
+                    && ((x - 6)..=(x + 6)).any(|xx| shaft(xx, y) == sign)
+                    && !((x - 2)..=(x + 2)).any(|xx| shaft(xx, y) == sign)
+                {
+                    for k in 0..3 {
+                        s[k] += lab[k];
+                    }
+                    ns += 1.0;
+                }
+            }
+        }
+        let d = [0, 1, 2].map(|k| o[k] / no - s[k] / ns);
+        if sign == 2 {
+            d[1].hypot(d[2])
+        } else {
+            d[0] * sign as f32
+        }
+    };
+    let mut report = Report::new("thin structures survive");
+    let rendered = Matrix::full(&[Category::World, Category::Background]).check(
+        &mut report,
+        &img,
+        |case, out| {
+            // Against the source as the mood's moonlight dims it.
+            let src = dimmed(case, &img);
+            let mut errs = Vec::new();
+            for (sign, what) in [(1, "light"), (-1, "dark"), (2, "reddish")] {
+                let (c0, c1) = (contrast(&src, sign), contrast(out, sign));
+                let keep = if sign == 2 {
+                    k.technique.thin_min_contrast
+                } else {
+                    k.technique.thin_min_value_contrast
+                };
+                if c1 < keep * c0 {
+                    errs.push(format!("{what} shafts: contrast {c0:.3} -> {c1:.3}"));
+                }
+            }
+            ensure(errs.is_empty(), || errs.join("; "))
+        },
+    );
+    if rendered {
+        report.finish();
+    }
+}

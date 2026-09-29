@@ -104,6 +104,12 @@ speck_max_contrast = 0.5
 # Thin cracks on engine-tinted (gray, vertex-colored) ground stay soft painted cracks: their darkest
 # texels (p2 of L) darken by at most ink_max_darkening (no near-black ink lines).
 ink_max_darkening = 0.12
+# Thin, elongated objects (tool handles, poles, rails: 3 texels wide) on a busy wall: a shaft that
+# differs by its color (a reddish handle as light as the wall) keeps at least thin_min_contrast of
+# its color contrast; lighter or darker shafts keep at least thin_min_value_contrast of their
+# lightness contrast (the tone mapping compresses all value contrast on purpose).
+thin_min_contrast = 0.8
+thin_min_value_contrast = 0.6
 
 # Identity: it must still look and feel like the source game. Each texture's alpha-weighted mean
 # OKLab color stays within max_mean_delta_e of the source's (for relit actors, of the source

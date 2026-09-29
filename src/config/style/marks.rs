@@ -24,6 +24,10 @@ pub struct Marks {
     /// How much darker than its surroundings (OKLab L) a speck starts being cleaned (fully at
     /// twice this).
     pub speck_depth: f32,
+    /// Thin, elongated objects (tool handles, poles, rails, ropes) keep their painted value: where
+    /// a thin ridge or valley runs along the texture's flow, the unsmoothed texel is kept and its
+    /// value contrast is not compressed. 0 disables, 1 fully.
+    pub thin_protect: f32,
 }
 
 impl Default for Marks {
@@ -34,6 +38,7 @@ impl Default for Marks {
             speckle: [0.45, 0.6],
             speck_radius: 0.0,
             speck_depth: 0.06,
+            thin_protect: 0.0,
         }
     }
 }
