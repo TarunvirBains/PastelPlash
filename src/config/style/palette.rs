@@ -153,6 +153,11 @@ pub struct Cast {
     pub black: [f32; 2],
     /// Chroma of near-black sources (see `black`): a trace of color, not a tint.
     pub black_chroma: f32,
+    /// Moonlit stone stays one family: a near-neutral dark (lightness-relative chroma below
+    /// 0.03) whose source neighborhood's mean a/b (`dark_context`, samples clamped at 0.03) has a
+    /// chroma below this takes the full muted midnight and no warm hold, so faintly warm gray stone doesn't split into rust
+    /// and slate patches. 0: off.
+    pub stone_chroma: f32,
 }
 
 impl Default for Cast {
@@ -169,6 +174,7 @@ impl Default for Cast {
             warm_band: [35.0, 105.0],
             black: [0.0, 0.0],
             black_chroma: 0.0,
+            stone_chroma: 0.0,
         }
     }
 }
@@ -451,6 +457,7 @@ impl Palette {
         non_negative("palette.cast.tint", k.tint)?;
         non_negative("palette.cast.dark_cap", k.dark_cap)?;
         non_negative("palette.cast.black_chroma", k.black_chroma)?;
+        non_negative("palette.cast.stone_chroma", k.stone_chroma)?;
         check(
             0.0 <= k.black[0] && k.black[0] <= k.black[1] && k.black[1] <= 1.0,
             || {

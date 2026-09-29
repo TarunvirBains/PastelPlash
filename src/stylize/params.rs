@@ -189,7 +189,7 @@ pub(super) struct Params {
     ctx_gain: f32,
     ctx_warm0: f32,
     ctx_warm1: f32,
-    _pad21: f32,
+    cast_stone: f32,
     _pad22: f32,
 }
 }

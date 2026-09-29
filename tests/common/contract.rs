@@ -43,6 +43,7 @@ pub struct MoodRules {
     pub black_max_cast: Option<f32>,
     pub black_warm_slack: Option<f32>,
     pub black_fade_l: Option<f32>,
+    pub stone_chroma: Option<f32>,
 }
 
 impl Contract {

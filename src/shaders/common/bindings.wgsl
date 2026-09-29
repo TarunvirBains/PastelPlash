@@ -49,7 +49,7 @@ struct Params {
     df_on: f32, df_chroma: f32, df_below: f32, df_hue: f32,
     df_tint: f32, df_tint_chroma: f32, df_tint_below: f32, df_cool_bias: f32,
     df_cool_hue: f32, ctx_r: f32, ctx_neutral: f32, ctx_gain: f32,
-    ctx_warm0: f32, ctx_warm1: f32, _pad21: f32, _pad22: f32,
+    ctx_warm0: f32, ctx_warm1: f32, cast_stone: f32, _pad22: f32,
 };
 
 struct Band { y0: i32, y1: i32, _a: i32, _b: i32 };

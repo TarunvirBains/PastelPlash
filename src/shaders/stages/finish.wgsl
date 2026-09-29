@@ -208,9 +208,12 @@ fn finish_palette(c: vec4<f32>, src: vec3<f32>, tint_safe: bool) -> vec4<f32> {
 // saturated flecks don't decide the neighborhood (palette::context_sample).
 const CONTEXT_MAX_CHROMA: f32 = 0.03;
 
-// Mean a/b of the source neighborhood of `p` (xy) and of its near-neutral samples alone (zw): the
-// texel and three rings at ctx_r/4, ctx_r/2 and ctx_r (opaque samples only).
-fn dark_context(p: vec2<i32>) -> vec4<f32> {
+// The source neighborhood of `p`: the mean a/b of its samples (all) and of its near-neutral
+// samples alone (faint). Samples: the texel and three
+// rings at ctx_r/4, ctx_r/2 and ctx_r (opaque ones only).
+struct DarkCtx { all: vec2<f32>, faint: vec2<f32> };
+
+fn dark_context(p: vec2<i32>) -> DarkCtx {
     var sum = vec2<f32>(0.0);
     var faint = vec2<f32>(0.0);
     var n = 0.0;
@@ -236,7 +239,7 @@ fn dark_context(p: vec2<i32>) -> vec4<f32> {
             nf += 1.0;
         }
     }
-    return vec4<f32>(sum / max(n, 1.0), faint / max(nf, 1.0));
+    return DarkCtx(sum / max(n, 1.0), faint / max(nf, 1.0));
 }
 
 // True if hue `h` (degrees) lies in [lo, hi] (which may wrap).
@@ -280,9 +283,9 @@ fn finish_dark_floor(p: vec2<i32>, lf: vec4<f32>, src: vec3<f32>, tint_safe: boo
     var c_chroma = 0.0;
     if (c_rel < 0.04) {
         let ctx = dark_context(p);
-        if (length(ctx.xy) >= P.ctx_neutral) {
-            c_hue = ab_hue(ctx.xy);
-            c_chroma = length(ctx.zw);
+        if (length(ctx.all) >= P.ctx_neutral) {
+            c_hue = ab_hue(ctx.all);
+            c_chroma = length(ctx.faint);
             kind = select(1, 0, in_hue_band(P.ctx_warm0, P.ctx_warm1, c_hue));
         }
     }
@@ -337,7 +340,7 @@ fn band_weight(lo: f32, hi: f32, f: f32, h: f32) -> f32 {
 // colored sources keep most of their color; near-neutral darks blend (continuously) into a muted
 // midnight capped by lightness; warm darks are never dull (no mud). `lf` is the mapped lab color
 // and, in w, the lightness floor (dimmed the same way). Near-black sources just go darker.
-fn finish_cast(lf: vec4<f32>, src: vec3<f32>, tint_safe: bool) -> vec4<f32> {
+fn finish_cast(p: vec2<i32>, lf: vec4<f32>, src: vec3<f32>, tint_safe: bool) -> vec4<f32> {
     if (!(P.cast_on > 0.0)) { return lf; }
     let floor_l = cast_exposure(lf.w);
     if (tint_safe) { return vec4<f32>(cast_exposure(lf.x), lf.yz, floor_l); }
@@ -356,7 +359,15 @@ fn finish_cast(lf: vec4<f32>, src: vec3<f32>, tint_safe: bool) -> vec4<f32> {
     let cn = max(len, keep);
     abn = abn / len * cn;
     let cm = max(P.cast_dark_cap * l2, P.cast_dark_min);
-    let w = neutral * dark;
+    // Moonlit stone: a near-neutral dark in a neutral neighborhood (the chroma of its mean a/b
+    // below cast_stone) takes the full midnight and no warm hold: faintly warm gray stone doesn't
+    // split into rust and slate patches.
+    var stone = false;
+    if (P.cast_stone > 0.0 && c_rel < 0.05 && mud_dark > 0.0) {
+        let ctx = dark_context(p);
+        stone = length(ctx.all) < P.cast_stone;
+    }
+    let w = select(neutral * dark, dark, stone);
     let ab = mix(abn, kd * cm, w);
     var c3 = mix(cn, cm, w);
     // Near-black sources just go darker: below cast_black0 (source lightness) the chroma fades
@@ -371,7 +382,7 @@ fn finish_cast(lf: vec4<f32>, src: vec3<f32>, tint_safe: bool) -> vec4<f32> {
     if (length(ab) > 1e-9) { dir = normalize(ab); }
     let h3 = atan2(dir.y, dir.x) * 57.29577951;
     // Warm darks never dull (no mud), near-black ones too; every other dark at least dark_min.
-    let warm = band_weight(P.cast_warm0, P.cast_warm1, 5.0, h3);
+    let warm = select(band_weight(P.cast_warm0, P.cast_warm1, 5.0, h3), 0.0, stone);
     c3 = max(max(c3, P.cast_dark_chroma * mud_dark * warm), P.cast_dark_min * dark * (1.0 - nb));
     return vec4<f32>(l2, dir * c3, floor_l);
 }
@@ -691,7 +702,7 @@ fn finish(@builtin(global_invocation_id) gid: vec3<u32>) {
     var lf = finish_palette(c, src, tint_safe);
     let dk = finish_dark_floor(p, lf, src, tint_safe);
     lf = dk.lf;
-    lf = finish_cast(lf, src, tint_safe);
+    lf = finish_cast(p, lf, src, tint_safe);
     lf = vec4<f32>(finish_terracotta(lf.xyz, tint_safe), lf.w);
     lf = vec4<f32>(finish_temperature(gp, lf.xyz, tint_safe, 1.0 - dk.own), lf.w);
     lf = finish_accent(p, lf, tint_safe);

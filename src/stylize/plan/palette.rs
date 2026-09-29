@@ -59,11 +59,19 @@ pub(super) fn write_dark_floor(
     let Some(LutSpec::Palette { palette, .. }) = lut else {
         return 0.0;
     };
-    let Some(f) = crate::palette::DarkFloor::new(palette, tr) else {
-        return 0.0;
-    };
     let u = facts.upscale;
     let r = (palette.dark_context.radius * facts.scale).clamp(3.0 * u, 32.0 * u);
+    // A moonlight cast's stone handling reads the same neighborhood.
+    if palette.dark_context.radius > 0.0
+        && palette.cast.stone_chroma > 0.0
+        && crate::palette::cast_strength(palette, 1.0) > 0.0
+    {
+        p.cast_stone = palette.cast.stone_chroma;
+        p.ctx_r = r;
+    }
+    let Some(f) = crate::palette::DarkFloor::new(palette, tr) else {
+        return if p.cast_stone > 0.0 { r } else { 0.0 };
+    };
     p.df_on = 1.0;
     p.df_chroma = f.chroma;
     p.df_below = f.below;

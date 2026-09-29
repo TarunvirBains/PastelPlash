@@ -228,12 +228,15 @@ pub fn black_weight(black: [f32; 2], l_src: f32) -> f32 {
 /// `warm_band`) keep at least `dark_chroma` (never brown mud); every dark at least `dark_min`;
 /// colored sources keep the retention share of their chroma. Near-black sources (below
 /// `black`) just go darker: their chroma fades to `black_chroma` along the same hue (warm ones
-/// are still held at `dark_chroma`).
+/// are still held at `dark_chroma`). Moonlit stone stays one family: in a neutral neighborhood
+/// (`ctx_chroma`, the chroma of its mean a/b, samples clamped at [`CONTEXT_MAX_CHROMA`], below
+/// `stone_chroma`) near-neutral darks take the full midnight and no warm hold.
 pub fn apply_cast(
     p: &Palette,
     scale: f32,
     [l_src, c_src]: [f32; 2],
     [ll, cc, hh]: [f32; 3],
+    ctx_chroma: f32,
 ) -> [f32; 3] {
     let k = &p.cast;
     // The mood's dark handling applies whenever it has a cast (it replaces the palette's own
@@ -262,7 +265,9 @@ pub fn apply_cast(
     let (an, bn) = (an / len * cn, bn / len * cn);
     // Near-neutral darks: a muted midnight along the cast, chroma at most dark_cap × L.
     let cm = (k.dark_cap * l2).max(k.dark_min);
-    let w = neutral * dark;
+    // Moonlit stone: a near-neutral dark in a neutral neighborhood takes the full midnight.
+    let stone = k.stone_chroma > 0.0 && c_rel < 0.05 && ctx_chroma < k.stone_chroma;
+    let w = if stone { dark } else { neutral * dark };
     let (a, b) = (an + (cm * ck - an) * w, bn + (cm * sk - bn) * w);
     let mut c3 = cn + (cm - cn) * w;
     // Near-black sources just go darker: below `black` (source lightness) the chroma fades to a
@@ -277,7 +282,11 @@ pub fn apply_cast(
     };
     // Warm darks (earth, olive) never dull: at least dark_chroma (no mud), near-black ones too;
     // every other dark at least dark_min.
-    let warm = band_weight(k.warm_band, 5.0, h3);
+    let warm = if stone {
+        0.0
+    } else {
+        band_weight(k.warm_band, 5.0, h3)
+    };
     c3 = c3
         .max(k.dark_chroma * mud_dark * warm)
         .max(k.dark_min * dark * (1.0 - nb));
@@ -467,7 +476,9 @@ pub fn rendered(
         lab = f.apply(src, lab, (own, own[0].hypot(own[1])));
     }
     let s = color::oklab_to_oklch(src);
-    apply_cast(p, tr.cast, [s[0], s[1]], color::oklab_to_oklch(lab))
+    let own = context_sample([src[1], src[2]]);
+    let ctx = own[0].hypot(own[1]);
+    apply_cast(p, tr.cast, [s[0], s[1]], color::oklab_to_oklch(lab), ctx)
 }
 
 /// Median OKLab lightness of the opaque texels (a water texture's body; 0 when empty).

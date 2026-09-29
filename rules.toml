@@ -288,6 +288,13 @@ cast_max_chroma = 0.04
 # most this many times the regular size (at any mood strength). The day's larger ground dabs
 # (3x, Kokiri Forest) turned the Deku Tree's mottled floors into big hard-edged blotches.
 max_tiling_multiplier = 1.5
+# Moonlit stone stays one family: under the cast, faintly warm gray stone (a neighborhood whose
+# mean chroma, samples clamped at 0.03, is below stone_chroma) takes the muted midnight on its
+# darks; none comes out warm (palette.neutral_dark_max_warm_chroma). A style's
+# `cast.stone_chroma` is at least this. (The ruined market and the adult Temple of Time turned
+# into rust and slate camouflage: faintly warm darks held at the no-mud chroma, neutral ones
+# indigo.)
+stone_chroma = 0.018
 
 # Fluids (water, lava, other liquids; see docs/RULES.md "Fluids"). Every target's fluid
 # treatments (listed or built in) stay within these: caustics are soft light over depth, never

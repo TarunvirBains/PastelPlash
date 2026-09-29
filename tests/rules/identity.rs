@@ -383,6 +383,69 @@ fn rule_sky_colors_bring_no_new_hue() {
 }
 
 #[test]
+fn rule_moonlit_stone_stays_one_family() {
+    // Under a mood's moonlight, faintly warm gray stone (a neighborhood whose mean chroma is below
+    // moods.<name>.stone_chroma) takes the muted midnight on its darks: no near-neutral dark comes
+    // out warm (palette.neutral_dark_max_warm_chroma). The ruined market and the adult Temple of
+    // Time turned into rust and slate camouflage: the cast held its faintly warm darks at the
+    // no-mud chroma (rust) and turned the neutral ones indigo.
+    let k = contract();
+    let size = 192;
+    let img = image(size, size, |x, y| {
+        let (fx, fy) = (x as f32, y as f32);
+        let t = smooth_noise(fx, fy, 12, size, 201);
+        // Pale cream lichen on the lightest spots (the stone is not engine-tinted gray).
+        if t > 0.85 {
+            let [r, g, b] = from_oklch(0.62, 0.045, 85.0);
+            return [r, g, b, 1.0];
+        }
+        let l = 0.12 + 0.4 * t + 0.06 * (noise(x, y, 202) - 0.5);
+        let c = 0.008 + 0.01 * noise(x, y, 203);
+        let [r, g, b] = from_oklch(l, c, 70.0 + 30.0 * noise(x, y, 204));
+        [r, g, b, 1.0]
+    });
+    let mut report = Report::new("moonlit stone stays one family");
+    let rendered = Matrix::full(&[Category::World, Category::Background]).check(
+        &mut report,
+        &img,
+        |case, out| {
+            let style = case.config.style.for_mood(&case.mood).unwrap();
+            let Some(stone) = k.mood(&case.mood.name).and_then(|r| r.stone_chroma) else {
+                return Ok(());
+            };
+            if pastelplash::palette::cast_strength(&style.palette, 1.0) <= 0.0 {
+                return Ok(());
+            }
+            let (mut bad, mut n) = (0usize, 0usize);
+            let mut example = None;
+            for (p, q) in img.pixels.iter().zip(&out.pixels) {
+                let s = pastelplash::color::srgb_to_oklab([p[0], p[1], p[2]]);
+                let o = lch(*q);
+                if !k.palette.near_neutral(s) || o[0] >= k.palette.mud_l {
+                    continue;
+                }
+                n += 1;
+                if k.palette.turned_warm(o) {
+                    bad += 1;
+                    example.get_or_insert_with(|| (lch(*p), o));
+                }
+            }
+            let budget = (n as f32 * k.tolerance.outliers).ceil() as usize;
+            ensure(bad <= budget, || {
+                format!("{bad} of {n} near-neutral darks of the stone turned warm (budget {budget}); e.g. {example:.3?}")
+            })?;
+            let own = style.palette.cast.stone_chroma;
+            ensure(own >= stone, || {
+                format!("cast.stone_chroma {own} below the contract's {stone}")
+            })
+        },
+    );
+    if rendered {
+        report.finish();
+    }
+}
+
+#[test]
 fn rule_skies_keep_their_hue_and_value() {
     // A night sky stays night and a royal-blue day sky stays royal blue: the palette's lift took
     // OoT Reloaded's night skies from L 0.12 to 0.29, its SS pull turned the day sky cyan.
