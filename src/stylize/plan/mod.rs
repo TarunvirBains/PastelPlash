@@ -181,6 +181,7 @@ impl Planner {
             ..Params::default()
         };
         palette::write(&mut params, lut.as_ref(), &facts, &tr);
+        palette::write_cast(&mut params, style, &tr, lut.is_some());
         delight.write(&mut params, lowres.as_ref());
         grouping.write(&mut params, style);
         kuwahara.write(&mut params);

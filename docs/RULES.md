@@ -81,13 +81,23 @@ is the `base` mood. Moods are checked by the same rules, at half and full streng
 - **Moods are overlays.** A mood's effective settings equal the base style's for every key it
   doesn't name, so base improvements flow into it (`moods_inherit_everything_they_do_not_override`).
 - **Nocturne** (dark, haunting areas: Deku Tree (milder), Forest/Shadow Temple, Bottom of the
-  Well, Ganon's Castle, graves, ruined Castle Town): the murk lifts to a lower floor, the palette
-  narrows and cools, earth warmth is off — the Whistler/Monet nocturne. Only in moods listed
-  under `[moods.<name>]` in `rules.toml` may lifted darks rotate toward a cool hue (indigo,
-  violet, deep teal), bounded by `max_cool_bias` and that mood's `dark_max_hue_shift`; the base
-  look keeps darks hue-true (`rule_cool_darks_only_where_the_mood_allows`). Darks still never go
-  neutral black or brown mud, and the identity rules still apply: dungeons stay recognizably
-  themselves, just more atmospheric.
+  Well, Ganon's Castle, graves, ruined Castle Town) is **a shared moonlight cast**
+  (`palette.cast`): every color shifts the same way — darker (a lower exposure), proportionally
+  less saturated, nudged by one shared a/b vector toward the cast hue — so hue *differences*
+  survive (moss stays greener than wood). The cast is applied per texel after the palette LUT
+  (`palette::apply_cast`, `finish_cast`). Near-black and near-neutral darks take at most a muted
+  midnight (small lift, chroma capped by lightness); warm darks are held at the no-mud chroma
+  instead; earth warmth, the night's tone curve and floor are held at full value whatever the
+  mood's strength (`hold`). The cast hue (default indigo) and strength can be set per area in the
+  pack map (`cast = "midnight-purple"`, `cast_strength`). Only moods listed in `rules.toml` with
+  `min_exposure` may have a cast (`rule_moonlight_cast_only_where_the_mood_allows`); rules on
+  value and identity judge such a mood against the source dimmed by its declared exposure
+  (`dimmed` in the rule tests). Actors get no cast (target `cast = 0`: the renderer lights
+  them). A cool bias on darks (`dark_cool_bias`) is still bounded per mood by `max_cool_bias`
+  and `dark_max_hue_shift`; the base look keeps darks hue-true
+  (`rule_cool_darks_only_where_the_mood_allows`). Darks still never go neutral black or brown
+  mud, and the identity rules still apply: dungeons stay recognizably themselves, just dimmer
+  and more atmospheric.
 
 ## The rules
 
@@ -100,6 +110,7 @@ All lightness (L) and chroma (C) values are OKLCH. "Tolerance" means `[tolerance
 | **Mean color stays.** Each texture's alpha-weighted mean OKLab color stays within `identity.max_mean_delta_e` of the source's (`ss-baseline`, which moves further toward SS, has its own larger bound). | Kokiri green stays Kokiri green; Death Mountain stays brown. The game must stay recognizable. | `rules::rule_identity_is_kept` |
 | **Hue families stay.** Per hue group, the mean hue moves by at most `identity.max_group_hue_shift`; any colored texel by at most `palette.max_hue_shift`. | SS hue nudges are nudges, not a repaint. | `rule_identity_is_kept`, `rules_config::rule_hue_shifts_are_bounded` |
 | **Recognizable from across the room.** On a 16×16 grid, each cell's dark-half and light-half mean colors (split at the cell's median L) stay close to the source's: chroma change p90 ≤ `identity.coarse_max_color`, lightness change p90 ≤ `identity.coarse_max_lightness` (per-style overrides for opt-in looks). Brushwork only moves texels within a cell and doesn't register. | A mean color can match while the texture is transformed: v2's navy grooves over tan averaged back to brown. The half-means don't. | `rule_coarse_identity_is_kept` |
+| **Hue families survive.** On a two-material texture (green moss over brown wood), each family's share of the texels changes by at most `identity.family_share_max_change` and their hue separation keeps ≥ `identity.family_min_separation` of the source's, in every mood. | A moonlight that shifts every color the same way keeps the moss greener than the wood; a pull that repaints one family into the other doesn't. | `rule_hue_families_survive` |
 | **Warmth is targeted.** Earth warmth changes only sources whose hue is in its band (exactly nothing outside it), weighted by chroma, and never pushes an earth hue past its target. | A safe, deterministic warm-up for OoT's olive ground, unlike an untargeted tint. | `rule_warmth_is_targeted`, `rule_warmth_stays_in_band` |
 | **Pastel is not gray.** A clearly colored source keeps at least `retention_ratio` of its chroma (capped at `retention_floor`), in every style. | The failure we saw in-game: lifted colors went chalky. Light must stay colorful. | `rules_config::rule_pastel_is_not_gray`, `rules::rule_value_contrast_is_compressed_color_is_kept` |
 
@@ -111,6 +122,8 @@ All lightness (L) and chroma (C) values are OKLCH. "Tolerance" means `[tolerance
 | **Darks are colored:** below `dark_l`, output carries at least `dark_min_chroma` — the source's own hue when it has one, else a warm umber (SS's measured shadow hue). | Painted shadows, never neutral near-black. | same |
 | **Lifted darks keep their hue:** a dark, colored source moves by at most `palette.dark_max_hue_shift`; dark bark never comes out blue. | v2 lifted OoT's bark and cliff darks toward navy: "a completely different place". Dark brown stays brown, dark green stays green. | `rule_lifted_darks_keep_their_hue`, `rule_bark_does_not_turn_blue` |
 | **No brown mud:** no dark, dull brown/olive output (`mud_l`, `mud_hue`, `mud_max_chroma`). | Mud is the classic watercolor failure. | `rule_no_brown_mud` (CPU and GPU) |
+| **Near-black darks take a muted midnight** (moods with a cast): a near-black, near-neutral source (`moods.<name>.near_black_l`, `near_neutral_c`) is lifted at most `near_black_max_lift` above max(its L, `min_l`), and unless held at the no-mud chroma as a warm dark, carries at most `dark_chroma_per_l × L`. | Midnight is fine, ink is not: the Deku Tree's near-neutral darks turned saturated teal; fades to black must stay the darkest part. | `rule_near_black_darks_take_a_muted_midnight` |
+| **Moonlight only where the mood allows.** The base look has no cast; a mood's cast needs `min_exposure` in the contract and dims at most down to it. Actors never get one (`target.max_actor_cast`). | The night is an intended, bounded change of exposure; everything else is judged against it. | `rule_moonlight_cast_only_where_the_mood_allows`, `rule_actor_targets_leave_lighting_to_the_renderer` |
 | **Accent darks** are bounded (`accents.max_fraction`), cool (hue in `accents.hue`), never below `accents.min_l`, and come from structural crevices (band-pass measure), not fine noise. | Occasional Impressionist contrast, not dark textures. | `rule_styles_stay_within_the_contract` |
 
 ### Value and technique

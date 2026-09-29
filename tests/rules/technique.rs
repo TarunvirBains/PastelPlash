@@ -46,9 +46,10 @@ fn rule_small_objects_survive() {
         (o / no - s / ns).abs()
     };
     let keep = contract().technique.small_object_min_contrast;
-    let (c_stick, c_square) = (contrast(&img, &is_stick), contrast(&img, &is_square));
     let mut report = Report::new("small objects survive");
-    let rendered = Matrix::full(&[Category::World]).check(&mut report, &img, |_, out| {
+    let rendered = Matrix::full(&[Category::World]).check(&mut report, &img, |case, out| {
+        let src = dimmed(case, &img);
+        let (c_stick, c_square) = (contrast(&src, &is_stick), contrast(&src, &is_square));
         let (s1, q1) = (contrast(out, &is_stick), contrast(out, &is_square));
         ensure(s1 >= keep * c_stick, || {
             format!("stick contrast {c_stick:.3} -> {s1:.3}")
@@ -87,9 +88,9 @@ fn rule_text_stays_legible() {
         s / ns - o / no
     };
     let keep = contract().technique.text_min_contrast;
-    let c0 = contrast(&img);
     let mut report = Report::new("text stays legible");
-    let rendered = Matrix::full(&[Category::World]).check(&mut report, &img, |_, out| {
+    let rendered = Matrix::full(&[Category::World]).check(&mut report, &img, |case, out| {
+        let c0 = contrast(&dimmed(case, &img));
         let c1 = contrast(out);
         ensure(c1 >= keep * c0, || {
             format!("lettering contrast {c0:.3} -> {c1:.3} (keep {keep})")
@@ -291,10 +292,11 @@ fn rule_value_contrast_is_compressed_color_is_kept() {
     // mean lightness and its color stay.
     let k = contract();
     let img = gritty_blocks(256, 8);
-    let (std0, mean0) = (local_std(&img), pastelplash::report::mean_oklab(&img)[0]);
+    let std0 = local_std(&img);
     let c0 = median(img.pixels.iter().map(|&p| lch(p)[1]).collect());
     let mut report = Report::new("value contrast is compressed, color is kept");
     let rendered = Matrix::full(&[Category::World]).check(&mut report, &img, |case, out| {
+        let mean0 = pastelplash::report::mean_oklab(&dimmed(case, &img))[0];
         let style = case.config.style.for_mood(&case.mood).unwrap();
         let fine = style.value_contrast.fine;
         let std1 = local_std(out);

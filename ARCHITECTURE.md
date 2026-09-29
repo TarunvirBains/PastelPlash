@@ -46,7 +46,9 @@ T0 upload ─delight→ T1 [─group→ T3 → copy to T1] ─tensor→ T2 ─bl
 ─finish (T4, T1, T2)→ T0 → readback
 ```
 
-`finish` runs, per texel: smear, value compression, glare calming, palette LUT, temperature,
+`finish` runs, per texel: smear, value compression, glare calming, palette LUT, a mood's
+moonlight cast (per texel: it switches on the source's chroma, which a LUT can't interpolate),
+temperature,
 accents, strokes, wet edges, granulation, paper, adaptive contrast, chroma retention, floor and
 ceiling (`shaders/stages/finish.wgsl`, one function each). Images above the device limit (or
 `PASTELPLASH_MAX_CHUNK`) run in overlapping chunks; the overlap is the plan's `halo` (filter

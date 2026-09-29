@@ -184,6 +184,28 @@ pub fn few(out: &Image, extra: f32, bad: impl Fn([f32; 4]) -> bool) -> Result<()
     ))
 }
 
+/// The source as the case's mood intends to dim it: its lightness through the mood's moonlight
+/// exposure (`palette::cast_exposure`; the source itself without a cast). The contract bounds
+/// that exposure (`moods.<name>.min_exposure`, `rule_moonlight_cast_only_where_the_mood_allows`),
+/// and rules on value and identity judge the rest of the look against this reference.
+pub fn dimmed(case: &Case, img: &Image) -> Image {
+    let style = case.config.style.for_mood(&case.mood).unwrap();
+    let scale = case.config.target.treatment(case.category).cast;
+    if pastelplash::palette::cast_strength(&style.palette, scale) <= 0.0 {
+        return img.clone();
+    }
+    let mut out = img.clone();
+    for p in &mut out.pixels {
+        let [l, a, b] = pastelplash::color::srgb_to_oklab([p[0], p[1], p[2]]);
+        let l2 = pastelplash::palette::cast_exposure(&style.palette, scale, l);
+        let rgb = pastelplash::color::oklab_to_srgb([l2, a, b]);
+        for k in 0..3 {
+            p[k] = rgb[k].clamp(0.0, 1.0);
+        }
+    }
+    out
+}
+
 /// `Err(message)` unless `ok`.
 pub fn ensure(ok: bool, message: impl FnOnce() -> String) -> Result<(), String> {
     if ok { Ok(()) } else { Err(message()) }

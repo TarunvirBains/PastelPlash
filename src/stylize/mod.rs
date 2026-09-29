@@ -160,7 +160,13 @@ impl Stage for Stylize {
                 }
                 p[3] = p[3].clamp(0.0, 1.0);
             }
-            let target = crate::exposure::mean_l(&image.pixels);
+            // A mood's moonlight cast dims the room on purpose: restore the source's exposure as
+            // the cast would map it (the same scaling above the palette floor).
+            let target = crate::palette::cast_exposure(
+                &style.palette,
+                tr.cast,
+                crate::exposure::mean_l(&image.pixels),
+            );
             let before = crate::exposure::mean_l(&out);
             let curve = crate::exposure::preserve_mean(&mut out, target, tr.exposure.protect);
             exp_note = format!(

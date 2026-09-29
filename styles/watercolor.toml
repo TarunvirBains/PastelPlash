@@ -56,6 +56,8 @@ dark_cool_bias = 0.0    # optional cool push on lifted darks; off keeps OoT's ow
 # Targeted earth warmth: earth/olive/khaki hues lean toward SS's golden tan, weighted by chroma
 # (gray stone stays gray). Tuned a little strong: Kokiri Forest's vertex light is greenish.
 warmth = { strength = 0.45, band = [50.0, 115.0], feather = 10.0, hue = 68.0, chroma = 0.079, chroma_boost = 0.4, min_chroma = [0.02, 0.06], lift = 0.0 }
+# Shared moonlight cast: off in the base look; the nocturne mood turns it on (see below).
+cast = { strength = 0.0, hue = 275.0, tint = 0.02, tint_full_l = 0.6, exposure = 0.7, chroma = 0.85, dark_cap = 0.09, dark_min = 0.017, dark_chroma = 0.046, warm_band = [35.0, 105.0] }
 hue_feather = 10
 pigments = [20.0, 58.0, 80.0, 100.0, 118.0, 135.0, 160.0, 195.0, 242.0, 280.0]
 harmonize = 0.05
@@ -235,31 +237,39 @@ speckle = [0.45, 0.6]
 
 # Nocturne mood (dark, haunting areas; assigned by the pack map): a Whistler/Monet nocturne
 # overlay on this style. Only these keys change; everything else (abstraction, marks, contrast,
-# strokes, hue-true darks, identity) is inherited. The murk lifts to a lower floor into deep,
-# transparent, cool colored washes (never neutral black or brown mud); a narrower, softer
-# palette; no earth warmth. Only here may darks take a cool bias.
+# strokes, hue-true darks, identity) is inherited. Moonlight is one shared cast: every color
+# shifts the same way — darker (exposure), proportionally less saturated, nudged toward the cast
+# hue — so hue differences survive (moss stays greener than wood). The pack map may give an area
+# its own cast (midnight blue, indigo, midnight purple) and strength. Near-neutral darks take a
+# muted midnight, never ink. At any mood strength (`hold`): earth warmth fully off, and the
+# night's tone curve (no murk lift beyond its low floor: near-blacks stay the darkest part).
+[moods.nocturne]
+hold = ["palette.warmth.strength", "palette.l_curve", "palette.l_floor", "watercolor.floor_margin"]
+
 [moods.nocturne.palette]
-l_curve = [[0, 0.16], [0.104, 0.19], [0.184, 0.23], [0.329, 0.33], [0.453, 0.44], [0.622, 0.6], [0.915, 0.88], [1, 0.96]]
+l_curve = [[0, 0.16], [0.104, 0.18], [0.184, 0.22], [0.329, 0.32], [0.453, 0.43], [0.622, 0.59], [0.915, 0.87], [1, 0.95]]
 l_floor = 0.16
-chroma_scale = 0.7
-dark_below = 0.5
-dark_cool_bias = 0.2        # hue rotation toward indigo-violet, chroma kept
-dark_cool_hue = 275.0
+dark_below = 0.4
 warmth = { strength = 0.0 }
-# Neutral darks and grays (stone, night skies) tint cool, not umber/olive: a sepia night reads as
-# mud, not moonlight.
-# Restrained: grays take only a whisper of cool, and no color gets loud against the night (a
-# saturated warm/cool split reads as a photo negative, not a nocturne).
-shadow_tint = { hue = 275.0, chroma = 0.03 }
-neutral_tint = { hue = 265.0, chroma = 0.008 }
-dark_chroma = 0.04          # the no-mud and colored-dark floors still hold
+cast = { strength = 1.0 }
+# The cast (applied per texel after the palette LUT) handles the darks: the base's
+# colored-shadow floor, umber shadow tint and neutral tint fade out (hues must not be blended
+# numerically: halfway between olive and indigo is teal); near-neutral darks take a muted
+# midnight, colored darks keep their own hue and the cast's dark_chroma floor.
+shadow_tint = { amount = 0.0 }
+neutral_tint = { amount = 0.0 }
+dark_chroma = 0.0
 chroma_lift = 0.1
-chroma_cap = 0.12
 
 # No warm/cool from baked shading: the night is uniformly cool.
 [moods.nocturne.temperature]
 chroma = 0.0
 
-# Atmosphere: let the narrower palette through on busy textures too.
+# Atmosphere: let the cast's desaturation through on busy textures too.
 [moods.nocturne.abstraction]
 chroma_retain = 0.6
+
+# The dimmer night brings mids down toward the floor: finish darkening (wet edges, granulation)
+# may undercut the floor only a little.
+[moods.nocturne.watercolor]
+floor_margin = 0.02

@@ -98,6 +98,11 @@ coarse_max_lightness = 0.2
 # must survive — correlation with the source grid, and the share of its p10..p90 range kept.
 coarse_min_pattern_corr = 0.9
 coarse_min_pattern_range = 0.45
+# Hue families survive: on a two-material texture (green moss over brown wood), each family's
+# share of the texels (by output hue) changes by at most family_share_max_change, and the mean
+# hue difference between the two keeps at least family_min_separation of the source's.
+family_share_max_change = 0.1
+family_min_separation = 0.7
 
 # Pre-rendered backgrounds (finished paintings with the designers' lighting): the room's exposure
 # stays — alpha-weighted mean L within background_max_mean_l of the source — and its coarse
@@ -121,6 +126,7 @@ max_actor_ceiling = 0.9
 # The cel shader decides lit/shadow at runtime: no baked temperature or shadow tint on actors.
 max_actor_warm_cool = 0.0
 max_actor_shadow_tint = 0.0
+max_actor_cast = 0.0
 # Actors keep their painted form and their own colors.
 max_actor_delight = 0.4
 max_actor_lift = 0.5
@@ -136,3 +142,16 @@ max_lightness_shift = 0.2
 [moods.nocturne]
 dark_max_hue_shift = 60.0
 max_cool_bias = 0.3
+# Only moods listed with min_exposure may have a moonlight cast (palette.cast); at full mood
+# strength it may dim the area down to this exposure (lightness above the palette floor scaled by
+# it). The other rendered rules judge such a mood against the source dimmed the same way: the
+# mood's declared exposure is its intended look.
+min_exposure = 0.6
+# Near-black, near-neutral sources (L < near_black_l, C < near_neutral_c) take at most a muted
+# midnight: lifted at most near_black_max_lift above max(source L, palette.min_l), and, unless
+# held at the no-mud chroma as a warm dark (hue in palette.mud_hue), chroma at most
+# dark_chroma_per_l × L — never "ink".
+near_black_l = 0.25
+near_neutral_c = 0.012
+near_black_max_lift = 0.06
+dark_chroma_per_l = 0.12

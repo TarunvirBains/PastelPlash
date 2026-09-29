@@ -23,8 +23,8 @@ pub use builtin::DEFAULT_STYLE;
 pub use category::Category;
 pub use pack::{MarksRule, MoodRule, Pack, Rule, glob_match};
 pub use style::{
-    Abstraction, Contrast, Delight, Grouping, HueGroup, Kuwahara, Marks, Palette, Scale, Strokes,
-    Style, Temperature, Tiling, Tint, ValueContrast, Warmth, Watercolor,
+    Abstraction, Cast, Contrast, Delight, Grouping, HueGroup, Kuwahara, Marks, Palette, Scale,
+    Strokes, Style, Temperature, Tiling, Tint, ValueContrast, Warmth, Watercolor,
 };
 pub use target::{Exposure, Target, Treatment};
 
@@ -66,14 +66,16 @@ impl Config {
             // Every mood must be valid in full and half blended with the base.
             for name in config.style.moods.keys() {
                 for strength in [0.5, 1.0] {
-                    let mood = Mood {
-                        name: name.clone(),
-                        strength,
-                        dark_greens: None,
-                    };
+                    let mood = Mood::new(name, strength);
                     config.style.for_mood(&mood).with_context(invalid)?;
                 }
             }
+        }
+        if let Some(path) = pack {
+            config
+                .pack
+                .validate()
+                .with_context(|| format!("invalid pack map {}", path.display()))?;
         }
         if let Some(path) = target {
             config
@@ -198,11 +200,7 @@ mod tests {
              [moods.nocturne.palette]\nl_floor = 0.3\nl_ceiling = 0.85",
         )
         .unwrap();
-        let mood = |name: &str, strength| Mood {
-            name: name.into(),
-            strength,
-            dark_greens: None,
-        };
+        let mood = |name: &str, strength| Mood::new(name, strength);
         let full = style.for_mood(&mood("nocturne", 1.0)).unwrap();
         assert_eq!(full.palette.l_floor, 0.3);
         assert!(full.palette.enabled, "unset keys come from the base");
@@ -218,6 +216,47 @@ mod tests {
             })
             .unwrap();
         assert!(!denied.palette.dark_greens);
+    }
+
+    #[test]
+    fn held_mood_keys_apply_at_any_strength_and_casts_override_per_texture() {
+        let style = Style::parse(
+            "name = 's'\n[palette]\nenabled = true\nl_floor = 0.2\n\
+             warmth = { strength = 0.4 }\ncast = { strength = 0.0, hue = 275.0 }\n\
+             [moods.nocturne]\nhold = ['palette.warmth.strength']\n\
+             [moods.nocturne.palette]\nl_floor = 0.1\nwarmth = { strength = 0.0 }\n\
+             cast = { strength = 1.0 }",
+        )
+        .unwrap();
+        let half = style.for_mood(&Mood::new("nocturne", 0.5)).unwrap();
+        assert_eq!(
+            half.palette.warmth.strength, 0.0,
+            "held: off at half strength"
+        );
+        assert!(
+            (half.palette.l_floor - 0.15).abs() < 1e-6,
+            "not held: blended"
+        );
+        assert!((half.palette.cast.strength - 0.5).abs() < 1e-6);
+        let over = Mood {
+            cast_hue: Some(305.0),
+            cast_strength: Some(0.5),
+            ..Mood::new("nocturne", 0.5)
+        };
+        let m = style.for_mood(&over).unwrap();
+        assert_eq!(m.palette.cast.hue, 305.0, "the area's hue, not blended");
+        assert!(
+            (m.palette.cast.strength - 0.25).abs() < 1e-6,
+            "the area's strength, blended"
+        );
+        let bad = Style::parse(
+            "[moods.x]\nhold = ['palette.l_floor']\n[moods.x.palette]\nenabled = true",
+        )
+        .unwrap();
+        assert!(
+            bad.for_mood(&Mood::new("x", 1.0)).is_err(),
+            "held key the mood doesn't set"
+        );
     }
 
     #[test]

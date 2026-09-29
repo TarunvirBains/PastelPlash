@@ -27,6 +27,12 @@ pub struct Contract {
 pub struct MoodRules {
     pub dark_max_hue_shift: Option<f32>,
     pub max_cool_bias: Option<f32>,
+    /// The mood may have a moonlight cast dimming down to this exposure (none if unset).
+    pub min_exposure: Option<f32>,
+    pub near_black_l: Option<f32>,
+    pub near_neutral_c: Option<f32>,
+    pub near_black_max_lift: Option<f32>,
+    pub dark_chroma_per_l: Option<f32>,
 }
 
 impl Contract {
@@ -37,6 +43,11 @@ impl Contract {
             .find(|(m, _)| label.contains(&format!("[{m}")))
             .and_then(|(_, r)| r.dark_max_hue_shift)
             .unwrap_or(self.palette.dark_max_hue_shift)
+    }
+
+    /// The contract's rules for a mood name, if it lists any.
+    pub fn mood(&self, mood: &str) -> Option<&MoodRules> {
+        self.moods.get(mood)
     }
 
     /// The cool-bias bound for a mood name ("base" and unlisted moods: 0).
@@ -57,6 +68,8 @@ pub struct IdentityRules {
     pub coarse_max_lightness: f32,
     pub coarse_min_pattern_corr: f32,
     pub coarse_min_pattern_range: f32,
+    pub family_share_max_change: f32,
+    pub family_min_separation: f32,
     pub background_max_mean_l: f32,
     pub background_min_pattern_range: f32,
     /// Larger bounds for named opt-in styles.
@@ -167,6 +180,7 @@ pub struct TargetRules {
     pub max_actor_ceiling: f32,
     pub max_actor_warm_cool: f32,
     pub max_actor_shadow_tint: f32,
+    pub max_actor_cast: f32,
     pub max_actor_delight: f32,
     pub max_actor_lift: f32,
     pub max_actor_hue: f32,

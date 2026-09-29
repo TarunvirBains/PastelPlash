@@ -81,58 +81,75 @@ category = "ui"
 # Moods: dark, haunting areas get the style's nocturne mood (first match wins). The Deku Tree is
 # eerie but a first dungeon: a milder nocturne. The graveyard exterior stays base (its night is
 # in-game lighting).
+#
+# Casts (the moonlight hue; suggested starts, the user picks later): the Shadow Temple, Bottom of
+# the Well and the graves midnight purple; the Deku Tree and Forest Temple blue-teal; Ganon's
+# Castle, the ruined market and the adult Temple of Time indigo (the style's default).
 [[moods]]
 glob = "alt/scenes/*/ydan_scene/**"
 mood = "nocturne"
 strength = 0.6
+cast = "blue-teal"
 
 [[moods]]
 glob = "alt/scenes/shared/ydan_boss_scene/**"
 mood = "nocturne"
 strength = 0.6
+cast = "blue-teal"
 
 [[moods]]
 glob = "alt/scenes/*/Bmori1_scene/**"
 mood = "nocturne"
+cast = "blue-teal"
 
 [[moods]]
 glob = "alt/scenes/*/HAKAdan_scene/**"
 mood = "nocturne"
+cast = "midnight-purple"
 
 [[moods]]
 glob = "alt/scenes/shared/HAKAdan_bs_scene/**"
 mood = "nocturne"
+cast = "midnight-purple"
 
 [[moods]]
 glob = "alt/scenes/*/HAKAdanCH_scene/**"
 mood = "nocturne"
+cast = "midnight-purple"
 
 [[moods]]
 glob = "alt/scenes/*/ganontika_scene/**"
 mood = "nocturne"
+cast = "indigo"
 
 [[moods]]
 glob = "alt/scenes/shared/ganontikasonogo_scene/**"
 mood = "nocturne"
+cast = "indigo"
 
 [[moods]]
 glob = "alt/scenes/shared/ganon_*scene/**"
 mood = "nocturne"
+cast = "indigo"
 
 [[moods]]
 glob = "alt/scenes/shared/hakaana*_scene/**"
 mood = "nocturne"
+cast = "midnight-purple"
 
 [[moods]]
 glob = "alt/scenes/shared/hakasitarelay_scene/**"
 mood = "nocturne"
+cast = "midnight-purple"
 
 # Ruined adult Castle Town and the adult Temple of Time exterior: pre-rendered backgrounds
 # (category background, rules above). The child versions (shrine_scene, shrine_n_scene) stay base.
 [[moods]]
 glob = "alt/textures/vr_RUVR_static/**"
 mood = "nocturne"
+cast = "indigo"
 
 [[moods]]
 glob = "alt/scenes/shared/shrine_r_scene/*Background_*"
 mood = "nocturne"
+cast = "indigo"

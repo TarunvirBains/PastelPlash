@@ -129,6 +129,23 @@ pub(super) struct Params {
     grp_l: [f32; 4],
     grp_a: [f32; 4],
     grp_b: [f32; 4],
+
+    cast_s: f32,
+    cast_hue: f32,
+    cast_tint: f32,
+    cast_tint_l: f32,
+    cast_exposure: f32,
+    cast_chroma: f32,
+    cast_dark_cap: f32,
+    cast_dark_min: f32,
+    cast_dark_chroma: f32,
+    cast_pivot: f32,
+    cast_dark_below: f32,
+    cast_warm0: f32,
+    cast_warm1: f32,
+    cast_on: f32,
+    _pad12: f32,
+    _pad13: f32,
 }
 }
 

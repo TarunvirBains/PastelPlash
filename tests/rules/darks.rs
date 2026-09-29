@@ -67,3 +67,61 @@ fn rule_bark_does_not_turn_blue() {
     }
     report.finish();
 }
+
+#[test]
+fn rule_near_black_darks_take_a_muted_midnight() {
+    // In moods with a moonlight cast, near-black and near-neutral darks take at most a muted
+    // midnight: a small lift (they stay the darkest part; fades to black stay fades) and chroma
+    // capped in proportion to lightness, unless held at the no-mud chroma as a warm dark. Never
+    // ink.
+    let k = contract();
+    let img = near_neutral_darks(192, 91);
+    let mut report = Report::new("near-black darks take a muted midnight");
+    let rendered = Matrix::full(&[Category::World, Category::Background]).check(
+        &mut report,
+        &img,
+        |case, out| {
+            let Some(r) = k.mood(&case.mood.name) else {
+                return Ok(());
+            };
+            let (Some(bl), Some(nc), Some(lift), Some(per_l)) = (
+                r.near_black_l,
+                r.near_neutral_c,
+                r.near_black_max_lift,
+                r.dark_chroma_per_l,
+            ) else {
+                return Ok(());
+            };
+            let (mut n, mut lifted, mut ink) = (0usize, 0usize, 0usize);
+            let mut example = None;
+            for (p, q) in img.pixels.iter().zip(&out.pixels) {
+                let [l0, c0, _] = lch(*p);
+                if l0 >= bl || c0 >= nc {
+                    continue;
+                }
+                n += 1;
+                let [l1, c1, h1] = lch(*q);
+                if l1 > l0.max(k.palette.min_l) + lift + k.tolerance.lightness {
+                    lifted += 1;
+                    example.get_or_insert(format!("L {l0:.3} -> {l1:.3}"));
+                }
+                let warm_hold = in_hue_range(h1, k.palette.mud_hue);
+                if !warm_hold && c1 > per_l * l1 + k.tolerance.chroma {
+                    ink += 1;
+                    example.get_or_insert(format!("L {l1:.3} C {c1:.3} h {h1:.0}"));
+                }
+            }
+            let budget = (n as f32 * k.tolerance.outliers).ceil() as usize;
+            ensure(lifted <= budget && ink <= budget, || {
+                format!(
+                    "{lifted} lifted too far, {ink} too saturated of {n} near-black texels \
+                     (budget {budget}); e.g. {}",
+                    example.unwrap_or_default()
+                )
+            })
+        },
+    );
+    if rendered {
+        report.finish();
+    }
+}

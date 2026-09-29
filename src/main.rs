@@ -47,6 +47,23 @@ enum Command {
     /// OKLCH statistics of a PNG (or a rectangle of it).
     #[command(hide = true)]
     DevStats(DevStatsArgs),
+    /// The palette mapping of OKLCH colors (L,C,h triples) for a style, mood and category.
+    #[command(hide = true)]
+    DevMap(DevMapArgs),
+}
+
+#[derive(Args)]
+struct DevMapArgs {
+    #[arg(long, value_name = "FILE|NAME")]
+    style: Option<PathBuf>,
+    #[arg(long, value_name = "FILE")]
+    target: Option<PathBuf>,
+    #[arg(long, default_value = "world")]
+    category: Category,
+    #[arg(long, default_value = "base")]
+    mood: Mood,
+    /// Colors as L,C,h (OKLCH).
+    colors: Vec<String>,
 }
 
 #[derive(Args)]
@@ -280,6 +297,7 @@ fn main() -> ExitCode {
                 pastelplash::report::stats(p, rect).map(|t| print!("{t}"))
             })
             .map(|()| ExitCode::SUCCESS),
+        Command::DevMap(args) => dev_map(args).map(|()| ExitCode::SUCCESS),
         Command::DevSheet(args) => {
             pastelplash::compare::sheet(&args.input, &args.output, args.thumb, args.cols)
                 .map(|()| ExitCode::SUCCESS)
@@ -349,6 +367,51 @@ fn process(args: ProcessArgs) -> anyhow::Result<ExitCode> {
     } else {
         ExitCode::FAILURE
     })
+}
+
+fn dev_map(args: DevMapArgs) -> anyhow::Result<()> {
+    use pastelplash::color;
+    let config = Config::load(
+        Some(&style_or_default(args.style)),
+        args.target.as_deref(),
+        None,
+    )?;
+    let style = config.style.for_mood(&args.mood)?;
+    let tr = config.target.treatment(args.category);
+    let m = pastelplash::palette::Mapping::new(&style.palette, &tr);
+    let lut = m.bake();
+    for c in &args.colors {
+        let (is_rgb, c) = match c.strip_prefix("rgb:") {
+            Some(rest) => (true, rest),
+            None => (false, c.as_str()),
+        };
+        let v: Vec<f32> = c
+            .split(',')
+            .map(str::parse)
+            .collect::<Result<_, _>>()
+            .map_err(|e| anyhow::anyhow!("{c:?}: {e}"))?;
+        anyhow::ensure!(v.len() == 3, "{c:?}: expected L,C,h or rgb:r,g,b");
+        let rgb = if is_rgb {
+            [v[0], v[1], v[2]]
+        } else {
+            color::oklch_to_srgb_gamut([v[0], v[1], v[2]])
+        };
+        let src = color::oklab_to_oklch(color::srgb_to_oklab(rgb));
+        // As the GPU does it: the LUT, then the per-texel cast.
+        let cast = |o: [f32; 4]| {
+            let lch = color::oklab_to_oklch(color::srgb_to_oklab([o[0], o[1], o[2]]));
+            pastelplash::palette::apply_cast(&style.palette, tr.cast, [src[0], src[1]], lch)
+        };
+        let via = cast(lut.sample(rgb));
+        println!("  LUT: {:.3} {:.3} {:5.1}", via[0], via[1], via[2]);
+        let o = m.map(rgb);
+        let out = cast(o);
+        println!(
+            "{:.3} {:.3} {:5.1} -> {:.3} {:.3} {:5.1} (floor {:.3})",
+            src[0], src[1], src[2], out[0], out[1], out[2], o[3]
+        );
+    }
+    Ok(())
 }
 
 fn bake_lut(args: BakeLutArgs) -> anyhow::Result<()> {

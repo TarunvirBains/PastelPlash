@@ -285,6 +285,33 @@ pub fn room(size: u32, seed: u32) -> Image {
     })
 }
 
+/// Two materials: green moss patches over brown wood streaks, both mid-dark (a Deku Tree wall).
+pub fn moss_on_wood(size: u32, seed: u32) -> Image {
+    image(size, size, |x, y| {
+        let (fx, fy) = (x as f32, y as f32);
+        let moss = smooth_noise(fx, fy, 5, size, seed) > 0.55;
+        let n = noise(x, y, seed + 1);
+        let [r, g, b] = if moss {
+            from_oklch(0.42 + 0.1 * n, 0.07, 125.0 + 10.0 * n)
+        } else {
+            let streak = smooth_noise(fx * 8.0, fy, 16, size * 8, seed + 2);
+            from_oklch(0.3 + 0.12 * streak + 0.04 * n, 0.055, 52.0 + 8.0 * n)
+        };
+        [r, g, b, 1.0]
+    })
+}
+
+/// Near-black and near-neutral darks with faint casts of every hue (crushed shadows, fades to
+/// black).
+pub fn near_neutral_darks(size: u32, seed: u32) -> Image {
+    image(size, size, |x, y| {
+        let l = 0.03 + 0.22 * y as f32 / size as f32 + 0.02 * noise(x, y, seed);
+        let c = 0.011 * noise(x, y, seed + 1);
+        let [r, g, b] = from_oklch(l, c, 360.0 * x as f32 / size as f32);
+        [r, g, b, 1.0]
+    })
+}
+
 pub fn lch(p: [f32; 4]) -> [f32; 3] {
     color::oklab_to_oklch(color::srgb_to_oklab([p[0], p[1], p[2]]))
 }

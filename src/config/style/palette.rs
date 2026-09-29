@@ -116,6 +116,56 @@ impl Default for Warmth {
     }
 }
 
+/// A shared moonlight cast (a mood's device, off by default): every color shifts the same way —
+/// darker, proportionally less saturated, and nudged by one shared a/b vector toward `hue` — so
+/// hue *differences* between materials survive (moss stays greener than wood). Near-neutral
+/// darks take only a muted cast, their chroma capped in proportion to their lightness.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Cast {
+    /// 0..1; 0 disables.
+    pub strength: f32,
+    /// OKLCH hue of the cast (e.g. 275 indigo, 250 midnight blue, 305 midnight purple).
+    pub hue: f32,
+    /// OKLab chroma of the shared cast vector at full strength (muted below `tint_full_l`).
+    pub tint: f32,
+    /// Output lightness at and above which the cast vector is at full size.
+    pub tint_full_l: f32,
+    /// Exposure: lightness above the palette floor is scaled by this at full strength (< 1
+    /// dims the area; value order is kept).
+    pub exposure: f32,
+    /// Chroma multiplier at full strength (proportionally less saturated).
+    pub chroma: f32,
+    /// Near-neutral sources: output chroma at most `dark_cap` × output lightness.
+    pub dark_cap: f32,
+    /// Darks (below `palette.dark_below`) keep at least this chroma, topped up along the cast
+    /// hue (a muted midnight, not a dull gray or mud).
+    pub dark_min: f32,
+    /// Clearly colored darks keep at least this chroma along their (cast-shifted) hue: colored
+    /// shadows, never dull brown mud.
+    pub dark_chroma: f32,
+    /// OKLCH hue band of warm (earth, olive) darks, which keep `dark_chroma` too, even when
+    /// near-neutral: a dull warm dark reads as mud.
+    pub warm_band: [f32; 2],
+}
+
+impl Default for Cast {
+    fn default() -> Self {
+        Self {
+            strength: 0.0,
+            hue: 275.0,
+            tint: 0.02,
+            tint_full_l: 0.45,
+            exposure: 1.0,
+            chroma: 1.0,
+            dark_cap: 0.12,
+            dark_min: 0.018,
+            dark_chroma: 0.038,
+            warm_band: [35.0, 105.0],
+        }
+    }
+}
+
 /// OKLCH palette mapping, baked into a 3D LUT (see `src/palette.rs` for the exact order).
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -148,6 +198,8 @@ pub struct Palette {
     pub dark_cool_hue: f32,
     /// Targeted earth warmth (scaled per category by the target's `warmth`).
     pub warmth: Warmth,
+    /// Shared moonlight cast (moods such as nocturne).
+    pub cast: Cast,
     /// Chroma below which a color takes the neutral path (feathered over ±50%).
     pub neutral_c: f32,
     pub neutral_tint: Tint,
@@ -212,6 +264,7 @@ impl Default for Palette {
             dark_cool_bias: 0.0,
             dark_cool_hue: 255.0,
             warmth: Warmth::default(),
+            cast: Cast::default(),
             neutral_c: 0.02,
             neutral_tint: Tint::default(),
             shadow_tint: Tint::default(),
@@ -290,6 +343,20 @@ impl Palette {
         })?;
         unit("palette.accent_min_l", p.accent_min_l)?;
         unit("palette.accent_softness", p.accent_softness)?;
+        let k = &p.cast;
+        unit("palette.cast.strength", k.strength)?;
+        unit("palette.cast.chroma", k.chroma)?;
+        non_negative("palette.cast.tint", k.tint)?;
+        non_negative("palette.cast.dark_cap", k.dark_cap)?;
+        check(k.exposure > 0.0 && k.exposure <= 1.0, || {
+            format!(
+                "palette.cast.exposure = {} must be within (0, 1]",
+                k.exposure
+            )
+        })?;
+        check(k.tint_full_l > 0.0, || {
+            "palette.cast.tint_full_l must be > 0".into()
+        })?;
         Ok(())
     }
 }

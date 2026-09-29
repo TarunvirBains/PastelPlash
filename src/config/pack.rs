@@ -51,6 +51,11 @@ pub struct MoodRule {
     #[serde(default = "one")]
     pub strength: f32,
     pub dark_greens: Option<bool>,
+    /// The area's cast (a name from [`crate::mood::CASTS`], e.g. `"midnight-purple"`),
+    /// overriding the mood's cast hue.
+    pub cast: Option<String>,
+    /// The area's full-strength cast strength, overriding the mood's.
+    pub cast_strength: Option<f32>,
 }
 
 fn one() -> f32 {
@@ -114,10 +119,42 @@ impl Pack {
             .iter()
             .find(|r| glob_match(&r.glob, &p))
             .map_or_else(Mood::default, |r| Mood {
-                name: r.mood.clone(),
-                strength: r.strength,
                 dark_greens: r.dark_greens,
+                cast_hue: r.cast.as_deref().and_then(crate::mood::cast_hue),
+                cast_strength: r.cast_strength,
+                ..Mood::new(&r.mood, r.strength)
             })
+    }
+
+    /// Rejects unknown cast names and out-of-range strengths.
+    pub fn validate(&self) -> anyhow::Result<()> {
+        for r in &self.moods {
+            if let Some(c) = &r.cast {
+                anyhow::ensure!(
+                    crate::mood::cast_hue(c).is_some(),
+                    "moods {:?}: unknown cast {c:?} (known: {})",
+                    r.glob,
+                    crate::mood::CASTS
+                        .iter()
+                        .map(|(n, _)| *n)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+            }
+            for (what, v) in [
+                ("strength", Some(r.strength)),
+                ("cast_strength", r.cast_strength),
+            ] {
+                if let Some(v) = v {
+                    anyhow::ensure!(
+                        (0.0..=1.0).contains(&v),
+                        "moods {:?}: {what} = {v} must be within 0..=1",
+                        r.glob
+                    );
+                }
+            }
+        }
+        Ok(())
     }
 
     /// True if the file stem ends in one of [`Pack::non_color_suffixes`].
@@ -229,6 +266,25 @@ mod tests {
             pack.mood_for(Path::new("alt/scenes/shared/spot04_scene/x"))
                 .is_base()
         );
+    }
+
+    #[test]
+    fn pack_casts_resolve_by_name_and_unknown_names_are_rejected() {
+        let pack: Pack = toml::from_str(
+            "[[moods]]\nglob = 'a/**'\nmood = 'nocturne'\ncast = 'midnight-purple'\n\
+             cast_strength = 0.8",
+        )
+        .unwrap();
+        pack.validate().unwrap();
+        let m = pack.mood_for(Path::new("a/x"));
+        assert_eq!(
+            (m.cast_hue, m.cast_strength),
+            (crate::mood::cast_hue("midnight-purple"), Some(0.8))
+        );
+        let bad: Pack =
+            toml::from_str("[[moods]]\nglob = 'a/**'\nmood = 'nocturne'\ncast = 'mauve'").unwrap();
+        let err = bad.validate().unwrap_err().to_string();
+        assert!(err.contains("mauve") && err.contains("indigo"), "{err}");
     }
 
     #[test]

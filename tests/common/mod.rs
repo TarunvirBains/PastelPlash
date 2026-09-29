@@ -31,11 +31,7 @@ pub fn style_moods() -> Vec<(String, PathBuf, Config, Mood)> {
         let mut moods = vec![Mood::default()];
         for name in config.style.moods.keys() {
             for strength in [0.5, 1.0] {
-                moods.push(Mood {
-                    name: name.clone(),
-                    strength,
-                    dark_greens: None,
-                });
+                moods.push(Mood::new(name, strength));
             }
         }
         for mood in moods {

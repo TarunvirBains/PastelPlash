@@ -123,3 +123,41 @@ fn oot_reloaded_adult_temple_of_time_is_nocturne_child_is_not() {
         assert!(pack.mood_for(Path::new(child)).is_base(), "{child}");
     }
 }
+
+#[test]
+fn oot_reloaded_nocturne_areas_have_their_casts() {
+    use pastelplash::mood::cast_hue;
+    let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("packs/oot-reloaded.toml");
+    let pack = Config::load(None, None, Some(&file)).unwrap().pack;
+    for (path, cast) in [
+        (
+            "alt/scenes/nonmq/HAKAdan_scene/HAKAdan_room_0Tex_000000",
+            "midnight-purple",
+        ),
+        (
+            "alt/scenes/shared/hakaana_scene/hakaana_room_0Tex_000000",
+            "midnight-purple",
+        ),
+        (
+            "alt/scenes/nonmq/ydan_scene/ydan_room_0Tex_000000",
+            "blue-teal",
+        ),
+        (
+            "alt/scenes/mq/Bmori1_scene/Bmori1_room_0Tex_000000",
+            "blue-teal",
+        ),
+        (
+            "alt/scenes/nonmq/ganontika_scene/ganontika_room_0Tex_000000",
+            "indigo",
+        ),
+        ("alt/textures/vr_RUVR_static/gMarketRuinsBgTex", "indigo"),
+    ] {
+        let m = pack.mood_for(Path::new(path));
+        assert_eq!(m.name, "nocturne", "{path}");
+        assert_eq!(m.cast_hue, cast_hue(cast), "{path}");
+    }
+    assert!(
+        pack.mood_for(Path::new("alt/scenes/shared/spot04_scene/x"))
+            .is_base()
+    );
+}

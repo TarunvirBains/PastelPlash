@@ -80,8 +80,8 @@ fn rule_identity_is_kept() {
         ("foliage", mid_foliage(256, 6)),
         ("dull browns", dull_browns(192, 7)),
     ] {
-        let src_mean = mean_oklab(&img);
         let rendered = matrix.check(&mut report, &img, |case, out| {
+            let src_mean = mean_oklab(&dimmed(case, &img));
             let m = mean_oklab(out);
             let de = (0..3)
                 .map(|i| (m[i] - src_mean[i]).powi(2))
@@ -140,12 +140,14 @@ fn rule_backgrounds_keep_their_exposure() {
         s / n
     };
     let mut report = Report::new("backgrounds keep their exposure");
-    let rendered = Matrix::full(&[Category::Background]).check(&mut report, &img, |_, out| {
-        let (m0, m1) = (mean_l(&img.pixels), mean_l(&out.pixels));
+    let rendered = Matrix::full(&[Category::Background]).check(&mut report, &img, |case, out| {
+        // A mood's moonlight dims the room on purpose: its exposure is the reference.
+        let src = dimmed(case, &img);
+        let (m0, m1) = (mean_l(&src.pixels), mean_l(&out.pixels));
         ensure((m1 - m0).abs() <= k.identity.background_max_mean_l, || {
             format!("room mean L {m0:.3} -> {m1:.3}")
         })?;
-        let (_, range) = coarse_l_pattern(&img, out, 16);
+        let (_, range) = coarse_l_pattern(&src, out, 16);
         ensure(range >= k.identity.background_min_pattern_range, || {
             format!("room light/dark range kept {range:.2}")
         })?;
@@ -159,6 +161,54 @@ fn rule_backgrounds_keep_their_exposure() {
                 )
             },
         )
+    });
+    if rendered {
+        report.finish();
+    }
+}
+
+#[test]
+fn rule_hue_families_survive() {
+    // Moss stays greener than wood: on a two-material texture, each hue family keeps its share of
+    // the texels and the two families stay apart in hue (in every mood: a moonlight cast shifts
+    // every color the same way, so the differences survive).
+    let k = contract();
+    let img = moss_on_wood(256, 81);
+    // (green share, brown share, circular mean hue of each) over texels with some chroma.
+    let families = |im: &Image| {
+        let (mut g, mut b, mut n) = (0.0f32, 0.0f32, 0.0f32);
+        let (mut gv, mut bv) = ([0.0f32; 2], [0.0f32; 2]);
+        for p in &im.pixels {
+            let [_, c, h] = lch(*p);
+            n += 1.0;
+            if c < 0.02 {
+                continue;
+            }
+            let v = [h.to_radians().cos(), h.to_radians().sin()];
+            if (95.0..200.0).contains(&h) {
+                g += 1.0;
+                gv = [gv[0] + v[0], gv[1] + v[1]];
+            } else if (15.0..95.0).contains(&h) {
+                b += 1.0;
+                bv = [bv[0] + v[0], bv[1] + v[1]];
+            }
+        }
+        let deg = |v: [f32; 2]| v[1].atan2(v[0]).to_degrees().rem_euclid(360.0);
+        (g / n, b / n, deg(gv), deg(bv))
+    };
+    let (g0, b0, hg0, hb0) = families(&img);
+    let sep0 = pastelplash::color::hue_diff(hb0, hg0);
+    let mut report = Report::new("hue families survive");
+    let rendered = Matrix::full(&[Category::World]).check(&mut report, &img, |_, out| {
+        let (g1, b1, hg1, hb1) = families(out);
+        let bound = k.identity.family_share_max_change;
+        ensure((g1 - g0).abs() <= bound && (b1 - b0).abs() <= bound, || {
+            format!("family shares moved: green {g0:.2} -> {g1:.2}, brown {b0:.2} -> {b1:.2}")
+        })?;
+        let sep1 = pastelplash::color::hue_diff(hb1, hg1);
+        ensure(sep1 >= k.identity.family_min_separation * sep0, || {
+            format!("moss/wood hue separation {sep0:.0} -> {sep1:.0} degrees")
+        })
     });
     if rendered {
         report.finish();

@@ -29,7 +29,7 @@ pub use delight::Delight;
 pub use grouping::Grouping;
 pub use kuwahara::Kuwahara;
 pub use marks::Marks;
-pub use palette::{HueGroup, Palette, Tint, Warmth};
+pub use palette::{Cast, HueGroup, Palette, Tint, Warmth};
 pub use scale::Scale;
 pub use strokes::Strokes;
 pub use temperature::Temperature;
@@ -67,6 +67,32 @@ pub struct Style {
     /// The file's TOML, kept to derive moods from.
     #[serde(skip)]
     pub raw: Option<toml::Table>,
+}
+
+/// The value at a dotted key path of a table.
+fn get_path<'a>(t: &'a toml::Table, path: &str) -> Option<&'a toml::Value> {
+    let mut parts = path.split('.');
+    let mut v = t.get(parts.next()?)?;
+    for p in parts {
+        v = v.as_table()?.get(p)?;
+    }
+    Some(v)
+}
+
+/// Sets the value at a dotted key path, creating tables on the way.
+fn set_path(t: &mut toml::Table, path: &str, value: toml::Value) {
+    let parts: Vec<&str> = path.split('.').collect();
+    let mut cur = t;
+    for p in &parts[..parts.len() - 1] {
+        let next = cur
+            .entry(p.to_string())
+            .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+        if !next.is_table() {
+            *next = toml::Value::Table(toml::Table::new());
+        }
+        cur = next.as_table_mut().unwrap();
+    }
+    cur.insert(parts[parts.len() - 1].to_string(), value);
 }
 
 impl Style {
@@ -123,8 +149,41 @@ impl Style {
                 .raw
                 .as_ref()
                 .context("style was not loaded from TOML, so it has no moods")?;
-            let mut table = layers::merge(raw, over, mood.strength.min(1.0) as f64)
+            let mut over = over.clone();
+            // `hold`: keys the mood sets at its full value whatever its strength (e.g. earth
+            // warmth fully off in a nocturne), not blended.
+            let hold: Vec<String> = match over.remove("hold") {
+                Some(toml::Value::Array(a)) => a
+                    .iter()
+                    .map(|v| v.as_str().map(String::from))
+                    .collect::<Option<_>>()
+                    .with_context(|| format!("mood {:?}: `hold` lists key paths", mood.name))?,
+                Some(_) => {
+                    anyhow::bail!("mood {:?}: `hold` must be a list of key paths", mood.name)
+                }
+                None => Vec::new(),
+            };
+            if let Some(s) = mood.cast_strength {
+                set_path(
+                    &mut over,
+                    "palette.cast.strength",
+                    toml::Value::Float(s as f64),
+                );
+            }
+            let mut table = layers::merge(raw, &over, mood.strength.min(1.0) as f64)
                 .with_context(|| format!("mood {:?}", mood.name))?;
+            for path in &hold {
+                let v = get_path(&over, path).with_context(|| {
+                    format!(
+                        "mood {:?}: held key {path:?} is not set by the mood",
+                        mood.name
+                    )
+                })?;
+                set_path(&mut table, path, v.clone());
+            }
+            if let Some(h) = mood.cast_hue {
+                set_path(&mut table, "palette.cast.hue", toml::Value::Float(h as f64));
+            }
             table.remove("moods");
             let mut derived: Style = toml::Value::Table(table)
                 .try_into()

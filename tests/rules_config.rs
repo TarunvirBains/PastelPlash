@@ -55,9 +55,17 @@ fn luts() -> &'static [(String, Style, Category, Lut3d)] {
     })
 }
 
-fn mapped_lch(lut: &Lut3d, rgb: [f32; 3]) -> [f32; 3] {
+/// The rendered palette color: the LUT, then the per-texel moonlight cast (as `finish` does).
+fn mapped_lch(style: &Style, cat: Category, lut: &Lut3d, rgb: [f32; 3]) -> [f32; 3] {
     let o = lut.sample(rgb);
-    lch([o[0], o[1], o[2], 1.0])
+    let s = lch([rgb[0], rgb[1], rgb[2], 1.0]);
+    let scale = target().treatment(cat).cast;
+    pastelplash::palette::apply_cast(
+        &style.palette,
+        scale,
+        [s[0], s[1]],
+        lch([o[0], o[1], o[2], 1.0]),
+    )
 }
 
 #[test]
@@ -259,11 +267,7 @@ fn rule_cool_darks_only_where_the_mood_allows() {
         );
         for mood in style.moods.keys() {
             let m = style
-                .for_mood(&pastelplash::config::Mood {
-                    name: mood.clone(),
-                    strength: 1.0,
-                    dark_greens: None,
-                })
+                .for_mood(&pastelplash::config::Mood::new(mood, 1.0))
                 .unwrap();
             assert!(
                 m.palette.dark_cool_bias <= k.max_cool_bias(mood),
@@ -305,6 +309,14 @@ fn moods_inherit_everything_they_do_not_override() {
         let mut base_leaves = Vec::new();
         leaves(&raw, "", &mut base_leaves);
         for (mood, over) in &style.moods {
+            // `hold` is mood machinery (keys applied at full value), not a style key.
+            let mut over = over.clone();
+            over.remove("hold");
+            let over = &over;
+            // `hold` is mood machinery (keys applied at full value), not a style key.
+            let mut over = over.clone();
+            over.remove("hold");
+            let over = &over;
             let mut overridden = Vec::new();
             leaves(over, "", &mut overridden);
             let over_keys: Vec<&String> = overridden.iter().map(|(k, _)| k).collect();
@@ -328,11 +340,7 @@ fn moods_inherit_everything_they_do_not_override() {
             }
             // And the resolved style is exactly that overlay.
             let m = style
-                .for_mood(&pastelplash::config::Mood {
-                    name: mood.clone(),
-                    strength: 1.0,
-                    dark_greens: None,
-                })
+                .for_mood(&pastelplash::config::Mood::new(mood, 1.0))
                 .unwrap();
             let mut table = derived.clone();
             table.remove("moods");
@@ -365,6 +373,11 @@ fn rule_actor_targets_leave_lighting_to_the_renderer() {
         assert!(
             actor.shadow_tint <= c.max_actor_shadow_tint,
             "{n}: actor shadow_tint"
+        );
+        assert!(
+            actor.cast <= c.max_actor_cast,
+            "{n}: actor cast {}",
+            actor.cast
         );
         assert!(
             actor.delight <= c.max_actor_delight,
@@ -485,8 +498,8 @@ fn rule_hued_near_black_darks_keep_their_hue() {
         [0.012, 0.03, 0.014],                   // near-black green
     ] {
         let [_, _, h_src] = lch([rgb[0], rgb[1], rgb[2], 1.0]);
-        for (name, _, _, lut) in luts() {
-            let out = mapped_lch(lut, rgb);
+        for (name, style, cat, lut) in luts() {
+            let out = mapped_lch(style, *cat, lut, rgb);
             assert!(
                 !k.palette.is_mud(out),
                 "{name}: {rgb:?} -> {out:?} (brown mud)"
@@ -508,8 +521,8 @@ proptest! {
     #[test]
     fn rule_darks_are_colored_never_black(r in 0.0f32..1.0, g in 0.0f32..1.0, b in 0.0f32..1.0) {
         let k = contract();
-        for (name, _, _, lut) in luts() {
-            let [l, c, h] = mapped_lch(lut, [r, g, b]);
+        for (name, style, cat, lut) in luts() {
+            let [l, c, h] = mapped_lch(style, *cat, lut, [r, g, b]);
             prop_assert!(l >= k.palette.min_l - k.tolerance.lightness,
                 "{}: {:?} -> L {} (crushed black)", name, [r, g, b], l);
             if l < k.palette.dark_l {
@@ -522,8 +535,8 @@ proptest! {
     #[test]
     fn rule_no_brown_mud(r in 0.0f32..1.0, g in 0.0f32..1.0, b in 0.0f32..1.0) {
         let k = contract();
-        for (name, _, _, lut) in luts() {
-            let out = mapped_lch(lut, [r, g, b]);
+        for (name, style, cat, lut) in luts() {
+            let out = mapped_lch(style, *cat, lut, [r, g, b]);
             prop_assert!(!k.palette.is_mud(out), "{}: {:?} -> {:?} (brown mud)", name, [r, g, b], out);
         }
     }
@@ -535,8 +548,8 @@ proptest! {
         let rgb = from_oklch(l, c, h);
         let [_, c_src, _] = lch([rgb[0], rgb[1], rgb[2], 1.0]);
         prop_assume!(c_src >= k.palette.retention_min_source_chroma);
-        for (name, _, _, lut) in luts() {
-            let [lo, co, ho] = mapped_lch(lut, rgb);
+        for (name, style, cat, lut) in luts() {
+            let [lo, co, ho] = mapped_lch(style, *cat, lut, rgb);
             prop_assert!(co >= k.palette.retained(c_src) - k.tolerance.chroma,
                 "{}: C {} -> {} (L {}, h {}) lost color", name, c_src, co, lo, ho);
         }
@@ -548,8 +561,8 @@ proptest! {
         let rgb = from_oklch(l, c, h);
         let [_, c_src, h_src] = lch([rgb[0], rgb[1], rgb[2], 1.0]);
         prop_assume!(c_src >= 0.06);
-        for (name, _, _, lut) in luts() {
-            let [_, co, ho] = mapped_lch(lut, rgb);
+        for (name, style, cat, lut) in luts() {
+            let [_, co, ho] = mapped_lch(style, *cat, lut, rgb);
             if co < 0.05 {
                 continue;
             }
@@ -569,8 +582,8 @@ proptest! {
         if l_src >= 0.35 || c_src < 0.03 {
             return Ok(());
         }
-        for (name, _, _, lut) in luts() {
-            let [_, co, ho] = mapped_lch(lut, rgb);
+        for (name, style, cat, lut) in luts() {
+            let [_, co, ho] = mapped_lch(style, *cat, lut, rgb);
             if co < 0.02 {
                 continue;
             }
@@ -758,6 +771,42 @@ proptest! {
         if curve.k > kmin + 1e-4 && curve.k < kmax - 1e-4 {
             prop_assert!((exposure::mean_l(&out) - target).abs() < 2e-3,
                 "mean {} vs target {}", exposure::mean_l(&out), target);
+        }
+    }
+}
+
+#[test]
+fn rule_moonlight_cast_only_where_the_mood_allows() {
+    // A moonlight cast (shared hue shift and a dimmer exposure) is a mood's device: the base look
+    // has none, and only moods the contract lists with `min_exposure` may use one, dimming at
+    // most down to that exposure at full strength.
+    let k = contract();
+    for path in styles() {
+        let style = Style::load(&path).unwrap();
+        let n = name(&path);
+        assert!(
+            style.palette.cast.strength <= 0.0,
+            "{n}: the base look has a moonlight cast"
+        );
+        for mood in style.moods.keys() {
+            let m = style
+                .for_mood(&pastelplash::config::Mood::new(mood, 1.0))
+                .unwrap();
+            let cast = &m.palette.cast;
+            if cast.strength <= 0.0 {
+                continue;
+            }
+            let min = k.mood(mood).and_then(|r| r.min_exposure);
+            assert!(
+                min.is_some(),
+                "{n} [{mood}]: the contract does not allow this mood a moonlight cast"
+            );
+            let e = 1.0 - cast.strength.min(1.0) * (1.0 - cast.exposure);
+            assert!(
+                e >= min.unwrap(),
+                "{n} [{mood}]: cast exposure {e} below the contract's {}",
+                min.unwrap()
+            );
         }
     }
 }

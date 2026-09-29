@@ -64,6 +64,8 @@ pub struct Treatment {
     pub exposure: Exposure,
     /// Multiplies the palette's earth warmth.
     pub warmth: f32,
+    /// Multiplies a mood's moonlight cast (0 for relit categories: the renderer lights them).
+    pub cast: f32,
 }
 
 impl Default for Treatment {
@@ -84,6 +86,7 @@ impl Default for Treatment {
             paper: 1.0,
             value_contrast: 1.0,
             warmth: 1.0,
+            cast: 1.0,
             abstraction: 1.0,
             grouping: 1.0,
             exposure: Exposure::default(),

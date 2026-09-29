@@ -19,6 +19,19 @@ use serde::Deserialize;
 /// The base mood: the style as written.
 pub const BASE: &str = "base";
 
+/// Named cast hues (OKLCH degrees) a pack map may give an area's mood (`cast = "indigo"`).
+pub const CASTS: &[(&str, f32)] = &[
+    ("blue-teal", 225.0),
+    ("midnight-blue", 250.0),
+    ("indigo", 275.0),
+    ("midnight-purple", 305.0),
+];
+
+/// The hue of a named cast.
+pub fn cast_hue(name: &str) -> Option<f32> {
+    CASTS.iter().find(|(n, _)| *n == name).map(|(_, h)| *h)
+}
+
 /// Which mood a texture gets, and how strongly.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -28,6 +41,11 @@ pub struct Mood {
     pub strength: f32,
     /// Overrides the mood's `palette.dark_greens` (allow or deny dark greens for this texture).
     pub dark_greens: Option<bool>,
+    /// Overrides the mood's cast hue (`palette.cast.hue`, OKLCH degrees) for this texture.
+    pub cast_hue: Option<f32>,
+    /// Overrides the mood's full-strength cast strength (`palette.cast.strength`, then blended
+    /// by the mood's strength like any mood value).
+    pub cast_strength: Option<f32>,
 }
 
 impl Default for Mood {
@@ -36,11 +54,22 @@ impl Default for Mood {
             name: BASE.into(),
             strength: 1.0,
             dark_greens: None,
+            cast_hue: None,
+            cast_strength: None,
         }
     }
 }
 
 impl Mood {
+    /// A plain mood at a strength (no per-texture overrides).
+    pub fn new(name: &str, strength: f32) -> Self {
+        Self {
+            name: name.into(),
+            strength,
+            ..Self::default()
+        }
+    }
+
     /// True if this is the base look with nothing overridden.
     pub fn is_base(&self) -> bool {
         (self.name == BASE || self.strength <= 0.0) && self.dark_greens.is_none()
@@ -59,10 +88,17 @@ impl fmt::Display for Mood {
             write!(f, ":{:.2}", self.strength)?;
         }
         match self.dark_greens {
-            Some(true) => write!(f, "+dark-greens"),
-            Some(false) => write!(f, "-dark-greens"),
-            None => Ok(()),
+            Some(true) => write!(f, "+dark-greens")?,
+            Some(false) => write!(f, "-dark-greens")?,
+            None => {}
         }
+        if let Some(h) = self.cast_hue {
+            write!(f, "+cast{h:.0}")?;
+        }
+        if let Some(s) = self.cast_strength {
+            write!(f, "+cast@{s:.2}")?;
+        }
+        Ok(())
     }
 }
 
@@ -82,11 +118,7 @@ impl FromStr for Mood {
         if name.is_empty() || !(0.0..=1.0).contains(&strength) {
             return Err(format!("expected MOOD or MOOD:STRENGTH (0..=1), got {s:?}"));
         }
-        Ok(Self {
-            name: name.into(),
-            strength,
-            dark_greens: None,
-        })
+        Ok(Self::new(name, strength))
     }
 }
 

@@ -121,6 +121,53 @@ fn finish_palette(c: vec4<f32>, src: vec3<f32>, tint_safe: bool) -> vec4<f32> {
     return vec4<f32>(mapped, e.a);
 }
 
+fn cast_exposure(l: f32) -> f32 {
+    if (l <= P.cast_pivot) { return l; }
+    return P.cast_pivot + (l - P.cast_pivot) * (1.0 - P.cast_s * (1.0 - P.cast_exposure));
+}
+
+// Weight of hue `h` (degrees) inside [lo, hi], feathered by `f` degrees outside.
+fn band_weight(lo: f32, hi: f32, f: f32, h: f32) -> f32 {
+    let span = (hi - lo) - 360.0 * floor((hi - lo) / 360.0);
+    let d = h - lo + 180.0;
+    let x = d - 360.0 * floor(d / 360.0) - 180.0;
+    return smoothstep(-f, 0.0, x) * (1.0 - smoothstep(span, span + f, x));
+}
+
+// The shared moonlight cast of a mood (same math as `palette::apply_cast`): exposure down above
+// the palette floor, chroma scaled, one shared a/b vector toward the cast hue; colored darks keep
+// a deep colored shadow; near-neutral darks blend (continuously) into a muted midnight capped by
+// lightness; warm darks are never dull (no mud). `lf` is the mapped lab color and, in w, the
+// lightness floor (dimmed the same way).
+fn finish_cast(lf: vec4<f32>, src: vec3<f32>, tint_safe: bool) -> vec4<f32> {
+    if (!(P.cast_on > 0.0)) { return lf; }
+    let l2 = cast_exposure(lf.x);
+    let floor_l = cast_exposure(lf.w);
+    if (tint_safe) { return vec4<f32>(l2, lf.yz, floor_l); }
+    let c_src = length(src.yz);
+    let dark = 1.0 - smoothstep(P.cast_dark_below - 0.03, P.cast_dark_below + 0.05, l2);
+    let mud_dark = 1.0 - smoothstep(P.cast_dark_below + 0.02, P.cast_dark_below + 0.1, l2);
+    let c_rel = c_src * max(1.0, 0.55 / (max(src.x, 0.0) + 0.05));
+    let neutral = 1.0 - smoothstep(0.012, 0.03, c_rel);
+    let tint = P.cast_s * P.cast_tint * min(l2 / P.cast_tint_l, 1.0);
+    let kd = hue_dir(P.cast_hue);
+    var abn = lf.yz * (1.0 - P.cast_s * (1.0 - P.cast_chroma)) + kd * tint;
+    let keep = smoothstep(0.03, 0.05, c_src) * min(0.65 * c_src, 0.052);
+    let len = max(length(abn), 1e-9);
+    let cn = max(max(len, keep), P.cast_dark_chroma * mud_dark * (1.0 - neutral));
+    abn = abn / len * cn;
+    let cm = max(P.cast_dark_cap * l2, P.cast_dark_min);
+    let w = neutral * dark;
+    let ab = mix(abn, kd * cm, w);
+    var c3 = mix(cn, cm, w);
+    var dir = kd;
+    if (length(ab) > 1e-9) { dir = normalize(ab); }
+    let h3 = atan2(dir.y, dir.x) * 57.29577951;
+    let warm = band_weight(P.cast_warm0, P.cast_warm1, 5.0, h3);
+    c3 = max(max(c3, P.cast_dark_chroma * mud_dark * warm), P.cast_dark_min * dark);
+    return vec4<f32>(l2, dir * c3, floor_l);
+}
+
 // Warm/cool temperature from the residual low-frequency shading.
 fn finish_temperature(gp: vec2<f32>, lab: vec3<f32>, tint_safe: bool) -> vec3<f32> {
     if (!(P.temp_strength > 0.0 && P.low_w > 0 && !tint_safe)) { return lab; }
@@ -291,6 +338,7 @@ fn finish(@builtin(global_invocation_id) gid: vec3<u32>) {
     c = finish_glare(p, c);
     let src = srgb_to_oklab(c.rgb);
     var lf = finish_palette(c, src, tint_safe);
+    lf = finish_cast(lf, src, tint_safe);
     lf = vec4<f32>(finish_temperature(gp, lf.xyz, tint_safe), lf.w);
     lf = finish_accent(p, lf, tint_safe);
     var lab = lf.xyz;

@@ -163,6 +163,95 @@ fn soft_cap(c: f32, cap: f32) -> f32 {
     }
 }
 
+/// The effective strength of the palette's moonlight cast (0 = off) for a category whose
+/// treatment scales it by `scale` (the target's `cast`).
+pub fn cast_strength(p: &Palette, scale: f32) -> f32 {
+    (p.cast.strength * p.strength.min(1.0) * scale).clamp(0.0, 1.0)
+}
+
+/// Lightness `l` as the palette's moonlight cast dims it (scaled down above the palette floor;
+/// `l` itself when the cast is off).
+pub fn cast_exposure(p: &Palette, scale: f32, l: f32) -> f32 {
+    let s = cast_strength(p, scale);
+    let pivot = p.l_floor;
+    if s <= 0.0 || l <= pivot {
+        return l;
+    }
+    pivot + (l - pivot) * (1.0 - s * (1.0 - p.cast.exposure))
+}
+
+/// Weight of hue `h` inside the band `[from, to]`, feathered by `f` degrees outside it.
+fn band_weight([from, to]: [f32; 2], f: f32, h: f32) -> f32 {
+    let span = (to - from).rem_euclid(360.0);
+    let x = (h - from + 180.0).rem_euclid(360.0) - 180.0; // position relative to `from`
+    smoothstep(-f, 0.0, x) * (1.0 - smoothstep(span, span + f, x))
+}
+
+/// The shared moonlight cast (`palette.cast`, a mood's device) on a palette-mapped OKLCH color.
+/// Applied per texel after the palette LUT (in `finish`; this is the same math for the CPU rule
+/// tests), because its dark handling switches with the source's chroma and hue, which a baked
+/// LUT cannot interpolate faithfully. `[l_src, c_src]` are the source texel's OKLab lightness
+/// and chroma; `scale` is the category's `cast` treatment.
+///
+/// Exposure scales lightness down above the palette floor (value order and the dark floor stay);
+/// chroma scales proportionally; one shared a/b vector toward the cast hue is added (muted in
+/// the darks), so every color shifts the same way and hue differences survive. Darks: near-neutral
+/// sources are capped at `dark_cap × L` (a muted midnight, never ink) and topped up to `dark_min`
+/// along the cast; warm darks (hue in `warm_band`) and clearly colored darks keep at least
+/// `dark_chroma` (deep colored shadows, never brown mud); colored sources keep the retention share
+/// of their chroma.
+pub fn apply_cast(
+    p: &Palette,
+    scale: f32,
+    [l_src, c_src]: [f32; 2],
+    [ll, cc, hh]: [f32; 3],
+) -> [f32; 3] {
+    let k = &p.cast;
+    // The mood's dark handling applies whenever it has a cast (it replaces the palette's own
+    // dark floors); exposure, desaturation and the cast vector scale with the category.
+    if cast_strength(p, 1.0) <= 0.0 {
+        return [ll, cc, hh];
+    }
+    let s = cast_strength(p, scale);
+    let l2 = cast_exposure(p, scale, ll);
+    let dark = 1.0 - smoothstep(p.dark_below - 0.03, p.dark_below + 0.05, l2);
+    let mud_dark = 1.0 - smoothstep(p.dark_below + 0.02, p.dark_below + 0.1, l2);
+    // Near-neutral by lightness-relative chroma, like the palette (a near-black navy is navy).
+    let c_rel = c_src * (0.55 / (l_src.max(0.0) + 0.05)).max(1.0);
+    let neutral = 1.0 - smoothstep(0.012, 0.03, c_rel);
+    // Every color: its own chroma scaled, plus the one shared cast vector.
+    let c2 = cc * (1.0 - s * (1.0 - k.chroma));
+    let tint = s * k.tint * (l2 / k.tint_full_l.max(1e-3)).min(1.0);
+    let (sh, ch) = hh.to_radians().sin_cos();
+    let (sk, ck) = k.hue.to_radians().sin_cos();
+    let (an, bn) = (c2 * ch + tint * ck, c2 * sh + tint * sk);
+    // Clearly colored sources keep most of their color, and colored darks a deep colored shadow.
+    let keep = smoothstep(0.03, 0.05, c_src) * (0.65 * c_src).min(0.052);
+    let cn = an
+        .hypot(bn)
+        .max(keep)
+        .max(k.dark_chroma * mud_dark * (1.0 - neutral));
+    let len = an.hypot(bn).max(1e-9);
+    let (an, bn) = (an / len * cn, bn / len * cn);
+    // Near-neutral darks: a muted midnight along the cast, chroma at most dark_cap × L.
+    let cm = (k.dark_cap * l2).max(k.dark_min);
+    let w = neutral * dark;
+    let (a, b) = (an + (cm * ck - an) * w, bn + (cm * sk - bn) * w);
+    let mut c3 = cn + (cm - cn) * w;
+    let h3 = if a.hypot(b) > 1e-9 {
+        b.atan2(a).to_degrees().rem_euclid(360.0)
+    } else {
+        k.hue
+    };
+    // Warm darks (earth, olive) never dull: at least dark_chroma (no mud); every dark at least
+    // dark_min.
+    let warm = band_weight(k.warm_band, 5.0, h3);
+    c3 = c3
+        .max(k.dark_chroma * mud_dark * warm)
+        .max(k.dark_min * dark);
+    [l2, c3, h3]
+}
+
 /// Group parameters blended by weight (`None` if no group covers the hue).
 #[derive(Default)]
 struct Blend {
