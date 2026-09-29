@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  RUST_BACKTRACE: 1
+
+# The toolchain is pinned in rust-toolchain.toml; `rustup toolchain install` without arguments
+# installs exactly that one (with clippy, rustfmt and the x86_64-pc-windows-gnu target).
+#
+# GPU tests run on software adapters: WARP (DirectX 12) on Windows and lavapipe (Mesa's software
+# Vulkan) on Linux, selected with WGPU_ADAPTER_NAME (see README, "Environment variables"). The
+# golden GPU hashes (tests/golden/hashes-<adapter>.toml) are per adapter and none are captured
+# for these: their bits depend on the WARP or Mesa/LLVM build of the runner image, which is not
+# pinned, so the harness skips that comparison with a message (docs/RULES.md). The CPU golden
+# hashes, the rule tests (GPU rules included) and the snapshots run in full.
+
+jobs:
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: rustup toolchain install
+      - run: cargo fmt --check
+
+  clippy:
+    name: clippy (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The pinned Windows build (.cargo/config.toml) and the Linux build: each has
+        # platform-specific code paths.
+        target: [x86_64-pc-windows-gnu, x86_64-unknown-linux-gnu]
+    steps:
+      - uses: actions/checkout@v5
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: clippy-${{ matrix.target }}
+      - run: cargo clippy --all-targets --locked --target ${{ matrix.target }} -- -D warnings
+
+  test-windows:
+    name: test (Windows, WARP)
+    runs-on: windows-latest
+    env:
+      # WARP, the DirectX 12 software rasterizer that ships with Windows.
+      WGPU_ADAPTER_NAME: Microsoft Basic Render Driver
+      # MSYS2's UCRT64 gcc links the pinned x86_64-pc-windows-gnu target (the local builds use
+      # a UCRT mingw-w64 too, which the CPU golden hashes are captured with).
+      CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: gcc
+    steps:
+      - uses: actions/checkout@v5
+      - uses: msys2/setup-msys2@v2
+        id: msys2
+        with:
+          msystem: UCRT64
+          release: false # the runner's preinstalled MSYS2
+          install: mingw-w64-ucrt-x86_64-gcc
+      - name: Put the mingw-w64 toolchain on PATH
+        shell: pwsh
+        run: Add-Content -Path $env:GITHUB_PATH -Value "${{ steps.msys2.outputs.msys2-location }}\ucrt64\bin"
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: test-windows
+      - name: GPU adapter
+        run: cargo run --release --locked -- gpu-info
+      - run: cargo test --release --locked
+
+  test-linux:
+    name: test (Linux, lavapipe)
+    runs-on: ubuntu-latest
+    env:
+      # Native Linux build instead of the pinned Windows cross-build (.cargo/config.toml).
+      CARGO_BUILD_TARGET: x86_64-unknown-linux-gnu
+      WGPU_BACKEND: vulkan
+      WGPU_ADAPTER_NAME: llvmpipe
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install lavapipe (Mesa software Vulkan)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers libvulkan1 vulkan-tools
+      - run: vulkaninfo --summary
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: test-linux
+      - name: GPU adapter
+        run: cargo run --release --locked -- gpu-info
+      - run: cargo test --release --locked

@@ -60,6 +60,11 @@ There are four kinds of change, and each has its own place:
     portable sections (styles, configs, shader) are still checked against `hashes-cpu.toml`,
     and the LUTs and plans are skipped with a message unless that platform has its own
     `hashes-cpu-<arch>-<os>-<env>.toml` (a capture there writes one).
+  - CI runs the GPU tests on software adapters (WARP on Windows, lavapipe on Linux) and has no
+    GPU hash files for them: their bits depend on the WARP or Mesa/LLVM build of the runner
+    image, which is not pinned, so the comparison is skipped there (the test prints why). The
+    rule tests (GPU rules included) and snapshots run in full, and the CPU hashes too (on Linux
+    without the math-library sections, see above).
 - **GPU tests skip cleanly** without an adapter; the CPU checks always run. `WGPU_BACKEND`
   (`dx12`, `vulkan`) and `WGPU_ADAPTER_NAME` (a case-insensitive part of the adapter's name, e.g.
   `llvmpipe` or `Microsoft Basic Render Driver`) pick the adapter for the tests and the CLI alike;
