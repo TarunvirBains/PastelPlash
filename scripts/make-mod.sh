@@ -72,7 +72,7 @@ for g in $INCLUDE; do include_args+=(--include "$g"); done
 # Build when a Rust toolchain is available (WSL); otherwise use the existing binary.
 if command -v cargo >/dev/null 2>&1; then
     echo "building release binary..."
-    (cd "$REPO" && cargo build --release --quiet)
+    (cd "$REPO" && cargo build --release --locked --quiet)
 fi
 [[ -f "$EXE" ]] || { echo "missing $EXE (build it in WSL with: cargo build --release)" >&2; exit 1; }
 

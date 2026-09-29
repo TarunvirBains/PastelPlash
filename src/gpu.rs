@@ -18,6 +18,11 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>,
 
 const SELF_TEST_COUNT: u32 = 16 * 1024 * 1024; // one 4K texture's worth of pixels
 
+/// The DX12 shader compiler, pinned: shader output bits depend on it. FXC ships with Windows
+/// (`d3dcompiler_47.dll`); wgpu's default (`Auto`) would switch to DXC whenever a
+/// `dxcompiler.dll` happens to be on the PATH.
+pub const DX12_COMPILER: wgpu::Dx12Compiler = wgpu::Dx12Compiler::Fxc;
+
 pub struct Gpu {
     pub adapter: wgpu::Adapter,
     pub device: wgpu::Device,
@@ -27,10 +32,10 @@ pub struct Gpu {
 impl Gpu {
     /// Opens the high-performance DX12 adapter with its full limits.
     pub async fn new() -> Result<Self> {
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::DX12,
-            ..wgpu::InstanceDescriptor::new_without_display_handle()
-        });
+        let mut desc = wgpu::InstanceDescriptor::new_without_display_handle();
+        desc.backends = wgpu::Backends::DX12;
+        desc.backend_options.dx12.shader_compiler = DX12_COMPILER;
+        let instance = wgpu::Instance::new(desc);
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::HighPerformance,
@@ -59,7 +64,7 @@ pub fn info() -> Result<()> {
         let gpu = Gpu::new().await?;
         let info = gpu.adapter.get_info();
         println!(
-            "adapter: {} ({:?}, driver {})",
+            "adapter: {} ({:?}, driver {}), shader compiler {DX12_COMPILER:?}",
             info.name, info.backend, info.driver_info
         );
         self_test(&gpu)

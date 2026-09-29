@@ -1,0 +1,7 @@
+# Pinned so float results (and the golden hashes in tests/golden/) don't drift with toolchain
+# updates. Bump deliberately and re-check the golden-hash test (docs/RULES.md).
+[toolchain]
+channel = "1.96.0"
+profile = "minimal"
+components = ["clippy", "rustfmt"]
+targets = ["x86_64-pc-windows-gnu"]

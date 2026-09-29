@@ -31,7 +31,7 @@ PACK_MAP=${PACK_MAP:-"$REPO/packs/oot-reloaded.toml"}
 include=()
 for g in "$@"; do include+=(--include "$g"); done
 
-command -v cargo >/dev/null 2>&1 && (cd "$REPO" && cargo build --release --quiet)
+command -v cargo >/dev/null 2>&1 && (cd "$REPO" && cargo build --release --locked --quiet)
 mkdir -p "$OUT"
 rm -rf "$OUT/src" "$OUT/out" "$OUT/compare" "$OUT/tmp"
 mkdir -p "$OUT/tmp"
