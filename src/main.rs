@@ -78,7 +78,9 @@ struct O2rArgs {
     /// Also copy every unprocessed entry, producing a complete standalone pack.
     #[arg(long)]
     complete: bool,
-    #[arg(long, value_name = "FILE")]
+    /// Style config (TOML file) or built-in style name; default: the built-in default style
+    /// (impressionist).
+    #[arg(long, value_name = "FILE|NAME")]
     style: Option<PathBuf>,
     #[arg(long, value_name = "FILE")]
     target: Option<PathBuf>,
@@ -168,8 +170,9 @@ struct ProcessArgs {
     /// Follow symlinks when walking.
     #[arg(long)]
     follow_links: bool,
-    /// Style config (TOML).
-    #[arg(long, value_name = "FILE")]
+    /// Style config (TOML file) or built-in style name; default: the built-in default style
+    /// (impressionist).
+    #[arg(long, value_name = "FILE|NAME")]
     style: Option<PathBuf>,
     /// Target renderer profile (TOML).
     #[arg(long, value_name = "FILE")]
@@ -240,9 +243,14 @@ fn main() -> ExitCode {
     })
 }
 
+/// The given style, or the built-in default style.
+fn style_or_default(style: Option<PathBuf>) -> PathBuf {
+    style.unwrap_or_else(|| PathBuf::from(pastelplash::config::DEFAULT_STYLE))
+}
+
 fn process(args: ProcessArgs) -> anyhow::Result<ExitCode> {
     let config = Config::load(
-        args.style.as_deref(),
+        Some(&style_or_default(args.style)),
         args.target.as_deref(),
         args.pack.as_deref(),
     )?;
@@ -294,7 +302,7 @@ fn bake_lut(args: BakeLutArgs) -> anyhow::Result<()> {
 
 fn o2r(args: O2rArgs) -> anyhow::Result<()> {
     let config = Config::load(
-        args.style.as_deref(),
+        Some(&style_or_default(args.style)),
         args.target.as_deref(),
         args.pack.as_deref(),
     )?;

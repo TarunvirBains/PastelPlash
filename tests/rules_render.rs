@@ -836,7 +836,10 @@ fn rule_output_in_gamut_and_finite() {
 #[test]
 fn rule_identity_when_all_strengths_are_zero() {
     // A palette at strength 0 with every other effect off must leave the image unchanged.
-    let path = repo().join("styles/watercolor.toml");
+    let path = repo().join(format!(
+        "styles/{}.toml",
+        pastelplash::config::DEFAULT_STYLE
+    ));
     let dir = tempfile::tempdir().unwrap();
     let neutral = dir.path().join("neutral.toml");
     std::fs::write(&neutral, "[palette]\nenabled = true\nstrength = 0.0\n").unwrap();
@@ -863,7 +866,10 @@ fn rule_identity_when_all_strengths_are_zero() {
 fn rule_sixteen_bit_inputs_are_handled() {
     use pastelplash::pipeline::Pipeline;
     use pastelplash::process::{self, Options};
-    let style = repo().join("styles/watercolor.toml");
+    let style = repo().join(format!(
+        "styles/{}.toml",
+        pastelplash::config::DEFAULT_STYLE
+    ));
     if stylizer(&style).is_none() {
         return;
     }
@@ -913,6 +919,9 @@ fn rule_chunked_processing_matches_whole_image() {
     // show. (Accent thresholds are per chunk, so accents are off for this comparison.)
     use pastelplash::pipeline::{FileContext, Stage};
     use pastelplash::stylize::Stylize;
+    // The watercolor base: with the impressionist brushwork overlay, strokes and temperature
+    // still differ by up to ~0.006 at chunk borders (open issue; chunking only happens above the
+    // device limit, 8192 texels per side, which no OoT Reloaded texture reaches).
     let style = repo().join("styles/watercolor.toml");
     if stylizer(&style).is_none() {
         return;

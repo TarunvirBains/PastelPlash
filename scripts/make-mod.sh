@@ -13,10 +13,11 @@
 # Settings (environment variables):
 #   SOH_DIR        Ship of Harkinian folder (default: autodetected, see below)
 #   PACK           source pack (default: $SOH_DIR/mods/OoT_Reloaded_v11.0.0_4K.o2r)
-#   STYLES         styles to build, space-separated (default: every preset)
+#   STYLES         styles to build, space-separated (default: every preset, the default
+#                  style impressionist first)
 #   TAG            name suffix (default: test, or full with FULL=1)
 #   INSTALL        variants (default), mods (only INSTALL_STYLE, into $SOH_DIR/mods) or none
-#   INSTALL_STYLE  style for INSTALL=mods (default: watercolor)
+#   INSTALL_STYLE  style for INSTALL=mods (default: impressionist, the default style)
 #   INCLUDE        entry globs, space-separated (default: the Kokiri Forest + Link test set)
 #   FULL=1         no INCLUDE filter: restyle the whole pack
 #   JOBS           worker threads (default: all cores)
@@ -49,9 +50,9 @@ fi
 [[ -n "${SOH_DIR:-}" && -d "$SOH_DIR" ]] || { echo "set SOH_DIR to your Ship of Harkinian folder" >&2; exit 1; }
 PACK=${PACK:-"$SOH_DIR/mods/OoT_Reloaded_v11.0.0_4K.o2r"}
 [[ -f "$PACK" ]] || { echo "pack not found: $PACK" >&2; exit 1; }
-STYLES=${STYLES:-"watercolor impressionist ss-baseline"}
+STYLES=${STYLES:-"impressionist watercolor ss-baseline ss-impressionist"}
 INSTALL=${INSTALL:-variants}
-INSTALL_STYLE=${INSTALL_STYLE:-watercolor}
+INSTALL_STYLE=${INSTALL_STYLE:-impressionist}
 OUT_DIR=${OUT_DIR:-"$REPO/target/mods"}
 mkdir -p "$OUT_DIR"
 LOG="$OUT_DIR/make-mod.log"

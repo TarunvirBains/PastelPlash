@@ -128,7 +128,13 @@ fn neutral_config_complete_pack_is_byte_identical() {
 #[test]
 fn mod_contains_only_selected_restyled_textures_with_original_headers() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let config = pack_config(Some(&root.join("styles/watercolor.toml")), true);
+    let config = pack_config(
+        Some(&root.join(format!(
+            "styles/{}.toml",
+            pastelplash::config::DEFAULT_STYLE
+        ))),
+        true,
+    );
     assert_eq!(
         config
             .pack

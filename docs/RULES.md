@@ -28,7 +28,7 @@ There are three kinds of change, and each has its own place:
   2. The palette mapping honors the rules over randomized colors (CPU only, proptest).
   3. Rendered output honors the rules on procedural textures (GPU).
 - **Snapshots are alarms, not rules.** `tests/snapshots.rs` renders a few procedural textures with
-  the default style and compares them with `tests/golden/` using a perceptual tolerance (mean
+  the default style (`impressionist`) and compares them with `tests/golden/` using a perceptual tolerance (mean
   OKLab ΔE plus a small outlier budget). A failure means the look changed; if intended, re-bless.
   - When running the Windows build from WSL, pass the variable through:
     `WSLENV=PASTELPLASH_BLESS PASTELPLASH_BLESS=1 cargo test --test snapshots`.
@@ -40,9 +40,15 @@ There are three kinds of change, and each has its own place:
 
 | Style | What it is |
 |---|---|
-| `watercolor` (default) | The source's own rich color, painted: gentle SS hue nudges, crushed darks lifted into colored shadows, softer internal value contrast, watercolor technique. |
-| `impressionist` | Extends `watercolor`; differs only in bolder brushwork, slightly stronger warm/cool and a few more accents. |
+| `watercolor` (base) | The source's own rich color, painted: gentle SS hue nudges, crushed darks lifted into colored shadows, softer internal value contrast, watercolor technique. |
+| `impressionist` (**default**) | `watercolor` + the impressionist brushwork overlay (`styles/overlays/impressionist-brushwork.toml`): bolder brushwork, slightly stronger warm/cool, a few more accents. The CLI uses it when no `--style` is given; `make-mod.sh` installs it. |
 | `ss-baseline` | Extends `watercolor`; nudged further toward Skyward Sword (stronger hue pulls, mild lift). |
+| `ss-impressionist` | `ss-baseline` + the same brushwork overlay: SS palette, impressionist brushwork. |
+
+Styles compose: `extends` takes a path or a list (`extends = ["ss-baseline.toml",
+"overlays/impressionist-brushwork.toml"]`), merged in order, then the file itself. Overlays in
+`styles/overlays/` are not styles on their own and are not tested alone. Every shipped style is
+also built into the binary (`--style impressionist` works from anywhere).
 
 A **mood** is a named partial override of a style (`[moods.<name>]` in the style file), assigned
 to files by the pack map (`[[moods]]` rules with a glob and a strength 0–1). The style as written
@@ -97,7 +103,7 @@ All lightness (L) and chroma (C) values are OKLCH. "Tolerance" means `[tolerance
 | **Alpha preserved exactly, no halos.** | Cutouts must drop back into the game unchanged in shape. | `rule_alpha_preserved_and_no_halos` |
 | **Tiling textures stay seamless; chunking is invisible.** | Seams repeat across every wall; 8K skyboxes are processed in chunks. | `rule_tiling_textures_stay_seamless`, `rule_chunked_processing_matches_whole_image` |
 | Technique strengths stay within `[technique]`. | Tasteful: no ink outlines, heavy grain or smeared mush. | `rule_styles_stay_within_the_contract` |
-| `impressionist` extends the default and only overrides brushwork, warm/cool and accents. | Tuning the default carries over; impressionist is never "OoT with brushstrokes". | `impressionist_inherits_the_default_look` |
+| `impressionist` and `ss-impressionist` are their palette base plus the brushwork overlay, which may only set brushwork, warm/cool and accents; built-in styles equal their files. | Tuning a base carries over; the brushwork is one shared layer, never a hand-copied variant. | `impressionist_inherits_the_default_look`, `ss_impressionist_is_ss_baseline_palette_with_impressionist_brushwork`, `builtin_styles_are_the_shipped_files` |
 
 ### Target: SoH cel-shade fork
 

@@ -1021,6 +1021,14 @@ impl Config {
     pub fn load(style: Option<&Path>, target: Option<&Path>, pack: Option<&Path>) -> Result<Self> {
         let mut config = Self {
             style: match style {
+                // A bare name that is not a file is a built-in style (`--style impressionist`).
+                Some(path)
+                    if !path.exists()
+                        && path.components().count() == 1
+                        && path.extension().is_none() =>
+                {
+                    Style::builtin(&path.to_string_lossy())?
+                }
                 Some(path) => Style::load(path)?,
                 None => Style::default(),
             },
@@ -1074,33 +1082,116 @@ fn non_negative(name: &str, v: f32) -> Result<()> {
     })
 }
 
+/// The style used when none is given (the CLI's default; `make-mod.sh`'s installed style).
+pub const DEFAULT_STYLE: &str = "impressionist";
+
+/// The shipped styles (`styles/`), built into the binary so they work by name from anywhere:
+/// (path relative to `styles/`, text).
+const BUILTIN_STYLES: &[(&str, &str)] = &[
+    ("watercolor.toml", include_str!("../styles/watercolor.toml")),
+    (
+        "impressionist.toml",
+        include_str!("../styles/impressionist.toml"),
+    ),
+    (
+        "ss-baseline.toml",
+        include_str!("../styles/ss-baseline.toml"),
+    ),
+    (
+        "ss-impressionist.toml",
+        include_str!("../styles/ss-impressionist.toml"),
+    ),
+    (
+        "overlays/impressionist-brushwork.toml",
+        include_str!("../styles/overlays/impressionist-brushwork.toml"),
+    ),
+];
+
 impl Style {
     /// Loads a style file, following `extends` (a path relative to the file): the file's
     /// settings are deep-merged over the style it extends.
     pub fn load(path: &Path) -> Result<Self> {
-        let raw = Self::load_raw(path, 0)?;
+        let raw = Self::load_raw(path, 0, &|p: &Path| {
+            fs::read_to_string(p).with_context(|| format!("reading {}", p.display()))
+        })?;
         Self::from_table(raw).with_context(|| format!("parsing {}", path.display()))
     }
 
-    fn load_raw(path: &Path, depth: usize) -> Result<toml::Table> {
+    /// Names of the built-in styles (`styles/*.toml` shipped in the binary).
+    pub fn builtin_names() -> Vec<&'static str> {
+        BUILTIN_STYLES
+            .iter()
+            .filter(|(p, _)| !p.contains('/'))
+            .map(|(p, _)| p.trim_end_matches(".toml"))
+            .collect()
+    }
+
+    /// A built-in style by name (e.g. `impressionist`), with its `extends` chain resolved from
+    /// the built-in files.
+    pub fn builtin(name: &str) -> Result<Self> {
+        let path = PathBuf::from(format!("{name}.toml"));
+        let raw = Self::load_raw(&path, 0, &|p: &Path| {
+            let key = p.to_string_lossy().replace('\\', "/");
+            BUILTIN_STYLES
+                .iter()
+                .find(|(k, _)| *k == key)
+                .map(|(_, t)| t.to_string())
+                .with_context(|| {
+                    format!(
+                        "no built-in style {key:?} (built-in: {})",
+                        Self::builtin_names().join(", ")
+                    )
+                })
+        })?;
+        Self::from_table(raw).with_context(|| format!("parsing built-in style {name}"))
+    }
+
+    fn load_raw(
+        path: &Path,
+        depth: usize,
+        read: &dyn Fn(&Path) -> Result<String>,
+    ) -> Result<toml::Table> {
         anyhow::ensure!(
             depth < 8,
             "style `extends` chain too deep at {}",
             path.display()
         );
-        let text =
-            fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+        let text = read(path)?;
         let mut raw: toml::Table =
             toml::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
         let Some(base) = raw.remove("extends") else {
             return Ok(raw);
         };
-        let base = base
-            .as_str()
-            .with_context(|| format!("{}: `extends` must be a path", path.display()))?;
-        let base_path = path.parent().unwrap_or(Path::new(".")).join(base);
-        let base_raw = Self::load_raw(&base_path, depth + 1)?;
-        Ok(crate::mood::blend_table(&base_raw, &raw, 1.0))
+        // A path, or a list of paths: the first is the base, each later one an overlay merged
+        // over it in order (e.g. a palette base plus a brushwork overlay), then this file.
+        let bases: Vec<&str> = match &base {
+            toml::Value::String(s) => vec![s.as_str()],
+            toml::Value::Array(a) => a.iter().filter_map(|v| v.as_str()).collect(),
+            _ => Vec::new(),
+        };
+        let paths_ok = match &base {
+            toml::Value::Array(a) => !a.is_empty() && a.iter().all(|v| v.is_str()),
+            v => v.is_str(),
+        };
+        anyhow::ensure!(
+            paths_ok,
+            "{}: `extends` must be a path or a non-empty list of paths",
+            path.display()
+        );
+        let dir = path.parent().unwrap_or(Path::new("."));
+        let mut merged: Option<toml::Table> = None;
+        for b in bases {
+            let layer = Self::load_raw(&dir.join(b), depth + 1, read)?;
+            merged = Some(match merged {
+                None => layer,
+                Some(m) => crate::mood::blend_table(&m, &layer, 1.0),
+            });
+        }
+        Ok(crate::mood::blend_table(
+            &merged.unwrap_or_default(),
+            &raw,
+            1.0,
+        ))
     }
 
     /// Parses a style, keeping its TOML so moods can be derived from it.
@@ -1471,6 +1562,35 @@ mod tests {
             (0.7, 0.9)
         );
         assert!(s.moods.contains_key("nocturne"), "moods are inherited");
+    }
+
+    #[test]
+    fn extends_list_layers_overlays_in_order() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("base.toml"),
+            "name = 'base'\n[palette]\nl_floor = 0.3\n[strokes]\nstrength = 0.01\nwidth = 4.0",
+        )
+        .unwrap();
+        fs::create_dir(dir.path().join("overlays")).unwrap();
+        fs::write(
+            dir.path().join("overlays/brush.toml"),
+            "[strokes]\nstrength = 0.02\n[kuwahara]\nradius = 10.0",
+        )
+        .unwrap();
+        let child = dir.path().join("child.toml");
+        fs::write(
+            &child,
+            "extends = ['base.toml', 'overlays/brush.toml']\nname = 'child'\n[kuwahara]\nradius = 12.0",
+        )
+        .unwrap();
+        let s = Config::load(Some(&child), None, None).unwrap().style;
+        assert_eq!(s.name, "child");
+        assert_eq!(s.palette.l_floor, 0.3);
+        assert_eq!((s.strokes.strength, s.strokes.width), (0.02, 4.0));
+        assert_eq!(s.kuwahara.radius, 12.0);
+        fs::write(&child, "extends = []\n").unwrap();
+        assert!(Config::load(Some(&child), None, None).is_err());
     }
 
     #[test]

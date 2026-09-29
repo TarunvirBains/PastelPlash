@@ -1,0 +1,4 @@
+# SS impressionist: ss-baseline's palette (stronger pulls to Skyward Sword's hue families, a mild
+# lift, softer contrast) with the impressionist brushwork overlay.
+extends = ["ss-baseline.toml", "overlays/impressionist-brushwork.toml"]
+name = "ss-impressionist"

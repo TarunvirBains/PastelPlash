@@ -145,44 +145,103 @@ fn rule_styles_stay_within_the_contract() {
     }
 }
 
+/// Palette keys the impressionist brushwork overlay may set (accents and a little vivid color).
+const BRUSHWORK_PALETTE: [&str; 7] = [
+    "accent_fraction",
+    "accent_min_l",
+    "accent_chroma",
+    "accent_min_depth",
+    "accent_radius",
+    "vivid",
+    "vivid_max_chroma",
+];
+
+fn own_table(rel: &str) -> toml::Table {
+    toml::from_str(&std::fs::read_to_string(repo().join(rel)).unwrap()).unwrap()
+}
+
+/// `palette` with the brushwork overlay's keys taken from `from`.
+fn without_brushwork(
+    p: &pastelplash::config::Palette,
+    from: &pastelplash::config::Palette,
+) -> pastelplash::config::Palette {
+    let mut p = p.clone();
+    p.accent_fraction = from.accent_fraction;
+    p.accent_min_l = from.accent_min_l;
+    p.accent_chroma = from.accent_chroma;
+    p.accent_min_depth = from.accent_min_depth;
+    p.accent_radius = from.accent_radius;
+    p.vivid = from.vivid;
+    p.vivid_max_chroma = from.vivid_max_chroma;
+    p
+}
+
 #[test]
 fn impressionist_inherits_the_default_look() {
-    // Impressionist is the default watercolor with bolder brushwork (plus somewhat stronger
-    // warm/cool and accents): it must extend the default and may only override those, so the
-    // default's SS hue nudges, value compression and colored darks carry over automatically.
-    let path = repo().join("styles/impressionist.toml");
-    let own: toml::Table = toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-    assert_eq!(own["extends"].as_str(), Some("watercolor.toml"));
-    let allowed_palette = [
-        "accent_fraction",
-        "accent_min_l",
-        "accent_chroma",
-        "accent_min_depth",
-        "accent_radius",
-        "vivid",
-        "vivid_max_chroma",
-    ];
-    for (section, keys) in &own {
+    // Impressionist is the watercolor base plus the brushwork overlay (bolder brushwork,
+    // somewhat stronger warm/cool and accents). The overlay may only touch those, and the style
+    // itself adds nothing, so the base's SS hue nudges, value compression and colored darks carry
+    // over automatically.
+    let overlay = own_table("styles/overlays/impressionist-brushwork.toml");
+    for (section, keys) in &overlay {
         match section.as_str() {
-            "extends" | "name" | "kuwahara" | "strokes" | "temperature" | "watercolor" => {}
+            "kuwahara" | "strokes" | "temperature" | "watercolor" => {}
             "palette" => {
                 for key in keys.as_table().unwrap().keys() {
                     assert!(
-                        allowed_palette.contains(&key.as_str()),
-                        "impressionist overrides palette.{key}; only brushwork, warm/cool and \
-                         accents may differ from the default"
+                        BRUSHWORK_PALETTE.contains(&key.as_str()),
+                        "the brushwork overlay sets palette.{key}; only brushwork, warm/cool and \
+                         accents may differ from the base"
                     );
                 }
             }
-            other => panic!("impressionist overrides [{other}]"),
+            other => panic!("the brushwork overlay sets [{other}]"),
         }
     }
+    let own = own_table("styles/impressionist.toml");
+    let extends: Vec<&str> = own["extends"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    assert_eq!(
+        extends,
+        ["watercolor.toml", "overlays/impressionist-brushwork.toml"]
+    );
+    assert!(
+        own.keys().all(|k| k == "extends" || k == "name"),
+        "impressionist adds its own settings; put brushwork in the overlay"
+    );
     let base = Style::load(&repo().join("styles/watercolor.toml")).unwrap();
-    let imp = Style::load(&path).unwrap();
+    let imp = Style::load(&repo().join("styles/impressionist.toml")).unwrap();
     assert_eq!(imp.value_contrast, base.value_contrast);
-    assert_eq!(imp.palette.groups, base.palette.groups);
-    assert_eq!(imp.palette.l_curve, base.palette.l_curve);
-    assert_eq!(imp.palette.dark_chroma, base.palette.dark_chroma);
+    assert_eq!(imp.grouping, base.grouping);
+    assert_eq!(without_brushwork(&imp.palette, &base.palette), base.palette);
+}
+
+#[test]
+fn ss_impressionist_is_ss_baseline_palette_with_impressionist_brushwork() {
+    let own = own_table("styles/ss-impressionist.toml");
+    assert!(
+        own.keys().all(|k| k == "extends" || k == "name"),
+        "ss-impressionist adds its own settings; it must only compose ss-baseline and the overlay"
+    );
+    let ssb = Style::load(&repo().join("styles/ss-baseline.toml")).unwrap();
+    let imp = Style::load(&repo().join("styles/impressionist.toml")).unwrap();
+    let ssi = Style::load(&repo().join("styles/ss-impressionist.toml")).unwrap();
+    // Palette and color settings: ss-baseline's.
+    assert_eq!(without_brushwork(&ssi.palette, &ssb.palette), ssb.palette);
+    assert_eq!(ssi.value_contrast, ssb.value_contrast);
+    assert_eq!(ssi.contrast, ssb.contrast);
+    assert_eq!(ssi.grouping, ssb.grouping);
+    assert_eq!(ssi.moods, ssb.moods);
+    // Brushwork, warm/cool and accents: impressionist's.
+    assert_eq!(ssi.kuwahara, imp.kuwahara);
+    assert_eq!(ssi.strokes, imp.strokes);
+    assert_eq!(ssi.temperature, imp.temperature);
+    assert_eq!(ssi.watercolor, imp.watercolor);
+    assert_eq!(without_brushwork(&imp.palette, &ssi.palette), imp.palette);
 }
 
 #[test]
@@ -626,4 +685,79 @@ fn rule_invalid_ranges_are_rejected() {
         err.contains("l_floor") && err.contains("l_ceiling"),
         "{err}"
     );
+}
+
+#[test]
+fn builtin_styles_are_the_shipped_files() {
+    // The binary carries every shipped style (so `--style impressionist` and the default work
+    // from anywhere); each must equal its file in `styles/`, and none may be missing.
+    use pastelplash::config::DEFAULT_STYLE;
+    let names = Style::builtin_names();
+    assert!(
+        names.contains(&DEFAULT_STYLE),
+        "default {DEFAULT_STYLE} is not built in"
+    );
+    for path in styles() {
+        let n = name(&path);
+        assert!(
+            names.contains(&n.as_str()),
+            "styles/{n}.toml is not built in"
+        );
+        let mut a = Style::builtin(&n).unwrap();
+        let mut b = Style::load(&path).unwrap();
+        (a.raw, b.raw) = (None, None);
+        assert_eq!(a, b, "built-in {n} differs from styles/{n}.toml");
+    }
+    let config = Config::load(Some(std::path::Path::new(DEFAULT_STYLE)), None, None).unwrap();
+    assert_eq!(config.style.name, DEFAULT_STYLE);
+}
+
+proptest! {
+    #![proptest_config(proptest_config())]
+
+    #[test]
+    fn rule_exposure_curve_is_monotone_and_restores_the_mean(
+        lo in 0.0f32..0.4,
+        width in 0.1f32..0.6,
+        seed in 0u32..1000,
+        lift in -0.08f32..0.08,
+    ) {
+        // The background exposure curve never reorders values (slope ≥ MIN_SLOPE everywhere,
+        // black and white fixed) and, when the needed correction is within its bounds, brings the
+        // mean lightness back to the source's.
+        use pastelplash::exposure::{self, ToneCurve, MIN_SLOPE};
+        let protect = [lo, (lo + width).min(1.0)];
+        let (kmin, kmax) = ToneCurve::k_bounds(protect);
+        for k in [kmin.max(-1.0), 0.0, kmax.min(1.0)] {
+            let c = ToneCurve { k, protect };
+            let mut prev = c.apply(0.0);
+            prop_assert!(prev.abs() < 1e-6);
+            for i in 1..=512 {
+                let v = c.apply(i as f32 / 512.0);
+                prop_assert!(v - prev >= MIN_SLOPE / 512.0 - 1e-5, "k {}: slope at {}", k, i);
+                prev = v;
+            }
+            prop_assert!((prev - 1.0).abs() < 1e-5);
+        }
+        let src: Vec<[f32; 4]> = (0..400u32)
+            .map(|i| {
+                let v = 0.05 + 0.9 * ((i.wrapping_mul(2_654_435_761) ^ seed) % 1000) as f32 / 1000.0;
+                [v, v * 0.9, v * 0.7, 1.0]
+            })
+            .collect();
+        let target = exposure::mean_l(&src);
+        let mut out: Vec<[f32; 4]> = src
+            .iter()
+            .map(|p| {
+                let [l, a, b] = color::srgb_to_oklab([p[0], p[1], p[2]]);
+                let rgb = color::oklab_to_srgb([(l + lift * (1.0 - l)).clamp(0.0, 1.0), a, b]);
+                [rgb[0].clamp(0.0, 1.0), rgb[1].clamp(0.0, 1.0), rgb[2].clamp(0.0, 1.0), 1.0]
+            })
+            .collect();
+        let curve = exposure::preserve_mean(&mut out, target, protect);
+        if curve.k > kmin + 1e-4 && curve.k < kmax - 1e-4 {
+            prop_assert!((exposure::mean_l(&out) - target).abs() < 2e-3,
+                "mean {} vs target {}", exposure::mean_l(&out), target);
+        }
+    }
 }

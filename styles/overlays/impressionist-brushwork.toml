@@ -1,0 +1,22 @@
+# Impressionist brushwork overlay (not a style on its own): bolder, directional brushwork, a few
+# more cool accent darks, a stronger (still subtle) warm/cool temperature on world textures and a
+# little vivid color. Applied over a palette base by `impressionist` (the watercolor base) and
+# `ss-impressionist` (the ss-baseline base).
+
+[kuwahara]
+radius = 10.0
+
+[palette]
+accent_fraction = 0.006
+accent_chroma = 0.03
+accent_min_depth = 0.08
+vivid = 0.4
+
+[temperature]
+chroma = 0.012
+
+[strokes]
+strength = 0.02
+chroma = 0.2
+width = 9.0
+length = 28.0

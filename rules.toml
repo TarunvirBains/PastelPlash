@@ -112,6 +112,7 @@ ss-impressionist = 0.15   # ss-baseline's palette with impressionist brushwork
 
 [identity.coarse_lightness_styles]
 ss-baseline = 0.25
+ss-impressionist = 0.25
 
 # Applies to every file in targets/.
 [target]
