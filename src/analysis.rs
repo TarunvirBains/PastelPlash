@@ -316,6 +316,26 @@ pub fn radial_falloff(image: &Image) -> f32 {
     falls as f32 / (RINGS - 1) as f32
 }
 
+/// Share of the visible texels (alpha > 0.02) whose alpha is partial (below 0.98): high for
+/// glows and puffs that fade out through alpha, low for cutouts with a hard edge.
+pub fn soft_alpha_share(image: &Image) -> f32 {
+    let s = stride(image, 250_000.0);
+    let (w, h) = (image.width as usize, image.height as usize);
+    let (mut soft, mut seen) = (0usize, 0usize);
+    for y in (0..h).step_by(s) {
+        for x in (0..w).step_by(s) {
+            let a = px(image, x, y)[3];
+            if a > 0.02 {
+                seen += 1;
+                if a < 0.98 {
+                    soft += 1;
+                }
+            }
+        }
+    }
+    soft as f32 / seen.max(1) as f32
+}
+
 /// 99th-percentile OKLab chroma over the opaque texels (tint-safe detection).
 pub fn chroma_p99(image: &Image) -> f32 {
     let (w, h) = (image.width as usize, image.height as usize);
@@ -421,6 +441,18 @@ mod tests {
             [v, v, v, 1.0]
         });
         assert_eq!(radial_falloff(&cloth), 0.0);
+        // A hard-edged gray ball falls off radially too, but it is a cutout, not a glow.
+        let ball = image(96, 96, |x, y| {
+            let r2 = (x as f32 - 48.0).powi(2) + (y as f32 - 48.0).powi(2);
+            let v = 0.6 - r2 / 4000.0;
+            [v, v, v, if r2 < 1600.0 { 1.0 } else { 0.0 }]
+        });
+        assert!(soft_alpha_share(&glow) > 0.9, "{}", soft_alpha_share(&glow));
+        assert!(
+            soft_alpha_share(&ball) < 0.05,
+            "{}",
+            soft_alpha_share(&ball)
+        );
     }
 
     #[test]

@@ -326,6 +326,17 @@ pub fn cloth_folds(size: u32, seed: u32) -> Image {
     })
 }
 
+/// A shaded gray ball cut out with a hard alpha edge (a bomb, a statue knob): an object, not an
+/// effect, though it falls off radially.
+pub fn gray_ball(size: u32, seed: u32) -> Image {
+    let c = size as f32 / 2.0;
+    image(size, size, |x, y| {
+        let r2 = ((x as f32 - c).powi(2) + (y as f32 - c).powi(2)) / (size as f32 * 0.42).powi(2);
+        let v = 0.25 + 0.4 * (1.0 - r2).max(0.0) + 0.08 * (noise(x, y, seed) - 0.5);
+        [v, v, v, if r2 < 1.0 { 1.0 } else { 0.0 }]
+    })
+}
+
 /// A soft gray radial glow on transparent texels (a flare, spark or puff: an effect).
 pub fn glow(size: u32) -> Image {
     let c = size as f32 / 2.0;

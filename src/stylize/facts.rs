@@ -29,6 +29,9 @@ pub(super) struct ImageFacts {
 
 /// `analysis::radial_falloff` score from which a gray actor or world texture counts as an effect.
 pub(super) const EFFECT_FALLOFF: f32 = 0.85;
+/// ... and at least this share of its visible texels must be partially transparent: effects fade
+/// out through alpha, while hard-edged gray cutouts (a bomb, a statue, a candle) are objects.
+pub(super) const EFFECT_SOFT_ALPHA: f32 = 0.3;
 
 impl ImageFacts {
     pub fn analyze(image: &Image, ctx: &FileContext, style: &Style, tr: &Treatment) -> Self {
@@ -59,7 +62,8 @@ impl ImageFacts {
         let gray = tint_safe || chroma_p99 < style.palette.tint_safe_chroma;
         let effect_like = gray
             && matches!(ctx.category, Category::Actor | Category::World)
-            && analysis::radial_falloff(image) >= EFFECT_FALLOFF;
+            && analysis::radial_falloff(image) >= EFFECT_FALLOFF
+            && analysis::soft_alpha_share(image) >= EFFECT_SOFT_ALPHA;
         Self {
             w,
             h,

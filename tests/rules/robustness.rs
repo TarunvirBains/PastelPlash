@@ -155,13 +155,19 @@ fn rule_chunked_processing_matches_whole_image() {
 fn rule_effects_are_left_untouched() {
     // Effects (glows, sparks, puffs, shadow blobs) are light, not paint: their gray is intensity
     // and falloff, often drawn additively. A soft gray radial glow the pack map didn't name is
-    // left exactly as it was, as an actor or world texture.
+    // left exactly as it was, as an actor or world texture. A hard-edged gray cutout that also
+    // falls off radially (a bomb, a statue knob) is an object and is still restyled.
     let img = glow(128);
+    let ball = gray_ball(128, 151);
     let mut report = Report::new("effects are left untouched");
-    let rendered =
-        Matrix::full(&[Category::Actor, Category::World]).check(&mut report, &img, |_, out| {
-            ensure(out.pixels == img.pixels, || "an effect was restyled".into())
-        });
+    let matrix = Matrix::full(&[Category::Actor, Category::World]);
+    let rendered = matrix.check(&mut report, &img, |_, out| {
+        ensure(out.pixels == img.pixels, || "an effect was restyled".into())
+    }) && matrix.check(&mut report, &ball, |_, out| {
+        ensure(out.pixels != ball.pixels, || {
+            "a hard-edged gray object was left untouched".into()
+        })
+    });
     if rendered {
         report.finish();
     }
