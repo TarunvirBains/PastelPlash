@@ -36,6 +36,7 @@ pub struct MoodRules {
     pub near_black_max_lift: Option<f32>,
     pub dark_chroma_per_l: Option<f32>,
     pub cast_max_chroma: Option<f32>,
+    pub max_tiling_multiplier: Option<f32>,
     pub black_l: Option<f32>,
     pub black_max_chroma: Option<f32>,
     pub black_max_cast: Option<f32>,

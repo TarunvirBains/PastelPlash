@@ -255,7 +255,7 @@ thin_protect = 1.0
 # muted midnight, never ink. At any mood strength (`hold`): earth warmth fully off, and the
 # night's tone curve (no murk lift beyond its low floor: near-blacks stay the darkest part).
 [moods.nocturne]
-hold = ["palette.warmth.strength", "palette.l_curve", "palette.l_floor", "watercolor.floor_margin"]
+hold = ["palette.warmth.strength", "palette.l_curve", "palette.l_floor", "watercolor.floor_margin", "marks.tiling_multiplier"]
 
 [moods.nocturne.palette]
 l_curve = [[0, 0.155], [0.104, 0.17], [0.184, 0.21], [0.329, 0.315], [0.453, 0.43], [0.622, 0.59], [0.915, 0.87], [1, 0.95]]
@@ -284,6 +284,12 @@ chroma_retain = 0.6
 # may undercut the floor only a little.
 [moods.nocturne.watercolor]
 floor_margin = 0.015
+
+# Dark rooms are no camouflage: the day's big ground dabs (3x on tiling, speckled textures)
+# turned the Deku Tree's mottled floors into large hard-edged blotches; by night they stay close
+# to the texture's own mottling (held at any mood strength).
+[moods.nocturne.marks]
+tiling_multiplier = 1.5
 
 # Moonlit scenes read by value: less internal compression than the day.
 [moods.nocturne.value_contrast]

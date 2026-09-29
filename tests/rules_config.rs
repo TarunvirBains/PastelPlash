@@ -903,3 +903,33 @@ fn rule_pack_brushwork_stays_within_the_contract() {
         }
     }
 }
+
+#[test]
+fn rule_dark_rooms_are_no_camouflage() {
+    // Tiling, speckled textures get bigger paint marks by day (Kokiri Forest's ground); in a mood
+    // that bounds it, the marks stay within the bound at any strength (the Deku Tree basement's
+    // mottled floor became big hard-edged blotches).
+    let k = contract();
+    for path in styles() {
+        let style = Style::load(&path).unwrap();
+        let n = name(&path);
+        for (mood, rules) in &k.moods {
+            let Some(bound) = rules.max_tiling_multiplier else {
+                continue;
+            };
+            if !style.moods.contains_key(mood) {
+                continue;
+            }
+            for strength in [0.5, 1.0] {
+                let m = style
+                    .for_mood(&pastelplash::config::Mood::new(mood, strength))
+                    .unwrap();
+                assert!(
+                    m.marks.tiling_multiplier <= bound,
+                    "{n} [{mood}:{strength}]: marks.tiling_multiplier {} > {bound}",
+                    m.marks.tiling_multiplier
+                );
+            }
+        }
+    }
+}

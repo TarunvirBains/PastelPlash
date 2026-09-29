@@ -252,6 +252,10 @@ black_fade_l = 0.25
 # The cast's small chroma budget where it brings its own hue (identity.new_hue_*): a muted
 # midnight, not blue paint.
 cast_max_chroma = 0.04
+# Dark rooms are no camouflage: tiling, speckled textures (dungeon floors) get paint marks at
+# most this many times the regular size (at any mood strength). The day's larger ground dabs
+# (3x, Kokiri Forest) turned the Deku Tree's mottled floors into big hard-edged blotches.
+max_tiling_multiplier = 1.5
 
 # Fluids (water, lava, other liquids; see docs/RULES.md "Fluids"). Every target's fluid
 # treatments (listed or built in) stay within these: caustics are soft light over depth, never

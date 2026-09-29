@@ -100,6 +100,9 @@ is the `base` mood. Moods are checked by the same rules, at half and full streng
   (`rule_cool_darks_only_where_the_mood_allows`). Darks still never go neutral black or brown
   mud, and the identity rules still apply: dungeons stay recognizably themselves, just dimmer
   and more atmospheric.
+  Dark rooms are no camouflage: the day's bigger dabs on tiling, speckled ground (3×) are held
+  to `moods.<name>.max_tiling_multiplier` at any strength (`rule_dark_rooms_are_no_camouflage`):
+  the Deku Tree basement's mottled floor had turned into big hard-edged blotches.
 
 ## The rules
 
