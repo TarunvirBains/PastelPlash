@@ -54,6 +54,12 @@ There are four kinds of change, and each has its own place:
     rule passes. Then re-capture.
   - A new driver, wgpu or toolchain can move bits too: the manifest in the hashes file records
     adapter, driver, wgpu, toolchain and shader compiler, and a failure names what drifted.
+  - The CPU hashes are captured on the pinned build target (`x86_64-pc-windows-gnu`). The LUT
+    and plan sections go through the C runtime's math library (`powf`, `cbrt`, `atan2`, ...),
+    whose last bits differ between platforms: on another platform (a native Linux build) the
+    portable sections (styles, configs, shader) are still checked against `hashes-cpu.toml`,
+    and the LUTs and plans are skipped with a message unless that platform has its own
+    `hashes-cpu-<arch>-<os>-<env>.toml` (a capture there writes one).
 - **GPU tests skip cleanly** without an adapter; the CPU checks always run. `WGPU_BACKEND`
   (`dx12`, `vulkan`) and `WGPU_ADAPTER_NAME` (a case-insensitive part of the adapter's name, e.g.
   `llvmpipe` or `Microsoft Basic Render Driver`) pick the adapter for the tests and the CLI alike;

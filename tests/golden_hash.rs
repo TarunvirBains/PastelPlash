@@ -353,10 +353,36 @@ fn hlsl() -> String {
     out
 }
 
+/// The platform `hashes-cpu.toml` was captured on (the pinned build target,
+/// `.cargo/config.toml`).
+const CPU_REFERENCE_PLATFORM: &str = "x86_64-windows-gnu";
+
+/// CPU sections that go through the platform's math library (`powf`, `cbrt`, `atan2`, ...),
+/// whose last bits differ between C runtimes (mingw, glibc, the UCRT). The other sections are
+/// portable and checked on every platform.
+const LIBM_SECTIONS: [&str; 2] = ["luts", "plans"];
+
+fn platform() -> String {
+    let env = if cfg!(target_env = "gnu") {
+        "gnu"
+    } else if cfg!(target_env = "msvc") {
+        "msvc"
+    } else {
+        "other"
+    };
+    format!("{}-{}-{env}", std::env::consts::ARCH, std::env::consts::OS)
+}
+
 #[test]
 fn cpu_hashes_are_unchanged() {
-    let path = golden_dir().join("hashes-cpu.toml");
-    let got = cpu_sections();
+    let platform = platform();
+    let reference = golden_dir().join("hashes-cpu.toml");
+    let path = if platform == CPU_REFERENCE_PLATFORM {
+        reference.clone()
+    } else {
+        golden_dir().join(format!("hashes-cpu-{platform}.toml"))
+    };
+    let mut got = cpu_sections();
     if capture() {
         write_file(
             &path,
@@ -365,8 +391,26 @@ fn cpu_hashes_are_unchanged() {
         );
         return;
     }
-    let want =
-        read_file(&path).unwrap_or_else(|| panic!("{} missing: {CAPTURE_HINT}", path.display()));
+    let want = match read_file(&path) {
+        Some(want) => want,
+        None if path != reference => {
+            // Another platform without its own file: the portable sections must still match
+            // the reference; the math-library sections can't be compared.
+            eprintln!(
+                "skipping CPU golden hashes {LIBM_SECTIONS:?}: they are captured on \
+                 {CPU_REFERENCE_PLATFORM} and this is {platform}, whose math library rounds \
+                 differently (the other CPU sections are checked)"
+            );
+            let mut want = read_file(&reference)
+                .unwrap_or_else(|| panic!("{} missing: {CAPTURE_HINT}", reference.display()));
+            for section in LIBM_SECTIONS {
+                want.remove(section);
+                got.remove(section);
+            }
+            want
+        }
+        None => panic!("{} missing: {CAPTURE_HINT}", path.display()),
+    };
     let report = compare(&want, &got);
     assert!(report.is_empty(), "CPU golden hashes differ:\n{report}");
 }
