@@ -182,3 +182,26 @@ fn oot_reloaded_actor_drawn_water_is_water() {
         );
     }
 }
+
+#[test]
+fn oot_reloaded_eye_frames_are_never_restyled() {
+    // The engine swaps eye textures per frame (blinks, glances): they are skipped like mouths.
+    // Most are named *Eye*Tex, singular (gSariaEyeClosedTex); only Link's use *Eyes*.
+    for path in [
+        "alt/objects/object_link_boy/gLinkAdultEyesOpenTex",
+        "alt/objects/object_sa/gSariaEyeClosedTex",
+        "alt/objects/object_md/gMidoEyeOpenTex",
+        "alt/objects/object_zl4/gChildZeldaEyeBlinkTex",
+        "alt/objects/object_horse_link_child/gChildEponaEyeCloseTex",
+    ] {
+        assert_eq!(
+            classify("oot-reloaded.toml", path),
+            Category::Skip,
+            "{path}"
+        );
+    }
+    assert_eq!(
+        classify("oot-reloaded.toml", "alt/objects/object_sa/gSariaSkinTex"),
+        Category::Actor
+    );
+}

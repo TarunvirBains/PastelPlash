@@ -1,7 +1,7 @@
 # Golden CPU hashes (tests/golden_hash.rs). Generated; do not edit by hand.
 
 [config]
-"pack/oot-reloaded" = "30935db8ff61d386"
+"pack/oot-reloaded" = "f0c6f1d29ff3e6d9"
 "target/soh-celshade" = "dd5218e7386f14b9"
 
 [luts]

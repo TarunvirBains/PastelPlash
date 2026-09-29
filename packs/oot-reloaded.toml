@@ -8,9 +8,9 @@ default_category = "skip"
 no_grouping = ["alt/**/*Sign*", "alt/**/*Lettering*", "alt/**/*Text*"]
 no_abstraction = ["alt/**/*Sign*", "alt/**/*Lettering*", "alt/**/*Text*"]
 
-# Eyes and mouths are swapped per frame by the engine: never restyle them.
+# Eyes and mouths are swapped per frame by the engine (blinks, glances): never restyle them.
 [[rules]]
-glob = "alt/objects/**/*Eyes*"
+glob = "alt/objects/**/*Eye*"         # *EyeOpenTex, *EyeClosedTex, Link's *EyesOpenTex
 category = "skip"
 
 [[rules]]

@@ -133,7 +133,8 @@ Verified by inspecting `OoT_Reloaded_v11.0.0_4K.o2r` (23.4 GB, 11,527 entries):
     byte-identical duplicates for 12 dungeons ⇒ content-hash cache processes them once.
   - `alt/textures/vr_*_static/` — skyboxes (up to 8192×2048)
   - `alt/textures/parameter_static/`, `icon_item_*_static/`, `nes_font_static/`, `kanji/`, `font/` — UI/fonts
-  - `*Eyes*Tex`, `*Mouth*Tex` inside object folders — eyes/mouths (skip)
+  - `*Eye*Tex` (`*EyeOpenTex`, `*EyeClosedTex`; Link's `*EyesOpenTex`), `*Mouth*Tex` inside object
+    folders — eye and mouth frames the engine swaps (skip)
   - Toon-excluded actors → `world`: `object_wood02/`, `object_spotNN_*/`, doors (`gameplay_field_keep/gFieldDoor*`,
     `object_bdoor/`, `object_door_gerudo/`, `object_haka_door/`, `object_jya_door/`), Deku Tree (`object_spot04_objects/`)
 - Grayscale-origin textures (N64 format 5–9) are tinted in-engine ⇒ flag as tint-safe from the header.
