@@ -43,7 +43,23 @@ const KUWAHARA_BAND_BUDGET: f64 = 1.5e9;
 /// Concurrent GPU jobs (bounds VRAM; CPU decode/encode still runs on every worker).
 const GPU_SLOTS: usize = 2;
 
-#[repr(C)]
+/// Declares a `#[repr(C)]` uniform struct plus, for tests, its field offsets by name (checked
+/// against the WGSL declaration of the same struct).
+macro_rules! uniform_struct {
+    ($(#[$meta:meta])* struct $name:ident { $($field:ident: $ty:ty,)* }) => {
+        $(#[$meta])*
+        #[repr(C)]
+        struct $name { $($field: $ty,)* }
+
+        #[cfg(test)]
+        impl $name {
+            const FIELDS: &[(&str, usize)] =
+                &[$((stringify!($field), std::mem::offset_of!($name, $field)),)*];
+        }
+    };
+}
+
+uniform_struct! {
 #[derive(Debug, Clone, Copy, Default, Pod, Zeroable)]
 struct Params {
     size_x: i32,
@@ -154,6 +170,7 @@ struct Params {
     grp_l: [f32; 4],
     grp_a: [f32; 4],
     grp_b: [f32; 4],
+}
 }
 
 #[repr(C)]
@@ -1328,5 +1345,41 @@ impl Stylize {
             out.extend_from_slice(bytemuck::cast_slice::<u8, [f32; 4]>(bytes));
         }
         Ok(out)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Member offsets of a WGSL struct in `SHADER`, by name, and its size.
+    fn wgsl_layout(name: &str) -> (Vec<(String, usize)>, usize) {
+        let module = naga::front::wgsl::parse_str(SHADER).unwrap();
+        let (members, span) = module
+            .types
+            .iter()
+            .find_map(|(_, ty)| match &ty.inner {
+                naga::TypeInner::Struct { members, span } if ty.name.as_deref() == Some(name) => {
+                    Some((members.clone(), *span))
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("no struct {name} in the shader"));
+        let members = members
+            .iter()
+            .map(|m| (m.name.clone().unwrap(), m.offset as usize))
+            .collect();
+        (members, span as usize)
+    }
+
+    #[test]
+    fn params_layout_matches_the_shader() {
+        let (wgsl, span) = wgsl_layout("Params");
+        let rust: Vec<(String, usize)> = Params::FIELDS
+            .iter()
+            .map(|&(n, o)| (n.to_string(), o))
+            .collect();
+        assert_eq!(rust, wgsl, "Params fields (name, offset): Rust vs WGSL");
+        assert_eq!(std::mem::size_of::<Params>(), span, "Params size");
     }
 }
