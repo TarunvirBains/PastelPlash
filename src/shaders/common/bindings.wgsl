@@ -41,6 +41,7 @@ struct Params {
     cast_dark_chroma: f32, cast_pivot: f32, cast_dark_below: f32, cast_warm0: f32,
     cast_warm1: f32, cast_on: f32, cast_fb: f32, _pad13: f32,
     ts_on: f32, ts_shift: f32, ts_amp: f32, ts_max: f32,
+    clip_r: f32, _pad14: f32, _pad15: f32, _pad16: f32,
 };
 
 struct Band { y0: i32, y1: i32, _a: i32, _b: i32 };
@@ -55,3 +56,5 @@ struct Band { y0: i32, y1: i32, _a: i32, _b: i32 };
 @group(0) @binding(7) var texC: texture_2d<f32>;
 // 256-bin histogram of the accent measure, then [256] lo and [257] hi thresholds (f32 bits).
 @group(0) @binding(8) var<storage, read_write> hist: array<atomic<u32>, 260>;
+// The original upload (T0, never written): the source texels before any pass.
+@group(0) @binding(9) var texD: texture_2d<f32>;

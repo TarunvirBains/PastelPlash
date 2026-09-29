@@ -166,3 +166,60 @@ fn rule_effects_are_left_untouched() {
         report.finish();
     }
 }
+
+#[test]
+fn rule_no_new_clipping() {
+    // Brushwork and the palette never clip: the share of texels with a channel at 0 or 255 (as
+    // written to an 8-bit file) never grows from source to output. Small blown glints stay paper
+    // white; large blown regions only darken.
+    let clipped = |im: &Image| {
+        im.pixels
+            .iter()
+            .filter(|p| p[3] > 0.5)
+            .filter(|p| {
+                p[..3].iter().any(|&c| {
+                    let v = (c.clamp(0.0, 1.0) * 255.0).round();
+                    v <= 0.0 || v >= 255.0
+                })
+            })
+            .count() as f32
+            / im.pixels.iter().filter(|p| p[3] > 0.5).count().max(1) as f32
+    };
+    let k = contract();
+    let mut report = Report::new("no new clipping");
+    let matrix = Matrix::full(&STYLIZED);
+    for (label, img) in [
+        ("highlights", highlights(192, 131)),
+        ("dark hues", dark_hues(128, 132)),
+        ("pale skin", pale_skin(128, 133)),
+    ] {
+        let s0 = clipped(&img);
+        let rendered = matrix.check(&mut report, &img, |_, out| {
+            let s1 = clipped(out);
+            ensure(s1 <= s0 + k.tolerance.outliers, || {
+                format!(
+                    "{label}: clipped texels {:.2}% -> {:.2}%",
+                    s0 * 100.0,
+                    s1 * 100.0
+                )
+            })?;
+            if label == "highlights" {
+                // The small glints (not the big patch) stay white.
+                let w = img.width as usize;
+                for (i, (p, q)) in img.pixels.iter().zip(&out.pixels).enumerate() {
+                    let (x, y) = ((i % w) as u32, (i / w) as u32);
+                    if p[0] >= 1.0 && !(x > 144 && y < 64) {
+                        ensure(q[..3].iter().all(|&c| c >= 254.0 / 255.0), || {
+                            format!("a glint at ({x}, {y}) lost its white: {q:?}")
+                        })?;
+                    }
+                }
+            }
+            Ok(())
+        });
+        if !rendered {
+            return;
+        }
+    }
+    report.finish();
+}

@@ -335,6 +335,28 @@ pub fn glow(size: u32) -> Image {
     })
 }
 
+/// Bright highlights: a mid-gray textured surface with a large blown-white patch, small blown
+/// glints, and near-white (unclipped) areas that brushwork could push over.
+pub fn highlights(size: u32, seed: u32) -> Image {
+    image(size, size, |x, y| {
+        let (fx, fy) = (x as f32, y as f32);
+        if x > size * 3 / 4 && y < size / 3 {
+            return [1.0, 1.0, 1.0, 1.0];
+        }
+        if (x % 37 == 5 || x % 37 == 6) && (y % 41 == 9 || y % 41 == 10) {
+            return [1.0, 1.0, 1.0, 1.0];
+        }
+        let t = smooth_noise(fx, fy, 6, size, seed);
+        let l = if y > size * 2 / 3 {
+            0.93 + 0.04 * t
+        } else {
+            0.35 + 0.3 * t
+        };
+        let [r, g, b] = from_oklch(l + 0.02 * (noise(x, y, seed) - 0.5), 0.03, 80.0);
+        [r, g, b, 1.0]
+    })
+}
+
 /// Olive moss: mottled olive-green (hues across `hue`), mid-dark, like OoT Reloaded's mossy ground
 /// and Deku Tree moss.
 pub fn olive_moss(size: u32, seed: u32, hue: [f32; 2]) -> Image {

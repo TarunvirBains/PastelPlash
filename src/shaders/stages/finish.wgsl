@@ -218,7 +218,10 @@ fn finish_strokes(p: vec2<i32>, lab: vec3<f32>) -> vec3<f32> {
     // Grouped textures: variation within a mass is mostly hue and chroma, less value.
     let lv = mix(1.0, P.grp_stroke, P.grp);
     let cv = 1.0 + P.grp * (1.0 - P.grp_stroke);
-    return vec3<f32>(lab.x + P.stroke_strength * lv * v, lab.yz * (1.0 + P.stroke_chroma * cv * v));
+    // Amplitude scales with the headroom toward black or white (strokes never clip).
+    let dl = P.stroke_strength * lv * v;
+    let room = select(smoothstep(0.0, 0.12, lab.x), smoothstep(0.0, 0.12, 1.0 - lab.x), dl > 0.0);
+    return vec3<f32>(lab.x + dl * room, lab.yz * (1.0 + P.stroke_chroma * cv * v));
 }
 
 // Wet edges: pigment pools on the darker side of painted boundaries (dL proportional to the
@@ -326,6 +329,35 @@ fn finish_limits(lab: vec3<f32>, floor_l: f32) -> vec3<f32> {
     return vec3<f32>(clamp(l, 0.0, 1.0), lab.yz);
 }
 
+// No new clipping: an output channel stays inside 8-bit 1..254 wherever the source channel was;
+// where the source was clipped it may stay so.
+// Source-blown whites: small compact ones (glints, sparkles, snow, stars: under half of a ring
+// of neighbors at `clip_r` is blown too) keep their clean white; large blown regions may only
+// darken.
+fn finish_clip(p: vec2<i32>, rgb: vec3<f32>) -> vec3<f32> {
+    let s = textureLoad(texD, p, 0).rgb;
+    let lo = 1.0 / 255.0;
+    let hi = 254.0 / 255.0;
+    if (all(s >= vec3<f32>(hi))) {
+        var blown = 0.0;
+        for (var k = 0; k < 8; k++) {
+            let ang = f32(k) * 0.78539816;
+            let q = textureLoad(texD, addr(p + vec2<i32>(round(vec2<f32>(cos(ang), sin(ang)) * P.clip_r))), 0).rgb;
+            if (all(q >= vec3<f32>(hi))) { blown += 1.0; }
+        }
+        if (blown < 4.0) { return s; }
+        return min(rgb, s);
+    }
+    // (The soft knee is in the strokes' headroom; this guard is exact for unclipped 8-bit values.)
+    var out = rgb;
+    for (var k = 0; k < 3; k++) {
+        if (s[k] >= lo && s[k] <= hi) {
+            out[k] = clamp(out[k], lo, hi);
+        }
+    }
+    return out;
+}
+
 // Engine-tinted grayscale (tint-safe) textures of categories with a tint-safe gray: the painted
 // gray raised (shifted so the median sits at the target, the top soft-capped: the folds keep
 // their contrast), brightness-only strokes along the texture's own flow (cloth folds) with
@@ -369,6 +401,6 @@ fn finish(@builtin(global_invocation_id) gid: vec3<u32>) {
         lab = vec3<f32>(finish_tint_safe(p, src.x), lab.yz);
     }
 
-    let rgb = linear_to_srgb(clamp(oklab_to_linear(lab), vec3<f32>(0.0), vec3<f32>(1.0)));
+    let rgb = finish_clip(p, linear_to_srgb(clamp(oklab_to_linear(lab), vec3<f32>(0.0), vec3<f32>(1.0))));
     textureStore(outTex, p, vec4<f32>(rgb, c.a));
 }

@@ -43,7 +43,7 @@ bus once each way.
 ```text
 T0 upload ─delight→ T1 [─group→ T3 → copy to T1] ─tensor→ T2 ─blur_h→ T3 ─blur_v→ T2
 (T1, T2) [─kuwahara coarse→ T4] ─kuwahara→ T3 ─bleed→ T4 [─accent_hist, accent_threshold]
-─finish (T4, T1, T2)→ T0 → readback
+─finish (T4, T1, T2; T0 = the untouched upload)→ T3 → readback
 ```
 
 `finish` runs, per texel: smear, value compression, glare calming, palette LUT, a mood's

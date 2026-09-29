@@ -175,13 +175,18 @@ impl Stage for Stylize {
                 curve.k
             );
         }
+        // Write back. No new clipping (as in `finish`, after the exposure curve too): a channel the
+        // source had inside 8-bit 1..254 stays there.
+        let (lo, hi) = (1.0 / 255.0, 254.0 / 255.0);
         for (dst, src) in image.pixels.iter_mut().zip(out) {
             for c in 0..3 {
                 let v = src[c];
-                dst[c] = if v.is_finite() {
-                    v.clamp(0.0, 1.0)
-                } else {
+                dst[c] = if !v.is_finite() {
                     dst[c]
+                } else if (lo..=hi).contains(&dst[c]) {
+                    v.clamp(lo, hi)
+                } else {
+                    v.clamp(0.0, 1.0)
                 };
             }
         }

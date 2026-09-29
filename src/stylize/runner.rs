@@ -151,6 +151,7 @@ impl Runner {
                         min_binding_size: None,
                     },
                 ),
+                entry(9, sampled()),
             ],
         });
         let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -410,6 +411,11 @@ impl Runner {
                         binding: 8,
                         resource: hist_buf.as_entire_binding(),
                     },
+                    // The upload itself (T0 is never written): the original texels.
+                    wgpu::BindGroupEntry {
+                        binding: 9,
+                        resource: wgpu::BindingResource::TextureView(&views[0]),
+                    },
                 ],
             });
             let mut pass = encoder.begin_compute_pass(&Default::default());
@@ -483,13 +489,14 @@ impl Runner {
             dispatch(&mut enc, &p.accent_hist, 4, 4, 4, 3, 0, h);
             dispatch(&mut enc, &p.accent_threshold, 4, 4, 4, 3, 0, 0);
         }
+        // The finish writes T3 (T0 stays the original for texD).
         dispatch(
             &mut enc,
             &p.finish,
             4,
             1,
             if tensor_on { 2 } else { 1 },
-            0,
+            3,
             0,
             h,
         );
@@ -505,7 +512,7 @@ impl Runner {
         });
         enc.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo {
-                texture: &tex[0],
+                texture: &tex[3],
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
