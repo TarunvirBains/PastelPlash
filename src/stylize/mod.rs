@@ -2,20 +2,11 @@
 //! LUT + accents + temperature + brushstrokes + watercolor finish + lightness ceiling.
 //!
 //! It is one [`Stage`] rather than several so a texture crosses the bus once each way; the passes
-//! inside share textures on the GPU. Per-image parameters (tiling, tint-safety, the de-light
-//! field) come from a CPU analysis first (`src/analysis.rs`); accent thresholds come from a
-//! histogram built on the GPU.
-//!
-//! Pass graph (T0..T4 are rgba32float textures of the image or chunk):
-//!
-//! ```text
-//! T0 upload ─delight→ T1 ─tensor→ T2 ─blur_h→ T3 ─blur_v→ T2
-//! (T1, T2) ─kuwahara→ T3 ─bleed→ T4 ─finish (T4, T1, T2)→ T0 → readback
-//! ```
-//!
-//! Images larger than the device's texture limit (or `PASTELPLASH_MAX_CHUNK` texels per side) are
-//! processed in overlapping chunks; per-image quantities and noise use full-image coordinates, so
-//! chunk seams are invisible.
+//! inside share textures on the GPU. Per file: the [`Planner`] analyzes the image on the CPU
+//! (`facts.rs`) and plans every stage (`plan/`), the runner executes the passes (`runner.rs`,
+//! chunked above the device limit), then exposure is restored and the result written back.
+//! Accent thresholds come from a histogram built on the GPU. The pass graph is in
+//! ARCHITECTURE.md.
 
 use std::sync::Arc;
 use std::time::Instant;

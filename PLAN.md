@@ -22,6 +22,8 @@ but the tool itself is pack-agnostic.
 - GPU work via `wgpu` on DirectX 12 (native Windows driver; avoids WSL's immature Vulkan layer). Filters are WGSL
   compute shaders.
 - Input/output live on the Windows side (e.g. `Z:\…`) so the `.exe` reads them natively.
+- Toolchain pinned in `rust-toolchain.toml`, DX12 shader compiler pinned to FXC, builds `--locked`, so
+  output is byte-reproducible (see [ARCHITECTURE.md](ARCHITECTURE.md) for the code layout).
 - Crates: `wgpu`, `png` (PNG I/O), `palette` (OKLCH), `clap` (CLI), `serde` + `toml` (config), `rayon` (CPU-side
   I/O parallelism).
 
@@ -33,7 +35,9 @@ pastelplash process <input> <output> [options]
   -r, --recursive     walk subfolders (default: only PNGs directly in <input>); output mirrors the tree
   --copy-other        copy non-PNG files through, so the output is a complete drop-in pack
   --follow-links      follow symlinks when walking (off by default; loops are detected and skipped)
-  --style <file|name> style config or built-in style name (default: impressionist)
+  --style <file|name> style config or built-in style name (default: impressionist); a style that
+                      is only `extends` + `name` is an alias for its layer stack
+                      (planned: --style a+b stacks layers directly)
   --target <file>     target renderer profile (e.g. targets/soh-celshade.toml)
   --pack <file>       pack map (e.g. packs/oot-reloaded.toml)
   -j, --jobs <n>      worker threads (default: all cores)
@@ -49,7 +53,7 @@ file failed. Non-color maps are copied through unchanged rather than dropped.
 
 | Layer | Answers | Example |
 |---|---|---|
-| **Style** | What should it look like? | `impressionist.toml` (default; = `watercolor.toml` base + brushwork overlay) — palette, value contrast, grouping, brushwork, watercolor finish, moods |
+| **Style** | What should it look like? | `impressionist.toml` (default) — a stack of layers: a **palette layer** (`watercolor.toml`, `ss-baseline.toml`: palette, value contrast, grouping, watercolor finish, moods) plus a **brushwork layer** (`overlays/impressionist-brushwork.toml`: marks, strokes, warm/cool, accents) |
 | **Target** | How will the game render it? | `soh-celshade.toml` — relit actor textures get full de-light and a lightness ceiling |
 | **Pack map** | Which file is what? | `oot-reloaded.toml` — path rules → `actor` / `world` / `skybox` / `ui` / `skip` |
 

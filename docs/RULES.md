@@ -11,13 +11,14 @@ tests to match your style.
 
 ## Rules, tuning and snapshots
 
-There are three kinds of change, and each has its own place:
+There are four kinds of change, and each has its own place:
 
 | Change | Where | Review |
 |---|---|---|
-| **Tuning** a style (strengths, sizes, hue nudges, curves inside the bounds) | `styles/*.toml`, `targets/*.toml` | Free. No test edits needed. |
+| **Tuning** a style (strengths, sizes, hue nudges, curves inside the bounds) | `styles/*.toml`, `targets/*.toml` | Free. No rule-test edits needed; the golden hashes change (re-capture them). |
 | **Changing a rule** (a hard limit of the style) | `rules.toml` (the *style contract*) | Deliberate, in its own commit. |
-| **Intended change of look** | re-bless snapshots: `PASTELPLASH_BLESS=1 cargo test --test snapshots` | Look at the new goldens before committing. |
+| **Intended change of look** | re-bless snapshots: `PASTELPLASH_BLESS=1 cargo test --test snapshots`, re-capture golden hashes | Look at the new goldens before committing; tag the commit `look-change:`. |
+| **Pure refactor** (restructuring code, no intended output change) | anywhere in `src/` | The golden hashes must stay **byte-identical**. |
 
 - **The contract.** `rules.toml` holds the hard limits as bounds, not exact values. The rule
   tests read every limit from it and contain no magic numbers.
@@ -26,12 +27,33 @@ There are three kinds of change, and each has its own place:
   defines (at half and full strength). A new style or mood is checked automatically. They check:
   1. The style's parameters lie within the contract (fast, CPU only).
   2. The palette mapping honors the rules over randomized colors (CPU only, proptest).
-  3. Rendered output honors the rules on procedural textures (GPU).
+  3. Rendered output honors the rules on procedural textures (GPU, `tests/rules/`): each rule
+     runs over a matrix of style × mood × category and reports every failing case at once.
+     Known failures awaiting a decision are listed in `EXPECTED_FAILURES`
+     (`tests/rules/main.rs`) and printed on every run instead of failing it; the list is empty.
 - **Snapshots are alarms, not rules.** `tests/snapshots.rs` renders a few procedural textures with
   the default style (`impressionist`) and compares them with `tests/golden/` using a perceptual tolerance (mean
   OKLab ΔE plus a small outlier budget). A failure means the look changed; if intended, re-bless.
   - When running the Windows build from WSL, pass the variable through:
     `WSLENV=PASTELPLASH_BLESS PASTELPLASH_BLESS=1 cargo test --test snapshots`.
+- **Golden hashes prove refactors.** `tests/golden_hash.rs` compares exact FNV-1a hashes: on the
+  CPU (`tests/golden/hashes-cpu.toml`) every resolved style × mood, the targets and pack maps,
+  every palette LUT, every job's plan (uniform bytes, low-res field, LUT, filter reach) and the
+  HLSL naga generates from the shader; on the GPU (`tests/golden/hashes-<adapter>.toml`, checked
+  only on the adapter that captured it) the f32, PNG8 and PNG16 output of every style × mood ×
+  category × procedural image, plus chunking, 16-bit files, a fixture pack (categories, moods,
+  marks, opt-outs, `-j1` = `-jN`), neutral configs, an external `.cube`, OTEX and an `.o2r` run.
+  A changed hash or case set fails. Capture (only for a tuning or an intended change of look):
+  `WSLENV=PASTELPLASH_GOLDEN_CAPTURE PASTELPLASH_GOLDEN_CAPTURE=1 cargo test --release --test golden_hash`.
+  `PASTELPLASH_GOLDEN_DIR=<exported PNGs>` also checks your own textures (hashes kept under
+  `target/golden-user/`, never committed).
+  - Byte identity holds only while the generated shader code is unchanged. If a refactor must
+    change it (the HLSL hash changes) and output bits move, revert it, or apply the fallback in a
+    commit tagged `look-change:` with the reason: CPU hashes (styles, LUTs, plans) exact; f32
+    within 4 ULP per channel; PNG8 exact in ≥ 99.99% of texels and within 1 LSB elsewhere; every
+    rule passes. Then re-capture.
+  - A new driver, wgpu or toolchain can move bits too: the manifest in the hashes file records
+    adapter, driver, wgpu, toolchain and shader compiler, and a failure names what drifted.
 - **GPU tests skip cleanly** without an adapter (for example in CI); the CPU checks always run.
 - **No third-party images.** Test textures are generated procedurally. Never commit texture pack,
   game or museum images to this repository.
@@ -46,9 +68,11 @@ There are three kinds of change, and each has its own place:
 | `ss-impressionist` | `ss-baseline` + the same brushwork overlay: SS palette, impressionist brushwork. |
 
 Styles compose: `extends` takes a path or a list (`extends = ["ss-baseline.toml",
-"overlays/impressionist-brushwork.toml"]`), merged in order, then the file itself. Overlays in
-`styles/overlays/` are not styles on their own and are not tested alone. Every shipped style is
-also built into the binary (`--style impressionist` works from anywhere).
+"overlays/impressionist-brushwork.toml"]`), merged in order, then the file itself; palette
+groups (arrays of tables) merge by `name`, so a layer names only the groups it changes (see
+ARCHITECTURE.md). Overlays in `styles/overlays/` are not styles on their own and are not tested
+alone. Every shipped style is also built into the binary (`--style impressionist` works from
+anywhere).
 
 A **mood** is a named partial override of a style (`[moods.<name>]` in the style file), assigned
 to files by the pack map (`[[moods]]` rules with a glob and a strength 0–1). The style as written
@@ -73,11 +97,11 @@ All lightness (L) and chroma (C) values are OKLCH. "Tolerance" means `[tolerance
 
 | Rule | Why | Enforced by |
 |---|---|---|
-| **Mean color stays.** Each texture's alpha-weighted mean OKLab color stays within `identity.max_mean_delta_e` of the source's (`ss-baseline`, which moves further toward SS, has its own larger bound). | Kokiri green stays Kokiri green; Death Mountain stays brown. The game must stay recognizable. | `rules_render::rule_identity_is_kept` |
+| **Mean color stays.** Each texture's alpha-weighted mean OKLab color stays within `identity.max_mean_delta_e` of the source's (`ss-baseline`, which moves further toward SS, has its own larger bound). | Kokiri green stays Kokiri green; Death Mountain stays brown. The game must stay recognizable. | `rules::rule_identity_is_kept` |
 | **Hue families stay.** Per hue group, the mean hue moves by at most `identity.max_group_hue_shift`; any colored texel by at most `palette.max_hue_shift`. | SS hue nudges are nudges, not a repaint. | `rule_identity_is_kept`, `rules_config::rule_hue_shifts_are_bounded` |
 | **Recognizable from across the room.** On a 16×16 grid, each cell's dark-half and light-half mean colors (split at the cell's median L) stay close to the source's: chroma change p90 ≤ `identity.coarse_max_color`, lightness change p90 ≤ `identity.coarse_max_lightness` (per-style overrides for opt-in looks). Brushwork only moves texels within a cell and doesn't register. | A mean color can match while the texture is transformed: v2's navy grooves over tan averaged back to brown. The half-means don't. | `rule_coarse_identity_is_kept` |
 | **Warmth is targeted.** Earth warmth changes only sources whose hue is in its band (exactly nothing outside it), weighted by chroma, and never pushes an earth hue past its target. | A safe, deterministic warm-up for OoT's olive ground, unlike an untargeted tint. | `rule_warmth_is_targeted`, `rule_warmth_stays_in_band` |
-| **Pastel is not gray.** A clearly colored source keeps at least `retention_ratio` of its chroma (capped at `retention_floor`), in every style. | The failure we saw in-game: lifted colors went chalky. Light must stay colorful. | `rules_config::rule_pastel_is_not_gray`, `rules_render::rule_value_contrast_is_compressed_color_is_kept` |
+| **Pastel is not gray.** A clearly colored source keeps at least `retention_ratio` of its chroma (capped at `retention_floor`), in every style. | The failure we saw in-game: lifted colors went chalky. Light must stay colorful. | `rules_config::rule_pastel_is_not_gray`, `rules::rule_value_contrast_is_compressed_color_is_kept` |
 
 ### Darks
 
