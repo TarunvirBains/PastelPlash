@@ -53,7 +53,7 @@ wgpu = "30.0.1"
 [process16]
 "gray8.png" = "5fa2f7b80c99b0cb"
 "rgb16.png" = "9f08a5d02536f7e8"
-"rgba16.png" = "6393486b73d3f004"
+"rgba16.png" = "867e60cb2a3a905e"
 
 [renders]
 "impressionist/base/actor/bark" = "f32:03c9b6e59e533443 png8:6d27a9e22a946f47 png16:7b7f0b500b06777d"

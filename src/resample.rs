@@ -1,9 +1,10 @@
 //! Integer-factor resampling for output resolution floors: a Lanczos-3 upsample into the
 //! pipeline and an area-average downsample out of it.
 //!
-//! Both are alpha-aware: color is weighted by alpha (a transparent texel's color never bleeds
-//! into a visible one), and where the result is (nearly) fully transparent the unweighted color
-//! is kept, so cutout borders keep the colors the game's filtering sees. The upsample clamps each
+//! Both are alpha-aware. Before enlarging, invisible texels take the colors of their visible
+//! neighbors (alpha bleeding), so a cutout's hidden colors (often black) never enter its edges and
+//! color and alpha interpolate straight, without an unstable division by a tiny alpha; the
+//! downsample weights color by alpha. The upsample clamps each
 //! pass to the two nearest source texels (no ringing: a hard edge gets no halo or overshoot), and
 //! addresses by wrapping on tiling axes (a seamless texture stays seamless) or by clamping.
 
@@ -101,6 +102,62 @@ fn pass_1d(
     }
 }
 
+/// Rings of invisible texels filled from their visible neighbors: more than the filter reaches.
+const BLEED_RINGS: usize = 4;
+
+/// The image's pixels with invisible texels (alpha below 1/255) recolored, ring by ring, with
+/// the alpha-weighted mean color of their visible (or already recolored) 3×3 neighbors: a cutout's
+/// hidden colors never enter the interpolation of its edge. Texels beyond the rings keep theirs.
+fn bleed_into_transparent(image: &Image, wrap: [bool; 2]) -> Vec<[f32; 4]> {
+    const VISIBLE: f32 = 1.0 / 255.0;
+    let (w, h) = (image.width, image.height);
+    let mut px = image.pixels.clone();
+    // Weight of each texel as a color source: its alpha if visible, 1/255 once recolored.
+    let mut weight: Vec<f32> = px
+        .iter()
+        .map(|p| if p[3] >= VISIBLE { p[3] } else { 0.0 })
+        .collect();
+    if weight.iter().all(|&v| v > 0.0) || weight.iter().all(|&v| v == 0.0) {
+        return px;
+    }
+    for _ in 0..BLEED_RINGS {
+        let fill: Vec<Option<[f32; 3]>> = (0..(w * h) as usize)
+            .into_par_iter()
+            .map(|i| {
+                if weight[i] > 0.0 {
+                    return None;
+                }
+                let (x, y) = ((i % w as usize) as i32, (i / w as usize) as i32);
+                let (mut s, mut ws) = ([0.0f32; 3], 0.0f32);
+                for dy in -1..=1 {
+                    for dx in -1..=1 {
+                        let j =
+                            address(y + dy, h, wrap[1]) * w as usize + address(x + dx, w, wrap[0]);
+                        let wj = weight[j];
+                        for c in 0..3 {
+                            s[c] += px[j][c] * wj;
+                        }
+                        ws += wj;
+                    }
+                }
+                (ws > 0.0).then(|| s.map(|v| v / ws))
+            })
+            .collect();
+        let mut any = false;
+        for (i, f) in fill.into_iter().enumerate() {
+            if let Some(rgb) = f {
+                px[i] = [rgb[0], rgb[1], rgb[2], px[i][3]];
+                weight[i] = VISIBLE;
+                any = true;
+            }
+        }
+        if !any {
+            break;
+        }
+    }
+    px
+}
+
 /// Enlarges `image` by an integer factor `k` with a Lanczos-3 filter (see the module docs).
 /// `wrap` gives the axes that tile (x, y).
 pub fn upsample(image: &Image, k: u32, wrap: [bool; 2]) -> Image {
@@ -110,21 +167,10 @@ pub fn upsample(image: &Image, k: u32, wrap: [bool; 2]) -> Image {
     }
     let (w, h) = (image.width, image.height);
     let (ow, oh) = (w * k, h * k);
-    // Channels: straight color (3) and alpha; with transparency also color × alpha (3).
-    let opaque = image.pixels.iter().all(|p| p[3] >= 1.0);
-    let c = if opaque { 4 } else { 7 };
-    let src: Vec<f32> = image
-        .pixels
-        .iter()
-        .flat_map(|p| {
-            let mut v = [p[0], p[1], p[2], p[3], 0.0, 0.0, 0.0];
-            if !opaque {
-                for ch in 0..3 {
-                    v[4 + ch] = p[ch] * p[3];
-                }
-            }
-            v.into_iter().take(c)
-        })
+    let c = 4;
+    let src: Vec<f32> = bleed_into_transparent(image, wrap)
+        .into_iter()
+        .flatten()
         .collect();
     let ph = phases(k);
     // Horizontal: each source row → an output-width row.
@@ -154,7 +200,7 @@ pub fn upsample(image: &Image, k: u32, wrap: [bool; 2]) -> Image {
                 address(base + p.near, h, wrap[1]),
                 address(base + p.near + 1, h, wrap[1]),
             );
-            let mut v = [0.0f32; 7];
+            let mut v = [0.0f32; 4];
             for (x, out) in row.iter_mut().enumerate() {
                 let at = |yy: usize| &horiz[(yy * ow as usize + x) * c..][..c];
                 v[..c].fill(0.0);
@@ -168,17 +214,11 @@ pub fn upsample(image: &Image, k: u32, wrap: [bool; 2]) -> Image {
                 for ch in 0..c {
                     v[ch] = v[ch].clamp(a[ch].min(b[ch]), a[ch].max(b[ch]));
                 }
-                let alpha = v[3].clamp(0.0, 1.0);
-                let rgb = if opaque || alpha < 1.0 / 255.0 {
-                    [v[0], v[1], v[2]]
-                } else {
-                    [v[4] / v[3], v[5] / v[3], v[6] / v[3]]
-                };
                 *out = [
-                    rgb[0].clamp(0.0, 1.0),
-                    rgb[1].clamp(0.0, 1.0),
-                    rgb[2].clamp(0.0, 1.0),
-                    alpha,
+                    v[0].clamp(0.0, 1.0),
+                    v[1].clamp(0.0, 1.0),
+                    v[2].clamp(0.0, 1.0),
+                    v[3].clamp(0.0, 1.0),
                 ];
             }
         });
@@ -323,8 +363,11 @@ mod tests {
         for p in u.pixels.iter().filter(|p| p[3] >= 1.0 / 255.0) {
             assert!(p[1] < 1e-4 && p[0] > 0.999, "green bled into {p:?}");
         }
-        // Fully transparent texels keep the unweighted color.
-        assert!(u.pixels.iter().any(|p| p[3] == 0.0 && p[1] > 0.99));
+        // Invisible texels near the edge take the visible color (alpha bleeding): no hidden color
+        // and no hue made up at tiny alphas (a cutout on black turned blue).
+        for p in &u.pixels {
+            assert!(p[1] < 1e-4 && p[2] < 1e-4, "hidden color in {p:?}");
+        }
     }
 
     #[test]
@@ -354,5 +397,31 @@ mod tests {
         let p = d.pixels[0];
         assert!((p[0] - 0.5).abs() < 1e-6 && p[1] < 1e-6 && (p[2] - 0.5).abs() < 1e-6);
         assert!((p[3] - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_cutout_on_black_keeps_its_hue_at_every_alpha() {
+        // Warm roots on hidden black, with a ragged antialiased rim (Kokiri Forest's mushroom and
+        // roots): no enlarged texel, however transparent, takes a color outside the warm family.
+        let a = img(24, 24, |x, y| {
+            let d = ((x as f32 - 11.5).powi(2) + (y as f32 - 11.5).powi(2)).sqrt();
+            let n = ((x * 7 + y * 13) % 5) as f32 / 5.0;
+            if d < 7.0 {
+                [0.55, 0.35, 0.15, 1.0]
+            } else if d < 8.5 {
+                [0.2 * n, 0.16 * n, 0.12 * n, 0.5 * n]
+            } else {
+                [0.0, 0.0, 0.0, 0.0]
+            }
+        });
+        let u = upsample(&a, 8, [false; 2]);
+        for p in u.pixels.iter().filter(|p| p[3] > 0.0) {
+            let [_, c, h] =
+                crate::color::oklab_to_oklch(crate::color::srgb_to_oklab([p[0], p[1], p[2]]));
+            assert!(
+                c < 0.02 || (20.0..110.0).contains(&h),
+                "not warm: {p:?} C {c} h {h}"
+            );
+        }
     }
 }
