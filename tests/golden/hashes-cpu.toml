@@ -681,7 +681,7 @@
 "watercolor/nocturne:0.50/world/tiling320" = "params:5dc82b23d0e8bdec lowres:0ae93f4ab20bd835 lut:fa7fa3bbb952778b halo:31 wrap:11"
 
 [shader]
-hlsl = "b2c61ce7deb2397d"
+hlsl = "04998533b77f711f"
 
 [styles]
 "impressionist/base" = "8867912f438231d5"
