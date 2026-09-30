@@ -206,10 +206,46 @@ Output streams:
 
 - **stdout**: an output-size estimate, per-texture lines (timings, and indented analysis
   details) and a final summary line with the processed, copied and failed counts.
-- **stderr**: errors (`error: ...`) and warnings (`warning: ...`).
+  `--quiet` (`-q`) leaves out the per-texture lines.
+- **stderr**: errors (`error: ...`) and warnings (`warning: ...`), also with `--quiet`.
 
 The per-texture lines are diagnostics and their format may change. Scripts should rely on the
-exit code.
+exit code and, for details, on the JSON summary.
+
+`--summary-json <FILE>` (`process` and `o2r`) writes a machine-readable summary of the run
+when it ends, also when it fails:
+
+```json
+{
+  "version": 1,
+  "command": "o2r",
+  "ok": false,
+  "error": null,
+  "input": "OoT_Reloaded_v11.0.0_4K.o2r",
+  "output": "PastelPlash.o2r",
+  "processed": 729,
+  "copied": 0,
+  "skipped": 12,
+  "written": 729,
+  "failed": 1,
+  "failures": [{ "path": "alt/objects/object_x/gTex", "reason": "stage stylize: ..." }],
+  "timings": { "wall_s": 312.4, "read_s": 2.1, "decode_s": 0.8, "pipeline_s": 4210.7,
+               "encode_s": 6.3, "write_s": 2.2 },
+  "bytes_in": 1913000000,
+  "bytes_out": 3109000000
+}
+```
+
+- `ok` is true exactly when the exit code is 0. `error` says why a run could not start or
+  finish (bad config, missing input, not enough disk space); the counts are then 0.
+- `processed`: files restyled. `copied`: files copied through unchanged
+  (`--copy-other`, `--complete`). `skipped`: files passed through or left out without
+  restyling (non-color maps, `skip` and other unstyled categories, archive entries that are no
+  textures). `written`: files written to the output.
+- `failures` lists every failed file (relative path or archive entry) with the reason.
+- `timings`: the wall time and the time per phase, summed over workers (so a phase can exceed
+  the wall time). `bytes_in` and `bytes_out` are `null` for folder runs.
+- New fields may appear; `version` goes up when a field changes meaning or is removed.
 
 ```sh
 #!/usr/bin/env sh
@@ -217,6 +253,7 @@ set -eu
 pastelplash process assets/textures build/textures \
     --recursive --copy-other \
     --style impressionist --pack config/my-pack.toml --jobs 8 \
+    --quiet --summary-json build/pastelplash.json \
     > build/pastelplash.log
 echo "textures restyled"
 ```

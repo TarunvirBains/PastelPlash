@@ -10,6 +10,7 @@ use crate::config::{Category, Config, Mood};
 use crate::driver::Driver;
 use crate::pipeline::Pipeline;
 use crate::png_io;
+use crate::summary::{Failure, Phases};
 use crate::util::ms;
 use crate::walk::{self, SkipReason, WalkOptions};
 
@@ -39,9 +40,13 @@ pub struct Summary {
     pub skipped: usize,
     /// Files or folders that could not be read or written.
     pub failed: usize,
+    /// Why each of them failed, in path order.
+    pub failures: Vec<Failure>,
     /// Symlinks not followed (without `--follow-links`) or cut because they loop.
     pub links_ignored: usize,
     pub elapsed: Duration,
+    /// Time per phase, summed over workers (decoding counts as reading, encoding as writing).
+    pub phases: Phases,
 }
 
 #[derive(Clone, Copy)]
@@ -71,7 +76,6 @@ pub fn run(opts: &Options, config: &Config, pipeline: &Pipeline) -> Result<Summa
         .with_context(|| format!("reading {}", opts.input.display()))?;
 
     let mut summary = Summary {
-        failed: walked.errors.len(),
         links_ignored: walked
             .skipped
             .iter()
@@ -81,6 +85,10 @@ pub fn run(opts: &Options, config: &Config, pipeline: &Pipeline) -> Result<Summa
     };
     for (rel, e) in &walked.errors {
         eprintln!("error: {}: {e}", opts.input.join(rel).display());
+        summary.failures.push(Failure {
+            path: rel.display().to_string(),
+            reason: e.to_string(),
+        });
     }
 
     let driver = Driver {
@@ -108,7 +116,7 @@ pub fn run(opts: &Options, config: &Config, pipeline: &Pipeline) -> Result<Summa
     crate::preflight::check_disk(&opts.output, est.bytes)?;
 
     // Files are driven from plain threads, never rayon workers (see `util::map_on_threads`).
-    let results: Vec<(Action, bool)> = crate::util::map_on_threads(
+    let results: Vec<(Action, Result<Phases>)> = crate::util::map_on_threads(
         &jobs,
         opts.jobs.unwrap_or(0),
         || (),
@@ -117,24 +125,37 @@ pub fn run(opts: &Options, config: &Config, pipeline: &Pipeline) -> Result<Summa
             if let Err(e) = &result {
                 eprintln!("error: {e:#}");
             }
-            (action, result.is_ok())
+            (action, result)
         },
     );
 
-    for (action, ok) in results {
-        let count = match action {
-            _ if !ok => &mut summary.failed,
-            Action::Process(_) => &mut summary.processed,
-            Action::PassThrough => &mut summary.skipped,
-            Action::CopyOther => &mut summary.copied,
+    for ((rel, _), (action, result)) in jobs.iter().zip(results) {
+        let count = match (action, result) {
+            (_, Err(e)) => {
+                summary.failures.push(Failure {
+                    path: rel.display().to_string(),
+                    reason: format!("{e:#}"),
+                });
+                continue;
+            }
+            (action, Ok(phases)) => {
+                summary.phases += phases;
+                match action {
+                    Action::Process(_) => &mut summary.processed,
+                    Action::PassThrough => &mut summary.skipped,
+                    Action::CopyOther => &mut summary.copied,
+                }
+            }
         };
         *count += 1;
     }
+    summary.failures.sort_by(|a, b| a.path.cmp(&b.path));
+    summary.failed = summary.failures.len();
     summary.elapsed = start.elapsed();
     Ok(summary)
 }
 
-fn handle(opts: &Options, driver: &Driver, rel: &Path, action: Action) -> Result<()> {
+fn handle(opts: &Options, driver: &Driver, rel: &Path, action: Action) -> Result<Phases> {
     let src = opts.input.join(rel);
     let dst = opts.output.join(rel);
     if let Some(parent) = dst.parent() {
@@ -151,7 +172,7 @@ fn handle(opts: &Options, driver: &Driver, rel: &Path, action: Action) -> Result
             let t_run = t0.elapsed() - t_read;
             png_io::write(&image, &dst)?;
             let total = t0.elapsed();
-            println!(
+            crate::log::detail!(
                 "{}: {}x{} total {} (read {}, pipeline {}, write {})",
                 rel.display(),
                 image.width,
@@ -161,11 +182,22 @@ fn handle(opts: &Options, driver: &Driver, rel: &Path, action: Action) -> Result
                 ms(t_run),
                 ms(total - t_read - t_run)
             );
-            Ok(())
+            Ok(Phases {
+                read: t_read,
+                pipeline: t_run,
+                write: total - t_read - t_run,
+                ..Phases::default()
+            })
         }
-        Action::PassThrough | Action::CopyOther => fs::copy(&src, &dst)
-            .map(drop)
-            .with_context(|| format!("copying {} to {}", src.display(), dst.display())),
+        Action::PassThrough | Action::CopyOther => {
+            let t0 = Instant::now();
+            fs::copy(&src, &dst)
+                .with_context(|| format!("copying {} to {}", src.display(), dst.display()))?;
+            Ok(Phases {
+                write: t0.elapsed(),
+                ..Phases::default()
+            })
+        }
     }
 }
 

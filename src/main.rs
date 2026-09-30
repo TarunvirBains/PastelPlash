@@ -5,6 +5,7 @@ use clap::{Args, Parser, Subcommand};
 use pastelplash::config::{Category, Config, Mood};
 use pastelplash::pipeline::Pipeline;
 use pastelplash::process;
+use pastelplash::summary::{Report, Timings};
 
 #[derive(Parser)]
 #[command(
@@ -226,6 +227,21 @@ struct O2rArgs {
     /// Worker threads (default or 0: all cores).
     #[arg(short, long, value_name = "N")]
     jobs: Option<usize>,
+    #[command(flatten)]
+    out: RunOutput,
+}
+
+/// How a run reports on itself.
+#[derive(Args)]
+struct RunOutput {
+    /// No per-texture lines on stdout (the estimate and the final summary stay; errors and
+    /// warnings still go to stderr).
+    #[arg(short, long)]
+    quiet: bool,
+    /// Also write a machine-readable summary of the run (JSON: counts, failures with reasons,
+    /// timings, output path) to this file, also when the run fails.
+    #[arg(long, value_name = "FILE")]
+    summary_json: Option<PathBuf>,
 }
 
 #[derive(Args)]
@@ -321,6 +337,8 @@ struct ProcessArgs {
     /// map.
     #[arg(long, value_name = "MOOD")]
     mood: Option<Mood>,
+    #[command(flatten)]
+    out: RunOutput,
 }
 
 fn main() -> ExitCode {
@@ -329,7 +347,7 @@ fn main() -> ExitCode {
         Command::Process(args) => process(args),
         Command::GpuInfo => pastelplash::gpu::info().map(|()| ExitCode::SUCCESS),
         Command::BakeLut(args) => bake_lut(args).map(|()| ExitCode::SUCCESS),
-        Command::O2r(args) => o2r(args).map(|()| ExitCode::SUCCESS),
+        Command::O2r(args) => o2r(args),
         Command::PaletteReport(args) => pastelplash::report::Reference::load(&args.reference)
             .and_then(|r| pastelplash::report::report(&args.input, &r))
             .and_then(|text| {
@@ -457,7 +475,47 @@ fn style_or_default(style: Option<PathBuf>) -> PathBuf {
     style.unwrap_or_else(|| PathBuf::from(pastelplash::config::DEFAULT_STYLE))
 }
 
+/// Finishes a run that reports on itself: writes the `--summary-json` report (with the error, if
+/// the run failed as a whole) and gives the exit code (failure when any file failed).
+fn finish(
+    mut report: Report,
+    result: anyhow::Result<()>,
+    json: Option<&std::path::Path>,
+) -> anyhow::Result<ExitCode> {
+    let result = result.map(|()| report.failed == 0);
+    match &result {
+        Ok(ok) => report.ok = *ok,
+        Err(e) => report.error = Some(format!("{e:#}")),
+    }
+    if let Some(path) = json
+        && let Err(e) = report.save(path)
+    {
+        // The run's own error, if any, comes first.
+        if let Err(run) = &result {
+            eprintln!("error: {run:#}");
+        }
+        return Err(e);
+    }
+    let ok = result?;
+    if report.failed > 0 {
+        eprintln!("error: {} file(s) failed", report.failed);
+    }
+    Ok(if ok {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    })
+}
+
 fn process(args: ProcessArgs) -> anyhow::Result<ExitCode> {
+    pastelplash::log::set_quiet(args.out.quiet);
+    let mut report = Report::new("process", &args.input, &args.output);
+    let json = args.out.summary_json.clone();
+    let result = run_process(args, &mut report);
+    finish(report, result, json.as_deref())
+}
+
+fn run_process(args: ProcessArgs, report: &mut Report) -> anyhow::Result<()> {
     let config = Config::load(
         Some(&style_or_default(args.style)),
         args.target.as_deref(),
@@ -491,11 +549,14 @@ fn process(args: ProcessArgs) -> anyhow::Result<ExitCode> {
             }
         );
     }
-    Ok(if s.failed == 0 {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::FAILURE
-    })
+    report.processed = s.processed;
+    report.copied = s.copied;
+    report.skipped = s.skipped;
+    report.written = s.processed + s.copied + s.skipped;
+    report.failed = s.failed;
+    report.failures = s.failures;
+    report.timings = Timings::new(s.elapsed, &s.phases);
+    Ok(())
 }
 
 fn dev_map(args: DevMapArgs) -> anyhow::Result<()> {
@@ -580,7 +641,15 @@ fn bake_lut(args: BakeLutArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn o2r(args: O2rArgs) -> anyhow::Result<()> {
+fn o2r(args: O2rArgs) -> anyhow::Result<ExitCode> {
+    pastelplash::log::set_quiet(args.out.quiet);
+    let mut report = Report::new("o2r", &args.input, &args.output);
+    let json = args.out.summary_json.clone();
+    let result = run_o2r(args, &mut report);
+    finish(report, result, json.as_deref())
+}
+
+fn run_o2r(args: O2rArgs, report: &mut Report) -> anyhow::Result<()> {
     let config = Config::load(
         Some(&style_or_default(args.style)),
         args.target.as_deref(),
@@ -596,5 +665,15 @@ fn o2r(args: O2rArgs) -> anyhow::Result<()> {
         complete: args.complete,
         jobs: args.jobs,
     };
-    pastelplash::adapters::o2r::run(&opts, &config, &pipeline)
+    let s = pastelplash::adapters::o2r::run(&opts, &config, &pipeline)?;
+    report.processed = s.processed;
+    report.copied = s.copied;
+    report.skipped = s.skipped;
+    report.written = s.written;
+    report.failed = s.failed();
+    report.failures = s.failures;
+    report.timings = Timings::new(s.wall, &s.phases);
+    report.bytes_in = Some(s.bytes_in);
+    report.bytes_out = Some(s.bytes_out);
+    Ok(())
 }

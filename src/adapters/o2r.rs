@@ -21,6 +21,7 @@ use crate::config::{Category, Config, Mood, glob_match};
 use crate::driver::Driver;
 use crate::image::{Image, SourceColor, SourceFormat};
 use crate::pipeline::Pipeline;
+use crate::summary::{Failure, Phases};
 
 const HEADER: usize = 0x5C;
 
@@ -145,10 +146,38 @@ fn secs(t: &AtomicU64) -> f64 {
 
 enum Out {
     Entry(String, Vec<u8>),
-    Failed,
+    Failed(Failure),
 }
 
-pub fn run(opts: &Options, config: &Config, pipeline: &Pipeline) -> Result<()> {
+/// What an `.o2r` run did.
+#[derive(Debug, Clone, Default)]
+pub struct Summary {
+    /// Entries restyled.
+    pub processed: usize,
+    /// Entries copied unchanged (`complete`).
+    pub copied: usize,
+    /// Selected entries left out of the mod (not textures, or not restyled).
+    pub skipped: usize,
+    /// Entries written to the output.
+    pub written: usize,
+    /// Entries that failed, with the reasons, in name order.
+    pub failures: Vec<Failure>,
+    pub wall: Duration,
+    /// Time per phase, summed over workers.
+    pub phases: Phases,
+    pub bytes_in: u64,
+    pub bytes_out: u64,
+}
+
+impl Summary {
+    pub fn failed(&self) -> usize {
+        self.failures.len()
+    }
+}
+
+/// Restyles a pack's textures into a new pack. Per-entry failures don't stop the run; they are
+/// reported on stderr and in the summary (see [`Summary::failures`]).
+pub fn run(opts: &Options, config: &Config, pipeline: &Pipeline) -> Result<Summary> {
     let start = Instant::now();
     let archive = zip::ZipArchive::new(
         File::open(&opts.input).with_context(|| format!("opening {}", opts.input.display()))?,
@@ -179,6 +208,7 @@ pub fn run(opts: &Options, config: &Config, pipeline: &Pipeline) -> Result<()> {
     let timers = Timers::default();
     let processed = AtomicUsize::new(0);
     let copied = AtomicUsize::new(0);
+    let skipped = AtomicUsize::new(0);
     let (tx, rx) = mpsc::sync_channel::<Out>(32);
 
     // Writer thread: stored (uncompressed) entries, like the source packs.
@@ -188,20 +218,20 @@ pub fn run(opts: &Options, config: &Config, pipeline: &Pipeline) -> Result<()> {
         0 => std::thread::available_parallelism().map_or(1, |n| n.get()),
         n => n,
     };
-    let (written, failed) = std::thread::scope(|scope| -> Result<(usize, usize)> {
-        let writer = scope.spawn(move || -> Result<(usize, usize)> {
+    let (written, mut failures) = std::thread::scope(|scope| -> Result<(usize, Vec<Failure>)> {
+        let writer = scope.spawn(move || -> Result<(usize, Vec<Failure>)> {
             if let Some(dir) = output.parent() {
                 std::fs::create_dir_all(dir)?;
             }
             let tmp = output.with_extension("o2r.partial");
             let file = File::create(&tmp).with_context(|| format!("creating {}", tmp.display()))?;
             let mut zip = zip::ZipWriter::new(BufWriter::with_capacity(8 << 20, file));
-            let (mut written, mut failed) = (0, 0);
+            let (mut written, mut failures) = (0, Vec::new());
             for msg in rx {
                 let (name, data) = match msg {
                     Out::Entry(n, d) => (n, d),
-                    Out::Failed => {
-                        failed += 1;
+                    Out::Failed(f) => {
+                        failures.push(f);
                         continue;
                     }
                 };
@@ -221,7 +251,7 @@ pub fn run(opts: &Options, config: &Config, pipeline: &Pipeline) -> Result<()> {
             zip.finish()?.flush()?;
             add(&timers_ref.write, t.elapsed());
             std::fs::rename(&tmp, &output)?;
-            Ok((written, failed))
+            Ok((written, failures))
         });
 
         // Files are driven from plain threads, never rayon workers (see `util::map_on_threads`).
@@ -240,10 +270,16 @@ pub fn run(opts: &Options, config: &Config, pipeline: &Pipeline) -> Result<()> {
                         }
                         Out::Entry(name.clone(), data)
                     }
-                    Ok(None) => return,
+                    Ok(None) => {
+                        skipped.fetch_add(1, Ordering::Relaxed);
+                        return;
+                    }
                     Err(e) => {
                         eprintln!("error: {name}: {e:#}");
-                        Out::Failed
+                        Out::Failed(Failure {
+                            path: name.clone(),
+                            reason: format!("{e:#}"),
+                        })
                     }
                 };
                 let _ = tx.send(msg);
@@ -253,6 +289,8 @@ pub fn run(opts: &Options, config: &Config, pipeline: &Pipeline) -> Result<()> {
         writer.join().unwrap()
     })?;
 
+    failures.sort_by(|a, b| a.path.cmp(&b.path));
+    let failed = failures.len();
     let wall = start.elapsed().as_secs_f64();
     let mb = |t: &AtomicU64| t.load(Ordering::Relaxed) as f64 / 1e6;
     println!(
@@ -274,10 +312,24 @@ pub fn run(opts: &Options, config: &Config, pipeline: &Pipeline) -> Result<()> {
         mb(&timers.bytes_out),
         mb(&timers.bytes_in) / wall,
     );
-    if failed > 0 {
-        bail!("{failed} entries failed");
-    }
-    Ok(())
+    let dur = |t: &AtomicU64| Duration::from_nanos(t.load(Ordering::Relaxed));
+    Ok(Summary {
+        processed: processed.into_inner(),
+        copied: copied.into_inner(),
+        skipped: skipped.into_inner(),
+        written,
+        failures,
+        wall: start.elapsed(),
+        phases: Phases {
+            read: dur(&timers.read),
+            decode: dur(&timers.decode),
+            pipeline: dur(&timers.pipeline),
+            encode: dur(&timers.encode),
+            write: dur(&timers.write),
+        },
+        bytes_in: timers.bytes_in.load(Ordering::Relaxed),
+        bytes_out: timers.bytes_out.load(Ordering::Relaxed),
+    })
 }
 
 /// Width and height of a raw OTEX texture from its header, or `None` for other resources.

@@ -165,7 +165,7 @@ impl Planner {
         let facts = ImageFacts::analyze(image, ctx, style, &tr);
         if facts.effect_like {
             // An unnamed effect (a soft gray glow): its gray is light, not paint.
-            println!(
+            crate::log::detail!(
                 "  {}: effect-like (radial glow): untouched",
                 ctx.rel.display()
             );

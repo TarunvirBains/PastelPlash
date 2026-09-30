@@ -214,7 +214,7 @@ impl Stage for Stylize {
             }
         }
         let n = &plan.note;
-        println!(
+        crate::log::detail!(
             "  {}: {w}x{h} {:?} mood={} wrap={}{} seam={:.1}/{:.1} tint_safe={} (C99 {:.3}) \
              scale={:.2} r={:.1} spread={:.4} busy={:.2} speckle={:.2} marks={:.2}{}{exp_note}{} | analysis {} gpu {}",
             ctx.rel.display(),

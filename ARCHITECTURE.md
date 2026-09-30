@@ -36,6 +36,7 @@ src/
   shaders/stages/*.wgsl   one file per pass or finish stage, concatenated in a fixed order
   analysis.rs grouping.rs palette.rs exposure.rs lut.rs color.rs   CPU math
   image.rs png_io.rs walk.rs                                        I/O
+  log.rs summary.rs            per-file lines (`--quiet`), the end-of-run summary (`--summary-json`)
   report.rs compare.rs audit.rs                                     dev tools
 ```
 
