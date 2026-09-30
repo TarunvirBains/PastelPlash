@@ -110,7 +110,8 @@ adapter, never from the core.
 
 - Same input and config give byte-identical output, on the same adapter, driver and toolchain.
 - No parallel float reductions: parallel work collects per-item values in order and sums them
-  sequentially (`analysis::seam_ratio`); `-j1` and `-jN` give identical files (golden test).
+  sequentially (`analysis::seam_ratio`, `exposure::mean_l`); `-j1` and `-jN` give identical
+  files (golden test).
 - The toolchain (`rust-toolchain.toml`) and the DX12 shader compiler (`gpu::DX12_COMPILER`,
   FXC) are pinned; scripts build with `--locked`.
 - Caches key entries by a fingerprint of what they derive from (resolved style, palette), so a

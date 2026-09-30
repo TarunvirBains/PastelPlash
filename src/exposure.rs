@@ -11,6 +11,8 @@
 //! `f(0) = 0`, `f(1) = 1`, and `k` is bounded so the slope stays at least [`MIN_SLOPE`]: value
 //! order is always preserved and no range collapses into a band.
 
+use rayon::prelude::*;
+
 use crate::color;
 
 /// Smallest slope the curve may have anywhere (monotone, no banding).
@@ -58,55 +60,81 @@ impl ToneCurve {
     }
 }
 
+/// The sums of `f(pixel)` over `pixels` as a sequential loop takes them (f64 accumulators, pixel
+/// by pixel, in order), with `f` evaluated in parallel: the same bits as the plain loop, which
+/// a parallel reduction would not give (it would regroup the additions).
+fn ordered_sums<const N: usize>(
+    pixels: &[[f32; 4]],
+    f: impl Fn(&[f32; 4]) -> [f32; N] + Sync,
+) -> [f64; N] {
+    const BLOCK: usize = 1 << 16;
+    let mut acc = [0.0f64; N];
+    let mut values = Vec::with_capacity(BLOCK.min(pixels.len()));
+    for block in pixels.chunks(BLOCK) {
+        block.par_iter().map(&f).collect_into_vec(&mut values);
+        for v in &values {
+            for (a, x) in acc.iter_mut().zip(v) {
+                *a += *x as f64;
+            }
+        }
+    }
+    acc
+}
+
 /// Alpha-weighted mean OKLab lightness of sRGB pixels.
 pub fn mean_l(pixels: &[[f32; 4]]) -> f32 {
-    let (mut s, mut w) = (0.0f64, 0.0f64);
-    for p in pixels {
-        s += (color::srgb_to_oklab([p[0], p[1], p[2]])[0] * p[3]) as f64;
-        w += p[3] as f64;
-    }
+    let [s, w] = ordered_sums(pixels, |p| {
+        [color::srgb_to_oklab([p[0], p[1], p[2]])[0] * p[3], p[3]]
+    });
     if w > 0.0 { (s / w) as f32 } else { 0.0 }
+}
+
+/// A pixel with `curve` applied to its lightness (OKLab a/b kept; gamut-clamped; alpha kept).
+fn apply_one(p: [f32; 4], curve: &ToneCurve) -> [f32; 4] {
+    let [l, a, b] = color::srgb_to_oklab([p[0], p[1], p[2]]);
+    let rgb = color::oklab_to_srgb([curve.apply(l), a, b]);
+    [
+        rgb[0].clamp(0.0, 1.0),
+        rgb[1].clamp(0.0, 1.0),
+        rgb[2].clamp(0.0, 1.0),
+        p[3],
+    ]
 }
 
 /// Applies `curve` to the lightness of `pixels` (OKLab a/b kept; gamut-clamped).
 pub fn apply(pixels: &mut [[f32; 4]], curve: &ToneCurve) {
-    for p in pixels.iter_mut() {
-        let [l, a, b] = color::srgb_to_oklab([p[0], p[1], p[2]]);
-        let rgb = color::oklab_to_srgb([curve.apply(l), a, b]);
-        for (c, v) in p.iter_mut().zip(rgb) {
-            *c = v.clamp(0.0, 1.0);
-        }
-    }
+    pixels
+        .par_iter_mut()
+        .for_each(|p| *p = apply_one(*p, curve));
 }
 
 /// Solves the curve that brings `out`'s mean lightness back to `target`, within the monotone
 /// bounds, and applies it. Returns the curve.
 pub fn preserve_mean(out: &mut [[f32; 4]], target: f32, protect: [f32; 2]) -> ToneCurve {
     let (lo, hi) = ToneCurve::k_bounds(protect);
-    let src: Vec<[f32; 4]> = out.to_vec();
-    let (mut bsum, mut w) = (0.0f64, 0.0f64);
-    for p in &src {
+    let [bsum, w] = ordered_sums(out, |p| {
         let l = color::srgb_to_oklab([p[0], p[1], p[2]])[0];
-        bsum += (ToneCurve::bump(protect, l) * p[3]) as f64;
-        w += p[3] as f64;
-    }
+        [ToneCurve::bump(protect, l) * p[3], p[3]]
+    });
     let mb = if w > 0.0 { (bsum / w) as f32 } else { 0.0 };
     let mut curve = ToneCurve { k: 0.0, protect };
     if mb <= 1e-4 {
         return curve;
     }
-    // Linear in k up to gamut clamping; a few corrections absorb that.
-    let mut current = mean_l(&src);
+    // Linear in k up to gamut clamping; a few corrections absorb that. Each trial is measured
+    // on the curve applied to the untouched pixels, without a copy of them.
+    let mut current = mean_l(out);
     for _ in 0..4 {
         curve.k = (curve.k + (current - target) / mb).clamp(lo, hi);
-        let mut trial = src.clone();
-        apply(&mut trial, &curve);
-        current = mean_l(&trial);
+        let [s, w] = ordered_sums(out, |p| {
+            let t = apply_one(*p, &curve);
+            [color::srgb_to_oklab([t[0], t[1], t[2]])[0] * t[3], t[3]]
+        });
+        current = if w > 0.0 { (s / w) as f32 } else { 0.0 };
         if (current - target).abs() < 5e-4 {
             break;
         }
     }
-    out.copy_from_slice(&src);
     apply(out, &curve);
     curve
 }
@@ -129,6 +157,97 @@ mod tests {
             }
             assert_eq!(c.apply(0.0), 0.0);
             assert!((c.apply(1.0) - 1.0).abs() < 1e-6);
+        }
+    }
+
+    /// The plain sequential forms of `mean_l` and `preserve_mean`.
+    mod sequential {
+        use super::super::*;
+
+        pub fn mean_l(pixels: &[[f32; 4]]) -> f32 {
+            let (mut s, mut w) = (0.0f64, 0.0f64);
+            for p in pixels {
+                s += (color::srgb_to_oklab([p[0], p[1], p[2]])[0] * p[3]) as f64;
+                w += p[3] as f64;
+            }
+            if w > 0.0 { (s / w) as f32 } else { 0.0 }
+        }
+
+        fn apply(pixels: &mut [[f32; 4]], curve: &ToneCurve) {
+            for p in pixels.iter_mut() {
+                let [l, a, b] = color::srgb_to_oklab([p[0], p[1], p[2]]);
+                let rgb = color::oklab_to_srgb([curve.apply(l), a, b]);
+                for (c, v) in p.iter_mut().zip(rgb) {
+                    *c = v.clamp(0.0, 1.0);
+                }
+            }
+        }
+
+        pub fn preserve_mean(out: &mut [[f32; 4]], target: f32, protect: [f32; 2]) -> ToneCurve {
+            let (lo, hi) = ToneCurve::k_bounds(protect);
+            let src: Vec<[f32; 4]> = out.to_vec();
+            let (mut bsum, mut w) = (0.0f64, 0.0f64);
+            for p in &src {
+                let l = color::srgb_to_oklab([p[0], p[1], p[2]])[0];
+                bsum += (ToneCurve::bump(protect, l) * p[3]) as f64;
+                w += p[3] as f64;
+            }
+            let mb = if w > 0.0 { (bsum / w) as f32 } else { 0.0 };
+            let mut curve = ToneCurve { k: 0.0, protect };
+            if mb <= 1e-4 {
+                return curve;
+            }
+            let mut current = mean_l(&src);
+            for _ in 0..4 {
+                curve.k = (curve.k + (current - target) / mb).clamp(lo, hi);
+                let mut trial = src.clone();
+                apply(&mut trial, &curve);
+                current = mean_l(&trial);
+                if (current - target).abs() < 5e-4 {
+                    break;
+                }
+            }
+            out.copy_from_slice(&src);
+            apply(out, &curve);
+            curve
+        }
+    }
+
+    #[test]
+    fn parallel_passes_give_the_sequential_bits() {
+        // More pixels than one block, with every kind of alpha, colors out of gamut after the
+        // curve, and targets that take several corrections.
+        let n = 3 * (1 << 16) + 12_345;
+        let px: Vec<[f32; 4]> = (0..n)
+            .map(|i| {
+                let h = |k: u32| {
+                    let mut v = (i as u32).wrapping_mul(0x9E37_79B9) ^ k.wrapping_mul(0x85EB_CA6B);
+                    v ^= v >> 15;
+                    v = v.wrapping_mul(0x2C1B_3C6D);
+                    v ^= v >> 12;
+                    (v & 0xFFFF) as f32 / 65535.0
+                };
+                let a = match i % 5 {
+                    0 => 0.0,
+                    1 => 1.0,
+                    _ => h(4),
+                };
+                [h(1), h(2).powi(3), h(3), a]
+            })
+            .collect();
+        assert_eq!(mean_l(&px).to_bits(), sequential::mean_l(&px).to_bits());
+        for (target, protect) in [(0.3, [0.15, 0.75]), (0.62, [0.1, 0.9]), (0.5, [0.2, 0.6])] {
+            let (mut a, mut b) = (px.clone(), px.clone());
+            let ca = preserve_mean(&mut a, target, protect);
+            let cb = sequential::preserve_mean(&mut b, target, protect);
+            assert_eq!(ca.k.to_bits(), cb.k.to_bits(), "target {target}");
+            assert!(
+                a.iter()
+                    .flatten()
+                    .map(|v| v.to_bits())
+                    .eq(b.iter().flatten().map(|v| v.to_bits())),
+                "target {target}"
+            );
         }
     }
 
