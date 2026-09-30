@@ -530,15 +530,19 @@ impl Runner {
             extent,
         );
         buffers.push(enc.finish());
-        queue.submit(buffers);
+        let submission = queue.submit(buffers);
 
         let slice = readback.slice(..);
         let (tx, rx) = std::sync::mpsc::channel();
         slice.map_async(wgpu::MapMode::Read, move |r| {
             let _ = tx.send(r);
         });
+        // Wait for this job only: another slot's job, submitted later, keeps running meanwhile.
         device
-            .poll(wgpu::PollType::wait_indefinitely())
+            .poll(wgpu::PollType::Wait {
+                submission_index: Some(submission),
+                timeout: None,
+            })
             .context("device poll failed")?;
         rx.recv()
             .context("map callback dropped")?
