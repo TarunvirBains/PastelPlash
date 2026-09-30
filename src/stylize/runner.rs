@@ -1,7 +1,9 @@
 //! Running a stylize job on the GPU: the passes, the bind group layout, chunking for images
 //! larger than the device allows, and the concurrency slots that bound VRAM.
 
+use std::cell::Cell;
 use std::sync::{Arc, Condvar, Mutex};
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use bytemuck::{Pod, Zeroable};
@@ -209,9 +211,26 @@ impl Runner {
                 usage: wgpu::BufferUsages::STORAGE,
             })
     }
-    /// Runs the job over the whole image, chunked if needed. Returns output pixels and the
-    /// number of chunks.
-    pub fn run(&self, image: &Image, job: &Job, wrap: [bool; 2]) -> Result<(Vec<[f32; 4]>, usize)> {
+    /// Runs the job over the whole image, chunked if needed. Returns output pixels, the number
+    /// of chunks and the time spent waiting for a GPU slot.
+    pub fn run(
+        &self,
+        image: &Image,
+        job: &Job,
+        wrap: [bool; 2],
+    ) -> Result<(Vec<[f32; 4]>, usize, Duration)> {
+        let wait = Cell::new(Duration::ZERO);
+        let (out, chunks) = self.run_chunks(image, job, wrap, &wait)?;
+        Ok((out, chunks, wait.get()))
+    }
+
+    fn run_chunks(
+        &self,
+        image: &Image,
+        job: &Job,
+        wrap: [bool; 2],
+        wait: &Cell<Duration>,
+    ) -> Result<(Vec<[f32; 4]>, usize)> {
         let (w, h) = (image.width, image.height);
         let side = self.max_side;
         if w <= side && h <= side && (w as u64) * (h as u64) <= PIXEL_BUDGET {
@@ -220,7 +239,7 @@ impl Runner {
             params.size_y = h as i32;
             params.wrap_x = wrap[0] as i32;
             params.wrap_y = wrap[1] as i32;
-            return Ok((self.run_gpu(&image.pixels, w, h, &params, job)?, 1));
+            return Ok((self.run_gpu(&image.pixels, w, h, &params, job, wait)?, 1));
         }
 
         let budget_side = (PIXEL_BUDGET as f64).sqrt() as u32;
@@ -256,7 +275,7 @@ impl Runner {
                 params.size_y = rh as i32;
                 params.origin_x = ox as i32;
                 params.origin_y = oy as i32;
-                let res = self.run_gpu(&region, rw, rh, &params, job)?;
+                let res = self.run_gpu(&region, rw, rh, &params, job, wait)?;
                 for y in 0..ch {
                     let src = ((y + job.halo) * rw + job.halo) as usize;
                     let dst = ((cy + y) * w + cx) as usize;
@@ -275,8 +294,11 @@ impl Runner {
         h: u32,
         params: &Params,
         job: &Job,
+        wait: &Cell<Duration>,
     ) -> Result<Vec<[f32; 4]>> {
+        let t = Instant::now();
         let _slot = self.slots.acquire();
+        wait.set(wait.get() + t.elapsed());
         let device = &self.gpu.device;
         let queue = &self.gpu.queue;
         let extent = wgpu::Extent3d {
@@ -352,7 +374,7 @@ impl Runner {
         });
 
         // Pass variant for the next dispatch (band._a in the shader; 1 = coarse Kuwahara).
-        let variant = std::cell::Cell::new(0i32);
+        let variant = Cell::new(0i32);
         // Dispatches `pipeline` over rows y0..y1 (an empty range dispatches one workgroup).
         let dispatch = |encoder: &mut wgpu::CommandEncoder,
                         pipeline: &wgpu::ComputePipeline,

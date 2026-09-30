@@ -153,8 +153,9 @@ impl Stage for Stylize {
         };
 
         let t_gpu = Instant::now();
-        let (mut out, chunks) = self.runner.run(image, &job, wrap)?;
+        let (mut out, chunks, t_wait) = self.runner.run(image, &job, wrap)?;
         let t_gpu = t_gpu.elapsed();
+        let t_post = Instant::now();
         // Exposure: restore the source's mean lightness with a monotone tone curve (the murk lift
         // stays; mids and lights come down).
         let mut exp_note = String::new();
@@ -216,7 +217,7 @@ impl Stage for Stylize {
         let n = &plan.note;
         crate::log::detail!(
             "  {}: {w}x{h} {:?} mood={} wrap={}{} seam={:.1}/{:.1} tint_safe={} (C99 {:.3}) \
-             scale={:.2} r={:.1} spread={:.4} busy={:.2} speckle={:.2} marks={:.2}{}{exp_note}{} | analysis {} gpu {}",
+             scale={:.2} r={:.1} spread={:.4} busy={:.2} speckle={:.2} marks={:.2}{}{exp_note}{} | analysis {} gpu {} (slot wait {}) post {}",
             ctx.rel.display(),
             ctx.category,
             mood,
@@ -240,6 +241,8 @@ impl Stage for Stylize {
             },
             ms(n.analysis),
             ms(t_gpu),
+            ms(t_wait),
+            ms(t_post.elapsed()),
         );
         Ok(())
     }

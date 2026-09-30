@@ -98,13 +98,25 @@ impl Driver<'_> {
             return self.pipeline.run(image, &ctx);
         }
         let texels = u64::from(image.width * internal) * u64::from(image.height * internal);
+        let t = std::time::Instant::now();
         let _budget = MEMORY.acquire(texels);
+        let t_budget = t.elapsed();
+        let t = std::time::Instant::now();
         let wrap = self.wrap(image, category);
         let mut big = crate::resample::upsample(image, internal, wrap);
+        let t_up = t.elapsed();
         ctx.upscale = internal as f32;
         ctx.source = Some(image);
         self.pipeline.run(&mut big, &ctx)?;
+        let t = std::time::Instant::now();
         *image = crate::resample::downsample(&big, internal / out);
+        crate::log::detail!(
+            "  {}: painted at {internal}x, written at {out}x | memory wait {} upsample {} downsample {}",
+            rel.display(),
+            crate::util::ms(t_budget),
+            crate::util::ms(t_up),
+            crate::util::ms(t.elapsed()),
+        );
         Ok(())
     }
 
