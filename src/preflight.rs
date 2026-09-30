@@ -92,8 +92,22 @@ pub fn free_space(dir: &Path) -> Option<u64> {
     (ok != 0).then_some(avail)
 }
 
+/// Free bytes available to this user on the volume holding `dir` (`statvfs`: blocks available
+/// to unprivileged users times the fragment size).
+#[cfg(unix)]
+pub fn free_space(dir: &Path) -> Option<u64> {
+    use std::os::unix::ffi::OsStrExt;
+    let path = std::ffi::CString::new(dir.as_os_str().as_bytes()).ok()?;
+    // SAFETY: statvfs is plain data, valid when zeroed; it is only read after a successful call.
+    let mut st: libc::statvfs = unsafe { std::mem::zeroed() };
+    // SAFETY: a NUL-terminated path and a valid out-pointer.
+    let ok = unsafe { libc::statvfs(path.as_ptr(), &mut st) } == 0;
+    #[allow(clippy::unnecessary_cast)] // the field types differ between platforms
+    ok.then(|| (st.f_bavail as u64).saturating_mul(st.f_frsize as u64))
+}
+
 /// Free bytes available on the volume holding `dir` (not measured on this platform).
-#[cfg(not(windows))]
+#[cfg(not(any(windows, unix)))]
 pub fn free_space(_dir: &Path) -> Option<u64> {
     None
 }
@@ -101,6 +115,18 @@ pub fn free_space(_dir: &Path) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn free_space_is_measured_on_windows_and_unix() {
+        let dir = std::env::temp_dir();
+        let free = free_space(&dir);
+        if cfg!(any(windows, unix)) {
+            let free = free.expect("free space of the temp folder");
+            assert!(free > 0, "{free}");
+        }
+        // A path that does not exist has no volume to measure.
+        assert_eq!(free_space(&dir.join("no/such/folder/pastelplash")), None);
+    }
 
     #[test]
     fn an_impossible_output_fails_before_the_run() {

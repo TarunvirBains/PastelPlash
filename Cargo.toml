@@ -37,6 +37,10 @@ toml = "1.1.6"
 wgpu = "30.0.1"
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 
+[target.'cfg(unix)'.dependencies]
+# statvfs, for the free-space check before a run.
+libc = "0.2"
+
 [dev-dependencies]
 # wgpu's naga, for the golden-hash test's HLSL check (keep the version equal to wgpu's).
 naga = { version = "=30.0.1", features = ["wgsl-in", "hlsl-out"] }

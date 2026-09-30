@@ -846,6 +846,7 @@ dependencies = [
  "anyhow",
  "bytemuck",
  "clap",
+ "libc",
  "naga",
  "png",
  "pollster",
