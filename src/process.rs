@@ -97,7 +97,7 @@ pub fn run(opts: &Options, config: &Config, pipeline: &Pipeline) -> Result<Summa
         category: opts.category,
         mood: opts.mood.clone(),
     };
-    let jobs: Vec<(&Path, Action)> = walked
+    let mut jobs: Vec<(&Path, Action)> = walked
         .entries
         .iter()
         .filter_map(|entry| {
@@ -111,13 +111,21 @@ pub fn run(opts: &Options, config: &Config, pipeline: &Pipeline) -> Result<Summa
             Some((entry.rel.as_path(), action))
         })
         .collect();
-    let est = estimate(opts, &driver, &jobs);
+    let (est, cost) = estimate(opts, &driver, &jobs);
     println!("{}", est.summary());
     crate::preflight::check_disk(&opts.output, est.bytes)?;
+    // Costliest first (enlarged pre-rendered backgrounds), so small files fill the workers
+    // around them instead of a tail of big ones at the end.
+    let mut order: Vec<usize> = (0..jobs.len()).collect();
+    order.sort_by_key(|&i| std::cmp::Reverse(cost[i].0));
+    let weights: Vec<u64> = order.iter().map(|&i| cost[i].1).collect();
+    jobs = order.iter().map(|&i| jobs[i]).collect();
 
     // Files are driven from plain threads, never rayon workers (see `util::map_on_threads`).
-    let results: Vec<(Action, Result<Phases>)> = crate::util::map_on_threads(
+    let results: Vec<(Action, Result<Phases>)> = crate::util::map_on_threads_budgeted(
         &jobs,
+        &weights,
+        &crate::driver::MEMORY,
         opts.jobs.unwrap_or(0),
         || (),
         |(), &(rel, action)| {
@@ -202,27 +210,30 @@ fn handle(opts: &Options, driver: &Driver, rel: &Path, action: Action) -> Result
 }
 
 /// What a run will write: sources at their size, enlarged PNGs by the square of their factor
-/// (compressed size scales about with the texel count).
+/// (compressed size scales about with the texel count). Also, per job, the texels the pipeline
+/// paints (its cost) and those it holds of the memory budget ([`Driver::texels_held`]).
 fn estimate(
     opts: &Options,
     driver: &Driver,
     jobs: &[(&Path, Action)],
-) -> crate::preflight::Estimate {
+) -> (crate::preflight::Estimate, Vec<(u64, u64)>) {
     let mut est = crate::preflight::Estimate::default();
+    let mut cost = Vec::with_capacity(jobs.len());
     for &(rel, action) in jobs {
         let src = opts.input.join(rel);
         let len = fs::metadata(&src).map_or(0, |m| m.len());
         match (action, png_io::dimensions(&src)) {
             (Action::Process(c), Some((w, h))) => {
                 let (k, internal) = driver.resolution_plan(c, w, h);
-                est.add(
-                    len * u64::from(k * k),
-                    k,
-                    u64::from(w) * u64::from(h) * u64::from(internal * internal),
-                );
+                let texels = u64::from(w) * u64::from(h) * u64::from(internal * internal);
+                est.add(len * u64::from(k * k), k, texels);
+                cost.push((texels, driver.texels_held(c, w, h)));
             }
-            _ => est.add(len, 1, 0),
+            _ => {
+                est.add(len, 1, 0);
+                cost.push((0, 0));
+            }
         }
     }
-    est
+    (est, cost)
 }

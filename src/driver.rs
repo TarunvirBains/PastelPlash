@@ -10,6 +10,7 @@ use crate::config::{Category, Config, FluidRuleKind, Mood};
 use crate::fluid::FluidKind;
 use crate::image::Image;
 use crate::pipeline::{FileContext, Pipeline};
+use crate::util::Budget;
 
 pub struct Driver<'a> {
     pub config: &'a Config,
@@ -127,6 +128,15 @@ impl Driver<'_> {
         Ok(())
     }
 
+    /// The texels of [`MEMORY`] that [`Driver::run`] holds for a `w`×`h` file of this category
+    /// (0 when it is not enlarged; a fluid restyled with another floor may take more).
+    pub fn texels_held(&self, category: Category, w: u32, h: u32) -> u64 {
+        match self.resolution_plan(category, w, h) {
+            (_, internal) if internal > 1 => u64::from(w * internal) * u64::from(h * internal),
+            _ => 0,
+        }
+    }
+
     /// (output factor, internal factor) by which [`Driver::run`] enlarges a `w`×`h` file of this
     /// category ((1, 1) = neither).
     pub fn resolution_plan(&self, category: Category, w: u32, h: u32) -> (u32, u32) {
@@ -149,33 +159,6 @@ impl Driver<'_> {
 /// memory. A single image larger than the budget still runs, alone.
 const MEMORY_TEXELS: u64 = 160 << 20;
 
-static MEMORY: Budget = Budget {
-    used: std::sync::Mutex::new(0),
-    cv: std::sync::Condvar::new(),
-};
-
-struct Budget {
-    used: std::sync::Mutex<u64>,
-    cv: std::sync::Condvar,
-}
-
-struct BudgetGuard(u64);
-
-impl Budget {
-    fn acquire(&'static self, texels: u64) -> BudgetGuard {
-        let want = texels.min(MEMORY_TEXELS);
-        let mut used = self.used.lock().unwrap();
-        while *used + want > MEMORY_TEXELS {
-            used = self.cv.wait(used).unwrap();
-        }
-        *used += want;
-        BudgetGuard(want)
-    }
-}
-
-impl Drop for BudgetGuard {
-    fn drop(&mut self) {
-        *MEMORY.used.lock().unwrap() -= self.0;
-        MEMORY.cv.notify_all();
-    }
-}
+/// The budget [`Driver::run`] holds an enlarged image's texels in ([`Driver::texels_held`]);
+/// front ends schedule files around it (`util::map_on_threads_budgeted`).
+pub static MEMORY: Budget = Budget::new(MEMORY_TEXELS);

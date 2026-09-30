@@ -164,13 +164,23 @@ struct Work {
 /// An entry's CRC-32 and size, from the archive index.
 type Sum = (u32, u64);
 
-/// Groups `names` into [`Work`]; `sums` holds (CRC-32, size) of each texture entry the run
-/// restyles (`None` for the rest, which are never grouped).
-fn group(names: &[String], sums: &[Option<Sum>], driver: &Driver) -> Vec<Work> {
+/// What the archive index and a texture entry's header tell before a run.
+#[derive(Debug, Clone, Copy, Default)]
+struct Indexed {
+    /// (CRC-32, size) of a texture entry the run restyles (`None` for other entries).
+    sum: Option<Sum>,
+    /// Texels the pipeline paints (at the internal size of an enlarged texture): its cost.
+    texels: u64,
+    /// Texels of the memory budget it holds ([`Driver::texels_held`]).
+    held: u64,
+}
+
+/// Groups `names` into [`Work`] (entries without a sum are never grouped), costliest first.
+fn group(names: &[String], index: &[Indexed], driver: &Driver) -> Vec<Work> {
     let mut first: HashMap<(u32, u64, Vec<u32>), usize> = HashMap::new();
     let mut work: Vec<Work> = Vec::with_capacity(names.len());
-    for (i, (name, sum)) in names.iter().zip(sums).enumerate() {
-        if let Some((crc, size)) = *sum {
+    for (i, (name, ix)) in names.iter().zip(index).enumerate() {
+        if let Some((crc, size)) = ix.sum {
             match first.entry((crc, size, driver.profile(Path::new(name)))) {
                 Entry::Occupied(e) => {
                     work[*e.get()].followers.push(i);
@@ -186,6 +196,9 @@ fn group(names: &[String], sums: &[Option<Sum>], driver: &Driver) -> Vec<Work> {
             followers: Vec::new(),
         });
     }
+    // The big ones (enlarged pre-rendered backgrounds) start early, and the small ones fill the
+    // workers around them, instead of a tail of big ones on a few workers at the end.
+    work.sort_by_key(|w| std::cmp::Reverse(index[w.leader].texels));
     work
 }
 
@@ -244,10 +257,11 @@ pub fn run(opts: &Options, config: &Config, pipeline: &Pipeline) -> Result<Summa
         category: opts.category,
         mood: opts.mood.clone(),
     };
-    let (est, sums) = estimate(opts, &names, &driver)?;
+    let (est, index) = estimate(opts, &names, &driver)?;
     println!("{}", est.summary());
     crate::preflight::check_disk(&opts.output, est.bytes)?;
-    let work = group(&names, &sums, &driver);
+    let work = group(&names, &index, &driver);
+    let weights: Vec<u64> = work.iter().map(|w| index[w.leader].held).collect();
     if work.len() < names.len() {
         println!(
             "{} entries are copies of others restyled the same way (their output is reused)",
@@ -330,8 +344,10 @@ pub fn run(opts: &Options, config: &Config, pipeline: &Pipeline) -> Result<Summa
             let _ = tx.send(msg);
         };
         // Files are driven from plain threads, never rayon workers (see `util::map_on_threads`).
-        crate::util::map_on_threads(
+        crate::util::map_on_threads_budgeted(
             &work,
+            &weights,
+            &crate::driver::MEMORY,
             workers,
             || zip::ZipArchive::new(File::open(&opts.input).unwrap()).unwrap(),
             |archive, work| {
@@ -424,18 +440,17 @@ fn texture_size(header: &[u8]) -> Option<(u32, u32)> {
 }
 
 /// What a run will write, from the entry headers alone (enlarged textures counted at their
-/// output size), and the (CRC-32, size) of every texture entry it restyles, from the archive
-/// index (for [`group`]).
+/// output size), and what the index says about each entry (for [`group`]).
 fn estimate(
     opts: &Options,
     names: &[String],
     driver: &Driver,
-) -> Result<(crate::preflight::Estimate, Vec<Option<Sum>>)> {
+) -> Result<(crate::preflight::Estimate, Vec<Indexed>)> {
     let mut archive = zip::ZipArchive::new(
         File::open(&opts.input).with_context(|| format!("opening {}", opts.input.display()))?,
     )?;
     let mut est = crate::preflight::Estimate::default();
-    let mut sums = Vec::with_capacity(names.len());
+    let mut index = Vec::with_capacity(names.len());
     let mut head = vec![0u8; HEADER];
     for name in names {
         let mut entry = archive.by_name(name)?;
@@ -447,8 +462,12 @@ fn estimate(
         };
         match texture {
             Some((c, (w, h))) => {
-                sums.push(Some((crc, size)));
                 let (k, internal) = driver.resolution_plan(c, w, h);
+                index.push(Indexed {
+                    sum: Some((crc, size)),
+                    texels: u64::from(w * internal) * u64::from(h * internal),
+                    held: driver.texels_held(c, w, h),
+                });
                 let (w, h) = (u64::from(w), u64::from(h));
                 let (k, internal) = (u64::from(k), u64::from(internal));
                 est.add(
@@ -458,14 +477,14 @@ fn estimate(
                 );
             }
             None => {
-                sums.push(None);
+                index.push(Indexed::default());
                 if opts.complete {
                     est.add(size, 1, 0);
                 }
             }
         }
     }
-    Ok((est, sums))
+    Ok((est, index))
 }
 
 /// Exports matching textures as PNGs under `out_dir`, keeping their archive paths (plus
