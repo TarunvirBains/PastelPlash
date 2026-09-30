@@ -34,6 +34,13 @@ impl Driver<'_> {
         category.is_stylized().then_some(category)
     }
 
+    /// What the pack map says about a file, as a comparable key: two files with the same
+    /// profile and the same pixels are restyled identically (the CLI overrides apply to every
+    /// file alike). See [`crate::config::Pack::profile`].
+    pub fn profile(&self, rel: &Path) -> Vec<u32> {
+        self.config.pack.profile(rel)
+    }
+
     /// The material a stylized file is restyled as: a pack-map fluid rule decides first; else,
     /// for categories that may be fluids (world geometry), the fluid detector; else the file's
     /// category. A CLI category override is taken as is.

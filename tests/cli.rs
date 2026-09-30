@@ -195,7 +195,7 @@ fn otex(w: u32, h: u32, seed: u32) -> Vec<u8> {
 }
 
 #[test]
-fn o2r_summary_json_counts_entries() {
+fn o2r_summary_json_counts_reused_copies() {
     let dir = tempfile::tempdir().unwrap();
     let style = neutral_style(dir.path());
     let input = dir.path().join("in.o2r");
@@ -227,16 +227,17 @@ fn o2r_summary_json_counts_entries() {
     let v = json(&summary);
     assert_eq!(v["command"], "o2r");
     assert_eq!(v["ok"], true);
-    // The non-texture is left out of the mod.
+    // alt/b/tex is a copy of alt/a/tex; the non-texture is left out of the mod.
     assert_eq!(
         [
             &v["processed"],
+            &v["reused"],
             &v["copied"],
             &v["skipped"],
             &v["written"],
             &v["failed"]
         ],
-        [3, 0, 1, 3, 0]
+        [3, 1, 0, 1, 3, 0]
     );
     assert!(v["bytes_in"].as_u64().unwrap() > 0);
     assert!(v["bytes_out"].as_u64().unwrap() > 0);

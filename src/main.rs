@@ -667,6 +667,7 @@ fn run_o2r(args: O2rArgs, report: &mut Report) -> anyhow::Result<()> {
     };
     let s = pastelplash::adapters::o2r::run(&opts, &config, &pipeline)?;
     report.processed = s.processed;
+    report.reused = s.reused;
     report.copied = s.copied;
     report.skipped = s.skipped;
     report.written = s.written;

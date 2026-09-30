@@ -272,6 +272,55 @@ impl Pack {
         Ok(())
     }
 
+    /// Everything the pack map can say about a file: for every per-path list, the indices of the
+    /// entries matching it, and whether it is a non-color map. Two files with the same profile get
+    /// the same answer from every per-path lookup above, so they are restyled identically when
+    /// their pixels are (a run may then reuse one's output for the other).
+    pub fn profile(&self, path: &Path) -> Vec<u32> {
+        // Destructured without `..`: a new field fails to compile until it is placed here, as
+        // per path (profiled) or path-independent.
+        let Pack {
+            name: _,
+            rules,
+            list: _, // not wired up yet: profile it once it classifies files
+            default_category: _,
+            non_color_suffixes: _,
+            source_scale: _,
+            moods,
+            marks,
+            brushwork,
+            no_grouping,
+            no_abstraction,
+            cues,
+            no_terracotta,
+            terracotta_only,
+            detect_fluids: _,
+            fluids,
+        } = self;
+        let p = path.to_string_lossy().replace('\\', "/");
+        let mut out = vec![u32::from(self.is_non_color_map(path))];
+        let mut list = |globs: &mut dyn Iterator<Item = &str>| {
+            out.extend(
+                globs
+                    .enumerate()
+                    .filter(|(_, g)| glob_match(g, &p))
+                    .map(|(i, _)| i as u32),
+            );
+            out.push(u32::MAX); // separator
+        };
+        list(&mut rules.iter().map(|r| r.glob.as_str()));
+        list(&mut moods.iter().map(|r| r.glob.as_str()));
+        list(&mut marks.iter().map(|r| r.glob.as_str()));
+        list(&mut brushwork.iter().map(|r| r.glob.as_str()));
+        list(&mut no_grouping.iter().map(String::as_str));
+        list(&mut no_abstraction.iter().map(String::as_str));
+        list(&mut cues.iter().map(String::as_str));
+        list(&mut no_terracotta.iter().map(String::as_str));
+        list(&mut terracotta_only.iter().map(String::as_str));
+        list(&mut fluids.iter().map(|r| r.glob.as_str()));
+        out
+    }
+
     /// True if the file stem ends in one of [`Pack::non_color_suffixes`].
     pub fn is_non_color_map(&self, path: &Path) -> bool {
         let Some(stem) = path.file_stem() else {
@@ -360,6 +409,33 @@ mod tests {
             Category::Actor
         );
         assert_eq!(pack.classify(Path::new("alt/scenes/s/t")), Category::World);
+    }
+
+    #[test]
+    fn files_matching_the_same_entries_share_a_profile() {
+        let pack: Pack = toml::from_str(
+            "cues = ['**/*Crack*']\n\
+             [[rules]]\nglob = 'alt/scenes/**'\ncategory = 'world'\n\
+             [[moods]]\nglob = 'alt/scenes/mq/ydan_scene/**'\nmood = 'nocturne'\n\
+             [[marks]]\nglob = '**/*Floor*'\nscale = 2.0",
+        )
+        .unwrap();
+        let profile = |p: &str| pack.profile(Path::new(p));
+        assert_eq!(
+            profile("alt/scenes/shared/spot04_scene/wall"),
+            profile("alt/scenes/nonmq/ydan_scene/wall")
+        );
+        // Any entry that matches one file and not the other tells them apart.
+        let base = profile("alt/scenes/nonmq/ydan_scene/wall");
+        for other in [
+            "alt/scenes/mq/ydan_scene/wall",
+            "alt/scenes/nonmq/ydan_scene/gFloorTex",
+            "alt/scenes/nonmq/ydan_scene/gCrackTex",
+            "alt/scenes/nonmq/ydan_scene/wall_n",
+            "alt/objects/o/wall",
+        ] {
+            assert_ne!(profile(other), base, "{other}");
+        }
     }
 
     #[test]

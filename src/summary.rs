@@ -58,6 +58,9 @@ pub struct Report {
     /// Files passed through or left out without restyling (non-color maps, `skip` and
     /// unstyled categories).
     pub skipped: usize,
+    /// Files whose output was reused from a byte-identical input processed the same way
+    /// (counted in `processed` too).
+    pub reused: usize,
     /// Files (archive entries) written to the output.
     pub written: usize,
     pub failed: usize,

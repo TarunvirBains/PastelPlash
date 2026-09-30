@@ -116,4 +116,8 @@ adapter, never from the core.
   FXC) are pinned; scripts build with `--locked`.
 - Caches key entries by a fingerprint of what they derive from (resolved style, palette), so a
   stage serving several configs never returns a stale LUT.
+- An `.o2r` run restyles byte-identical entries once when the pack map treats them alike (the
+  same `Pack::profile`) and writes that output for each of them; the bytes are compared before
+  the output is reused. Every per-path lookup of the pack map must be part of the profile (its
+  destructuring of `Pack` fails to compile until a new field is placed).
 - `tests/golden_hash.rs` proves pure refactors byte-identical (see docs/RULES.md).

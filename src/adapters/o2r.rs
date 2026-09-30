@@ -7,11 +7,13 @@
 //! flags (1 = load as raw), `0x58` data size, then raw RGBA8888 pixels from `0x5C`. Everything up
 //! to `0x5C` is carried over unchanged.
 
+use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::fs::File;
 use std::io::{BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail, ensure};
@@ -145,8 +147,46 @@ fn secs(t: &AtomicU64) -> f64 {
 }
 
 enum Out {
-    Entry(String, Vec<u8>),
+    Entry(String, Arc<Vec<u8>>),
     Failed(Failure),
+}
+
+/// Entries processed by one worker in a row: the first one, then later entries whose bytes
+/// are the same (by CRC-32 and size in the archive index, confirmed byte for byte before any
+/// reuse) and whose pack-map profile is the same ([`Driver::profile`]). Those are restyled
+/// identically, so they take the first entry's output instead of running the pipeline again
+/// (OoT Reloaded has thousands: master-quest dungeons are copies of the originals).
+struct Work {
+    leader: usize,
+    followers: Vec<usize>,
+}
+
+/// An entry's CRC-32 and size, from the archive index.
+type Sum = (u32, u64);
+
+/// Groups `names` into [`Work`]; `sums` holds (CRC-32, size) of each texture entry the run
+/// restyles (`None` for the rest, which are never grouped).
+fn group(names: &[String], sums: &[Option<Sum>], driver: &Driver) -> Vec<Work> {
+    let mut first: HashMap<(u32, u64, Vec<u32>), usize> = HashMap::new();
+    let mut work: Vec<Work> = Vec::with_capacity(names.len());
+    for (i, (name, sum)) in names.iter().zip(sums).enumerate() {
+        if let Some((crc, size)) = *sum {
+            match first.entry((crc, size, driver.profile(Path::new(name)))) {
+                Entry::Occupied(e) => {
+                    work[*e.get()].followers.push(i);
+                    continue;
+                }
+                Entry::Vacant(e) => {
+                    e.insert(work.len());
+                }
+            }
+        }
+        work.push(Work {
+            leader: i,
+            followers: Vec::new(),
+        });
+    }
+    work
 }
 
 /// What an `.o2r` run did.
@@ -154,6 +194,8 @@ enum Out {
 pub struct Summary {
     /// Entries restyled.
     pub processed: usize,
+    /// Of those, entries that took the output of an identical entry restyled the same way.
+    pub reused: usize,
     /// Entries copied unchanged (`complete`).
     pub copied: usize,
     /// Selected entries left out of the mod (not textures, or not restyled).
@@ -202,11 +244,19 @@ pub fn run(opts: &Options, config: &Config, pipeline: &Pipeline) -> Result<Summa
         category: opts.category,
         mood: opts.mood.clone(),
     };
-    let est = estimate(opts, &names, &driver)?;
+    let (est, sums) = estimate(opts, &names, &driver)?;
     println!("{}", est.summary());
     crate::preflight::check_disk(&opts.output, est.bytes)?;
+    let work = group(&names, &sums, &driver);
+    if work.len() < names.len() {
+        println!(
+            "{} entries are copies of others restyled the same way (their output is reused)",
+            names.len() - work.len()
+        );
+    }
     let timers = Timers::default();
     let processed = AtomicUsize::new(0);
+    let reused = AtomicUsize::new(0);
     let copied = AtomicUsize::new(0);
     let skipped = AtomicUsize::new(0);
     let (tx, rx) = mpsc::sync_channel::<Out>(32);
@@ -254,35 +304,64 @@ pub fn run(opts: &Options, config: &Config, pipeline: &Pipeline) -> Result<Summa
             Ok((written, failures))
         });
 
+        // Counts an entry's result and hands it to the writer.
+        let emit = |name: &String, result: Result<Option<(Arc<Vec<u8>>, bool)>>| {
+            let msg = match result {
+                Ok(Some((data, did_process))) => {
+                    if did_process {
+                        processed.fetch_add(1, Ordering::Relaxed);
+                    } else {
+                        copied.fetch_add(1, Ordering::Relaxed);
+                    }
+                    Out::Entry(name.clone(), data)
+                }
+                Ok(None) => {
+                    skipped.fetch_add(1, Ordering::Relaxed);
+                    return;
+                }
+                Err(e) => {
+                    eprintln!("error: {name}: {e:#}");
+                    Out::Failed(Failure {
+                        path: name.clone(),
+                        reason: format!("{e:#}"),
+                    })
+                }
+            };
+            let _ = tx.send(msg);
+        };
         // Files are driven from plain threads, never rayon workers (see `util::map_on_threads`).
         crate::util::map_on_threads(
-            &names,
+            &work,
             workers,
             || zip::ZipArchive::new(File::open(&opts.input).unwrap()).unwrap(),
-            |archive, name| {
-                let result = handle(archive, name, opts, &driver, &timers);
-                let msg = match result {
-                    Ok(Some((data, did_process))) => {
-                        if did_process {
-                            processed.fetch_add(1, Ordering::Relaxed);
-                        } else {
-                            copied.fetch_add(1, Ordering::Relaxed);
-                        }
-                        Out::Entry(name.clone(), data)
+            |archive, work| {
+                let name = &names[work.leader];
+                let mut source = None;
+                let result = read(archive, name, &timers).and_then(|bytes| {
+                    if !work.followers.is_empty() {
+                        source = Some(bytes.clone());
                     }
-                    Ok(None) => {
-                        skipped.fetch_add(1, Ordering::Relaxed);
-                        return;
-                    }
-                    Err(e) => {
-                        eprintln!("error: {name}: {e:#}");
-                        Out::Failed(Failure {
-                            path: name.clone(),
-                            reason: format!("{e:#}"),
-                        })
-                    }
+                    handle(bytes, name, opts, &driver, &timers)
+                });
+                // A restyled leader's output serves its copies.
+                let reuse = match (&result, source) {
+                    (Ok(Some((data, true))), Some(bytes)) => Some((bytes, data.clone())),
+                    _ => None,
                 };
-                let _ = tx.send(msg);
+                emit(name, result);
+                for &f in &work.followers {
+                    let copy = &names[f];
+                    let result = read(archive, copy, &timers).and_then(|bytes| match &reuse {
+                        Some((source, data)) if bytes == *source => {
+                            reused.fetch_add(1, Ordering::Relaxed);
+                            crate::log::detail!("  {copy}: same as {name} (output reused)");
+                            Ok(Some((data.clone(), true)))
+                        }
+                        // Not the same after all (a CRC-32 collision), or the first failed.
+                        _ => handle(bytes, copy, opts, &driver, &timers),
+                    });
+                    emit(copy, result);
+                }
             },
         );
         drop(tx);
@@ -294,8 +373,9 @@ pub fn run(opts: &Options, config: &Config, pipeline: &Pipeline) -> Result<Summa
     let wall = start.elapsed().as_secs_f64();
     let mb = |t: &AtomicU64| t.load(Ordering::Relaxed) as f64 / 1e6;
     println!(
-        "{} processed, {} copied, {written} written, {failed} failed -> {}",
+        "{} processed ({} reused), {} copied, {written} written, {failed} failed -> {}",
         processed.load(Ordering::Relaxed),
+        reused.load(Ordering::Relaxed),
         copied.load(Ordering::Relaxed),
         opts.output.display()
     );
@@ -315,6 +395,7 @@ pub fn run(opts: &Options, config: &Config, pipeline: &Pipeline) -> Result<Summa
     let dur = |t: &AtomicU64| Duration::from_nanos(t.load(Ordering::Relaxed));
     Ok(Summary {
         processed: processed.into_inner(),
+        reused: reused.into_inner(),
         copied: copied.into_inner(),
         skipped: skipped.into_inner(),
         written,
@@ -343,26 +424,30 @@ fn texture_size(header: &[u8]) -> Option<(u32, u32)> {
 }
 
 /// What a run will write, from the entry headers alone (enlarged textures counted at their
-/// output size).
+/// output size), and the (CRC-32, size) of every texture entry it restyles, from the archive
+/// index (for [`group`]).
 fn estimate(
     opts: &Options,
     names: &[String],
     driver: &Driver,
-) -> Result<crate::preflight::Estimate> {
+) -> Result<(crate::preflight::Estimate, Vec<Option<Sum>>)> {
     let mut archive = zip::ZipArchive::new(
         File::open(&opts.input).with_context(|| format!("opening {}", opts.input.display()))?,
     )?;
     let mut est = crate::preflight::Estimate::default();
+    let mut sums = Vec::with_capacity(names.len());
     let mut head = vec![0u8; HEADER];
     for name in names {
         let mut entry = archive.by_name(name)?;
         let size = entry.size();
+        let crc = entry.crc32();
         let texture = match driver.category(Path::new(name)) {
             Some(c) if entry.read_exact(&mut head).is_ok() => texture_size(&head).map(|d| (c, d)),
             _ => None,
         };
         match texture {
             Some((c, (w, h))) => {
+                sums.push(Some((crc, size)));
                 let (k, internal) = driver.resolution_plan(c, w, h);
                 let (w, h) = (u64::from(w), u64::from(h));
                 let (k, internal) = (u64::from(k), u64::from(internal));
@@ -372,11 +457,15 @@ fn estimate(
                     w * h * internal * internal,
                 );
             }
-            None if opts.complete => est.add(size, 1, 0),
-            None => {}
+            None => {
+                sums.push(None);
+                if opts.complete {
+                    est.add(size, 1, 0);
+                }
+            }
         }
     }
-    Ok(est)
+    Ok((est, sums))
 }
 
 /// Exports matching textures as PNGs under `out_dir`, keeping their archive paths (plus
@@ -440,15 +529,8 @@ pub fn for_each_texture(
     )
 }
 
-/// Returns the bytes to write (and whether they were processed), or `None` to leave the entry
-/// out of a mod.
-fn handle(
-    archive: &mut zip::ZipArchive<File>,
-    name: &str,
-    opts: &Options,
-    driver: &Driver,
-    timers: &Timers,
-) -> Result<Option<(Vec<u8>, bool)>> {
+/// An entry's bytes.
+fn read(archive: &mut zip::ZipArchive<File>, name: &str, timers: &Timers) -> Result<Vec<u8>> {
     let t = Instant::now();
     let mut bytes = Vec::new();
     archive.by_name(name)?.read_to_end(&mut bytes)?;
@@ -456,7 +538,18 @@ fn handle(
         .bytes_in
         .fetch_add(bytes.len() as u64, Ordering::Relaxed);
     add(&timers.read, t.elapsed());
+    Ok(bytes)
+}
 
+/// Returns the bytes to write for an entry (and whether they were processed), or `None` to
+/// leave it out of a mod.
+fn handle(
+    bytes: Vec<u8>,
+    name: &str,
+    opts: &Options,
+    driver: &Driver,
+    timers: &Timers,
+) -> Result<Option<(Arc<Vec<u8>>, bool)>> {
     let rel = Path::new(name);
     let category = driver.category(rel);
     let t = Instant::now();
@@ -467,7 +560,7 @@ fn handle(
     };
     add(&timers.decode, t.elapsed());
     let Some((category, (otex, mut image))) = decoded else {
-        return Ok(opts.complete.then_some((bytes, false)));
+        return Ok(opts.complete.then(|| (Arc::new(bytes), false)));
     };
 
     let t = Instant::now();
@@ -477,7 +570,7 @@ fn handle(
     let t = Instant::now();
     let out = encode(&otex, &image)?;
     add(&timers.encode, t.elapsed());
-    Ok(Some((out, true)))
+    Ok(Some((Arc::new(out), true)))
 }
 
 #[cfg(test)]

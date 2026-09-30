@@ -226,6 +226,7 @@ when it ends, also when it fails:
   "processed": 729,
   "copied": 0,
   "skipped": 12,
+  "reused": 40,
   "written": 729,
   "failed": 1,
   "failures": [{ "path": "alt/objects/object_x/gTex", "reason": "stage stylize: ..." }],
@@ -238,7 +239,8 @@ when it ends, also when it fails:
 
 - `ok` is true exactly when the exit code is 0. `error` says why a run could not start or
   finish (bad config, missing input, not enough disk space); the counts are then 0.
-- `processed`: files restyled. `copied`: files copied through unchanged
+- `processed`: files restyled; `reused` of them took the output of a byte-identical file that
+  the pack map treats the same way (`.o2r` runs). `copied`: files copied through unchanged
   (`--copy-other`, `--complete`). `skipped`: files passed through or left out without
   restyling (non-color maps, `skip` and other unstyled categories, archive entries that are no
   textures). `written`: files written to the output.
