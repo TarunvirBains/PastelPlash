@@ -7,7 +7,7 @@
 #   OUT=/path/to/review scripts/review.sh 'alt/scenes/**/spot04_scene/*Tex_014B08' ...
 #
 # Settings (environment variables): PACK (default: the SoH OoT Reloaded pack), OUT (required),
-# STYLES (default: the default style and the other presets), TARGET, PACK_MAP.
+# STYLES (default: ss-impressionist), TARGET, PACK_MAP.
 set -euo pipefail
 
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -24,7 +24,7 @@ for d in "/mnt/z/Games/Ocarina of Time/SoH-9.2.3-celshade0.11-Win64" \
     [[ -z "${PACK:-}" && -d "$d" ]] && PACK="$d/mods/OoT_Reloaded_v11.0.0_4K.o2r"
 done
 [[ -f "${PACK:-}" ]] || { echo "set PACK to a .o2r pack" >&2; exit 1; }
-STYLES=${STYLES:-"impressionist watercolor ss-baseline ss-impressionist"}
+STYLES=${STYLES:-ss-impressionist}
 TARGET=${TARGET:-"$REPO/targets/soh-celshade.toml"}
 PACK_MAP=${PACK_MAP:-"$REPO/packs/oot-reloaded.toml"}
 (( $# > 0 )) || { echo "usage: OUT=dir $0 GLOB..." >&2; exit 1; }

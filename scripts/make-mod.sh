@@ -3,21 +3,20 @@
 # bash in WSL. Needs only pastelplash.exe, coreutils and (optionally, for VRAM numbers)
 # nvidia-smi. The source pack is only read.
 #
-#   scripts/make-mod.sh                 # test mods: Kokiri Forest + Link, every style
+#   scripts/make-mod.sh                 # test mod: Kokiri Forest + Link, ss-impressionist
 #   FULL=1 scripts/make-mod.sh          # every texture in the pack
 #   STYLES=impressionist TAG=v3 scripts/make-mod.sh
 #
-# Built mods are copied to $SOH_DIR/pastelplash-variants/ as PastelPlash-<style>-<TAG>.o2r;
+# Built mods are moved to $SOH_DIR/pastelplash-variants/ as PastelPlash-<style>-<TAG>.o2r;
 # nothing is written to the mods folder unless INSTALL=mods (the game may have it open).
 #
 # Settings (environment variables):
 #   SOH_DIR        Ship of Harkinian folder (default: autodetected, see below)
 #   PACK           source pack (default: $SOH_DIR/mods/OoT_Reloaded_v11.0.0_4K.o2r)
-#   STYLES         styles to build, space-separated (default: every preset, the default
-#                  style impressionist first)
+#   STYLES         styles to build, space-separated (default: ss-impressionist)
 #   TAG            name suffix (default: test, or full with FULL=1)
 #   INSTALL        variants (default), mods (only INSTALL_STYLE, into $SOH_DIR/mods) or none
-#   INSTALL_STYLE  style for INSTALL=mods (default: impressionist, the default style)
+#   INSTALL_STYLE  style for INSTALL=mods (default: ss-impressionist)
 #   INCLUDE        entry globs, space-separated (default: the Kokiri Forest + Link test set)
 #   FULL=1         no INCLUDE filter: restyle the whole pack
 #   JOBS           worker threads (default: all cores)
@@ -50,9 +49,9 @@ fi
 [[ -n "${SOH_DIR:-}" && -d "$SOH_DIR" ]] || { echo "set SOH_DIR to your Ship of Harkinian folder" >&2; exit 1; }
 PACK=${PACK:-"$SOH_DIR/mods/OoT_Reloaded_v11.0.0_4K.o2r"}
 [[ -f "$PACK" ]] || { echo "pack not found: $PACK" >&2; exit 1; }
-STYLES=${STYLES:-"impressionist watercolor ss-baseline ss-impressionist"}
+STYLES=${STYLES:-ss-impressionist}
 INSTALL=${INSTALL:-variants}
-INSTALL_STYLE=${INSTALL_STYLE:-impressionist}
+INSTALL_STYLE=${INSTALL_STYLE:-ss-impressionist}
 OUT_DIR=${OUT_DIR:-"$REPO/target/mods"}
 mkdir -p "$OUT_DIR"
 LOG="$OUT_DIR/make-mod.log"
@@ -123,13 +122,13 @@ case "$INSTALL" in
     variants)
         mkdir -p "$SOH_DIR/pastelplash-variants"
         for style in $STYLES; do
-            cp "$OUT_DIR/PastelPlash-$style-$SCOPE.o2r" "$SOH_DIR/pastelplash-variants/"
-            echo "copied PastelPlash-$style-$SCOPE.o2r to $SOH_DIR/pastelplash-variants" | tee -a "$LOG"
+            mv "$OUT_DIR/PastelPlash-$style-$SCOPE.o2r" "$SOH_DIR/pastelplash-variants/"
+            echo "moved PastelPlash-$style-$SCOPE.o2r to $SOH_DIR/pastelplash-variants" | tee -a "$LOG"
         done
         echo "To use one: quit SoH, move it into mods/, enable it in the Mod Menu after OoT Reloaded." | tee -a "$LOG"
         ;;
     mods)
-        cp "$OUT_DIR/PastelPlash-$INSTALL_STYLE-$SCOPE.o2r" "$SOH_DIR/mods/"
+        mv "$OUT_DIR/PastelPlash-$INSTALL_STYLE-$SCOPE.o2r" "$SOH_DIR/mods/"
         echo "installed PastelPlash-$INSTALL_STYLE-$SCOPE.o2r into $SOH_DIR/mods" | tee -a "$LOG"
         ;;
     none) ;;
