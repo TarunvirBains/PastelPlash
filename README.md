@@ -4,6 +4,9 @@ PastelPlash is a command-line tool that restyles game texture packs (folders of 
 `.o2r` archives with OTEX textures) into a painterly watercolor and impressionist look. It runs
 WGSL compute shaders on the GPU through [wgpu](https://wgpu.rs).
 
+**Status:** pre-1.0 and under active development. The command line, the config format, the
+styles and their output may change between versions.
+
 The restyle is a layer over the source art, not a repaint. The textures keep their colors,
 values and shapes, so the game still reads as itself. On top of that they get:
 
@@ -21,45 +24,48 @@ and so on). They are listed in [docs/RULES.md](docs/RULES.md).
 
 ## Install
 
-### From GitHub Releases
-
-Download the archive for your platform from the
-[Releases](https://github.com/TarunvirBains/PastelPlash/releases) page:
-
-- `pastelplash-<version>-x86_64-pc-windows-gnu.zip` (Windows, DirectX 12)
-- `pastelplash-<version>-x86_64-unknown-linux-gnu.tar.gz` (Linux, Vulkan)
-
-Check the download against `SHA256SUMS` (`sha256sum -c SHA256SUMS --ignore-missing`) and unpack
-it. Each archive holds the `pastelplash` binary, the licenses, this README and the sample config
-folders `styles/`, `targets/`, `packs/` and `reference/`. The shipped styles are also built into
-the binary, so `--style <name>` works from any directory. Targets and pack maps are always read
-from the file path you pass.
-
-### From crates.io
-
-```sh
-cargo install pastelplash --locked
-```
+Build PastelPlash from source. Prebuilt binaries and crates.io packages are not available yet.
 
 ### From source
+
+You need [rustup](https://rustup.rs) and git. `rust-toolchain.toml` pins the Rust toolchain,
+and rustup installs it, with the `x86_64-pc-windows-gnu` target, on first use.
+
+`.cargo/config.toml` makes `x86_64-pc-windows-gnu` the default build target, because
+development happens in WSL and the tool runs as a native Windows `.exe`. That target links with
+the mingw-w64 GCC, so `x86_64-w64-mingw32-gcc` must be on your `PATH`. It comes from
+`mingw-w64-gcc` on Arch Linux, `gcc-mingw-w64-x86-64` on Debian and Ubuntu, and MSYS2's
+`mingw-w64-ucrt-x86_64-gcc` on Windows.
 
 ```sh
 git clone https://github.com/TarunvirBains/PastelPlash
 cd PastelPlash
 cargo build --release --locked
+# binary: target/x86_64-pc-windows-gnu/release/pastelplash.exe
 ```
 
-`rust-toolchain.toml` pins the Rust toolchain (rustup installs it on first use).
-`.cargo/config.toml` makes the default build target `x86_64-pc-windows-gnu` with the mingw-w64
-linker, because development happens in WSL and the tool runs as a native Windows `.exe`. For a
-native build on Linux, pass the target:
+For a native Linux build (Vulkan), pass the target. It needs no mingw-w64:
 
 ```sh
 cargo build --release --locked --target x86_64-unknown-linux-gnu
 # binary: target/x86_64-unknown-linux-gnu/release/pastelplash
 ```
 
+The shipped styles are built into the binary, so `--style <name>` works from any directory.
+Targets and pack maps are always read from the file path you pass. The repository's `targets/`,
+`packs/` and `reference/` folders hold samples.
+
+### Prebuilt binaries and crates.io
+
+Not yet available. Both are planned for the first release (v0.1.0):
+
+- archives for Windows (DirectX 12) and Linux (Vulkan) on the
+  [Releases](https://github.com/TarunvirBains/PastelPlash/releases) page, with `SHA256SUMS`;
+- `cargo install pastelplash --locked`.
+
 ## Quick start
+
+The examples call the binary `pastelplash`. Put it on your `PATH`, or use its full path.
 
 Check that a GPU adapter works:
 
@@ -186,9 +192,9 @@ applies one to every file.
 | `WGPU_ADAPTER_NAME` | Use the first adapter whose name contains this text (case-insensitive), e.g. `llvmpipe` or `Microsoft Basic Render Driver`. The run fails if none matches. Default: the high-performance adapter. |
 | `PASTELPLASH_MAX_CHUNK` | Process images whose side is above this many texels in overlapping chunks (at least 64; clamped to the device limit). Chunking does not change the output. |
 
-The test suite reads a few more variables (`PASTELPLASH_BLESS`, `PASTELPLASH_GOLDEN_CAPTURE`,
-`PASTELPLASH_GOLDEN_DIR`, `PASTELPLASH_PROPTEST_CASES`). They are documented in
-[docs/RULES.md](docs/RULES.md).
+The test suite reads a few more variables. `PASTELPLASH_BLESS`, `PASTELPLASH_GOLDEN_CAPTURE` and
+`PASTELPLASH_GOLDEN_DIR` are documented in [docs/RULES.md](docs/RULES.md).
+`PASTELPLASH_PROPTEST_CASES` sets the number of palette property-test cases (default 4000).
 
 ## Use in build pipelines
 
