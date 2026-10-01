@@ -55,10 +55,21 @@ pub fn map_on_threads<T: Sync, S, R: Send>(
 /// A budget of units (texels of enlarged images in flight) shared by concurrent work.
 /// [`Budget::acquire`] blocks until the units fit; a request larger than the whole budget is
 /// cut to it, so it still runs, alone.
+///
+/// No thread waits while it holds part of the budget, so the waits always end: whoever holds
+/// units is running and gives them back when done.
 pub struct Budget {
     cap: u64,
-    used: Mutex<u64>,
+    state: Mutex<BudgetState>,
     cv: Condvar,
+}
+
+struct BudgetState {
+    /// Units held, reservations included.
+    used: u64,
+    /// Items waiting in [`Budget::acquire`] for more than their reservation (they gave it back
+    /// meanwhile): no weighted item starts until they have their units.
+    growing: usize,
 }
 
 /// Units held by a [`Budget`] until dropped.
@@ -68,30 +79,49 @@ pub struct BudgetGuard<'a> {
 }
 
 thread_local! {
-    /// Units the scheduler reserved for the item this thread is running
+    /// The budget and the units the scheduler reserved for the item this thread is running
     /// ([`map_on_threads_budgeted`]): the item's own [`Budget::acquire`] calls are covered.
-    static PREPAID: Cell<u64> = const { Cell::new(0) };
+    static PREPAID: Cell<(*const Budget, u64)> = const { Cell::new((std::ptr::null(), 0)) };
 }
 
 impl Budget {
     pub const fn new(cap: u64) -> Self {
         Self {
             cap,
-            used: Mutex::new(0),
+            state: Mutex::new(BudgetState {
+                used: 0,
+                growing: 0,
+            }),
             cv: Condvar::new(),
         }
     }
 
     /// Waits until `units` fit, then holds them. Units the scheduler already reserved for this
-    /// thread's item count toward them (only the rest is waited for: that always fits once the
-    /// other holders are done, as the reservation is part of the budget in use).
+    /// thread's item count toward them. When the item asks for more than its reservation and
+    /// the rest doesn't fit, it gives the reservation back while it waits and then takes all
+    /// `units` at once: waiting for the rest while holding the reservation could deadlock (two
+    /// items that each hold 4 of 10 and ask for 8 would wait for each other forever). An item
+    /// holds one guard at a time.
     pub fn acquire(&self, units: u64) -> BudgetGuard<'_> {
-        let extra = units.min(self.cap).saturating_sub(PREPAID.get());
-        let mut used = self.used.lock().unwrap();
-        while extra > 0 && *used + extra > self.cap {
-            used = self.cv.wait(used).unwrap();
+        let want = units.min(self.cap);
+        let prepaid = match PREPAID.get() {
+            (b, n) if std::ptr::eq(b, self) => n,
+            _ => 0,
+        };
+        let extra = want.saturating_sub(prepaid);
+        let mut state = self.state.lock().unwrap();
+        if extra > 0 && state.used + extra > self.cap {
+            state.used -= prepaid;
+            state.growing += 1;
+            self.cv.notify_all();
+            while state.used + want > self.cap {
+                state = self.cv.wait(state).unwrap();
+            }
+            // The reservation is held again, with the rest on top.
+            state.used += prepaid;
+            state.growing -= 1;
         }
-        *used += extra;
+        state.used += extra;
         BudgetGuard {
             budget: self,
             units: extra,
@@ -102,7 +132,7 @@ impl Budget {
 impl Drop for BudgetGuard<'_> {
     fn drop(&mut self) {
         if self.units > 0 {
-            *self.budget.used.lock().unwrap() -= self.units;
+            self.budget.state.lock().unwrap().used -= self.units;
             self.budget.cv.notify_all();
         }
     }
@@ -139,15 +169,17 @@ pub fn map_on_threads_budgeted<T: Sync, S, R: Send>(
         if pending.is_empty() {
             return None;
         }
-        let mut used = budget.used.lock().unwrap();
+        let mut state = budget.state.lock().unwrap();
+        // While a running item waits to grow its reservation, the units released go to it
+        // rather than to new items (which could keep it waiting until the light ones ran out).
         let pos = pending.iter().position(|&i| {
             let want = weights[i].min(budget.cap);
-            want == 0 || *used + want <= budget.cap
+            want == 0 || (state.growing == 0 && state.used + want <= budget.cap)
         });
         Some(pos.map(|p| {
             let i = pending.remove(p);
             let want = weights[i].min(budget.cap);
-            *used += want;
+            state.used += want;
             (i, want)
         }))
     };
@@ -158,11 +190,11 @@ pub fn map_on_threads_budgeted<T: Sync, S, R: Send>(
                 while let Some(next) = take() {
                     let Some((i, want)) = next else {
                         // Wait for a release (the timeout covers one that came before the wait).
-                        let used = budget.used.lock().unwrap();
+                        let held = budget.state.lock().unwrap();
                         drop(
                             budget
                                 .cv
-                                .wait_timeout(used, Duration::from_millis(50))
+                                .wait_timeout(held, Duration::from_millis(50))
                                 .unwrap(),
                         );
                         continue;
@@ -171,9 +203,9 @@ pub fn map_on_threads_budgeted<T: Sync, S, R: Send>(
                         budget,
                         units: want,
                     };
-                    PREPAID.set(want);
+                    PREPAID.set((budget, want));
                     let r = f(&mut state, &items[i]);
-                    PREPAID.set(0);
+                    PREPAID.set((std::ptr::null(), 0));
                     drop(guard);
                     *results[i].lock().unwrap() = Some(r);
                 }
@@ -272,7 +304,7 @@ mod tests {
                     (i, start, t0.elapsed())
                 },
             );
-            (out, *BUDGET.used.lock().unwrap())
+            (out, BUDGET.state.lock().unwrap().used)
         });
         let (runs, left) = out;
         assert_eq!(left, 0);
@@ -287,26 +319,80 @@ mod tests {
     }
 
     #[test]
-    fn an_item_asking_for_more_than_its_reservation_waits_only_for_the_rest() {
+    fn items_growing_their_reservations_at_once_take_turns() {
         use super::{Budget, map_on_threads_budgeted};
+        use std::sync::Barrier;
         static BUDGET: Budget = Budget::new(10);
         let left = within_a_minute(|| {
-            let weights = vec![4u64; 8];
-            let items: Vec<u64> = vec![8; 8];
+            // Both items hold their reservation of 4 before either asks for 8: neither can grow
+            // while the other holds its 4, so one gives its reservation back and waits.
+            let both_reserved = Barrier::new(2);
             map_on_threads_budgeted(
-                &items,
-                &weights,
+                &[8u64, 8],
+                &[4, 4],
                 &BUDGET,
-                4,
+                2,
                 || (),
                 |(), &units| {
-                    // Reserved 4, asks for 8: waits for 4 more, never for its own 4.
-                    drop(BUDGET.acquire(units));
+                    both_reserved.wait();
+                    let _held = BUDGET.acquire(units);
+                    let used = BUDGET.state.lock().unwrap().used;
+                    assert!(used <= 10, "{used} units in use");
                 },
             );
-            *BUDGET.used.lock().unwrap()
+            BUDGET.state.lock().unwrap().used
         });
         assert_eq!(left, 0);
+    }
+
+    #[test]
+    fn contended_reservations_never_deadlock_or_overrun_the_budget() {
+        use super::{Budget, map_on_threads_budgeted};
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static BUDGET: Budget = Budget::new(10);
+        within_a_minute(|| {
+            // A fixed xorshift sequence: random-looking reservations, requests and sleeps.
+            let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+            let mut next = move |n: u64| {
+                seed ^= seed << 13;
+                seed ^= seed >> 7;
+                seed ^= seed << 17;
+                seed % n
+            };
+            for _ in 0..200 {
+                let n = 4 + next(8) as usize;
+                // (reservation, units asked for (beyond the reservation or not), sleep in µs)
+                let items: Vec<(u64, u64, u64)> = (0..n)
+                    .map(|_| {
+                        let reserved = next(7);
+                        (reserved, reserved + next(6), next(400))
+                    })
+                    .collect();
+                let weights: Vec<u64> = items.iter().map(|it| it.0).collect();
+                let in_use = AtomicU64::new(0);
+                map_on_threads_budgeted(
+                    &items,
+                    &weights,
+                    &BUDGET,
+                    4,
+                    || (),
+                    |(), &(reserved, asked, sleep)| {
+                        std::thread::sleep(Duration::from_micros(sleep));
+                        let held = BUDGET.acquire(asked);
+                        // Requests beyond the budget are cut to it.
+                        let units = asked.min(10).max(reserved);
+                        let now = in_use.fetch_add(units, Ordering::SeqCst) + units;
+                        assert!(now <= 10, "{now} units in use");
+                        let used = BUDGET.state.lock().unwrap().used;
+                        assert!(used <= 10, "{used} units held");
+                        std::thread::sleep(Duration::from_micros(sleep));
+                        in_use.fetch_sub(units, Ordering::SeqCst);
+                        drop(held);
+                    },
+                );
+                assert_eq!(BUDGET.state.lock().unwrap().used, 0);
+            }
+        });
     }
 
     #[test]
