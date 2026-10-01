@@ -20,7 +20,6 @@ mod palette;
 mod scale;
 mod strokes;
 mod temperature;
-mod terracotta;
 mod tiling;
 mod value;
 mod watercolor;
@@ -34,7 +33,6 @@ pub use palette::{Cast, DarkContext, HueGroup, Palette, Tint, Warmth, WaterTone}
 pub use scale::Scale;
 pub use strokes::Strokes;
 pub use temperature::Temperature;
-pub use terracotta::Terracotta;
 pub use tiling::Tiling;
 pub use value::{Contrast, ValueContrast};
 pub use watercolor::Watercolor;
@@ -63,7 +61,6 @@ pub struct Style {
     pub grouping: Grouping,
     pub marks: Marks,
     pub watercolor: Watercolor,
-    pub terracotta: Terracotta,
     /// Named moods: partial overrides of this style (see `src/mood.rs`). The style itself is
     /// the `base` mood.
     pub moods: BTreeMap<String, toml::Table>,
@@ -121,7 +118,7 @@ impl Style {
         Self::from_table(raw).with_context(|| format!("parsing built-in style {name}"))
     }
 
-    /// A stack named `a+b+…` (`--style ss-terracotta+impressionist`): the first part is a style
+    /// A stack named `a+b+…` (`--style ss-baseline+impressionist`): the first part is a style
     /// (a file, or a built-in name), each later part a layer merged over it at full strength: a
     /// file, an overlay in `styles/overlays/` by name (`impressionist` names the
     /// `impressionist-brushwork` overlay), or a built-in style. A palette layer times a
@@ -266,7 +263,6 @@ impl Style {
         self.strokes.validate()?;
         self.temperature.validate()?;
         self.delight.validate()?;
-        self.terracotta.validate()?;
         self.grouping.validate()
     }
 }
@@ -297,17 +293,9 @@ mod stack_tests {
             &Style::stacked("ss-baseline+impressionist").unwrap(),
             &Style::builtin("ss-impressionist").unwrap(),
         );
-        same(
-            &Style::stacked("ss-terracotta+impressionist").unwrap(),
-            &Style::builtin("ss-terracotta-impressionist").unwrap(),
-        );
-        same(
-            &Style::stacked("ss-baseline+terracotta").unwrap(),
-            &Style::builtin("ss-terracotta").unwrap(),
-        );
         assert_eq!(
-            Style::stacked("ss-baseline+terracotta").unwrap().name,
-            "ss-baseline+terracotta"
+            Style::stacked("ss-baseline+impressionist").unwrap().name,
+            "ss-baseline+impressionist"
         );
         assert!(Style::stacked("ss-baseline+nope").is_err());
         assert!(Style::stacked("ss-baseline+").is_err());

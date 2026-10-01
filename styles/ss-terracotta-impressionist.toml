@@ -1,3 +1,0 @@
-# SS terracotta impressionist: the ss-terracotta palette with the impressionist brushwork overlay.
-extends = ["ss-terracotta.toml", "overlays/impressionist-brushwork.toml"]
-name = "ss-terracotta-impressionist"

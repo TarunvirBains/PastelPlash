@@ -125,19 +125,17 @@ Three layers of TOML configuration decide the result:
 | `watercolor` | The source's own color, painted: gentle hue nudges, colored shadows, softer internal contrast, watercolor technique. |
 | `ss-baseline` | `watercolor`, nudged further toward a *Skyward Sword* palette. |
 | `ss-impressionist` | `ss-baseline` with the impressionist brushwork. |
-| `ss-terracotta` | `ss-baseline` with warm rose-sienna earth on grain-free brown ground textures. |
-| `ss-terracotta-impressionist` | `ss-terracotta` with the impressionist brushwork. |
 
 `--style` accepts any of these:
 
 - a built-in name, e.g. `--style watercolor`;
 - a path to a TOML file, e.g. `--style my-style.toml`;
-- a stack `a+b`, e.g. `--style ss-terracotta+impressionist`.
+- a stack `a+b`, e.g. `--style ss-baseline+impressionist`.
 
 A stack is a style followed by layers merged over it in order. Each layer can be one of:
 
 - an overlay from `styles/overlays/` by name (`impressionist` names the
-  `impressionist-brushwork` overlay, `terracotta` the terracotta one);
+  `impressionist-brushwork` overlay);
 - another built-in style;
 - a file.
 

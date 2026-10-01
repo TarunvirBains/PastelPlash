@@ -37,7 +37,7 @@ pastelplash process <input> <output> [options]
   --follow-links      follow symlinks when walking (off by default; loops are detected and skipped)
   --style <file|name> style config or built-in style name (default: impressionist); a style that
                       is only `extends` + `name` is an alias for its layer stack; `a+b` stacks a
-                      style and layers directly (e.g. ss-terracotta+impressionist)
+                      style and layers directly (e.g. ss-baseline+impressionist)
   --target <file>     target renderer profile (e.g. targets/soh-celshade.toml)
   --pack <file>       pack map (e.g. packs/oot-reloaded.toml)
   -j, --jobs <n>      worker threads (default: all cores)
@@ -167,6 +167,9 @@ Verified by inspecting `OoT_Reloaded_v11.0.0_4K.o2r` (23.4 GB, 11,527 entries):
   neighborhood: warm-leaning neighborhoods take the umber floor, other hued ones their own hue
   (steel and slate stay cool), neutral ones none. No interpolated mud or teal between umber and
   cool LUT nodes.
+- Retired: the terracotta layer (`ss-terracotta`, a per-texture rose-sienna recolor of earth
+  browns) moved out of scope. Regional color changes belong in engine data, not in texture
+  restyling.
 
 ## License
 

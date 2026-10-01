@@ -210,7 +210,7 @@ struct O2rArgs {
     #[arg(long)]
     complete: bool,
     /// Style config (TOML file), built-in style name, or a stack `a+b` (a style plus layers, e.g.
-    /// ss-terracotta+impressionist); default: the built-in default style (impressionist).
+    /// ss-baseline+impressionist); default: the built-in default style (impressionist).
     #[arg(long, value_name = "FILE|NAME")]
     style: Option<PathBuf>,
     #[arg(long, value_name = "FILE")]
@@ -317,7 +317,7 @@ struct ProcessArgs {
     #[arg(long)]
     follow_links: bool,
     /// Style config (TOML file), built-in style name, or a stack `a+b` (a style plus layers, e.g.
-    /// ss-terracotta+impressionist); default: the built-in default style (impressionist).
+    /// ss-baseline+impressionist); default: the built-in default style (impressionist).
     #[arg(long, value_name = "FILE|NAME")]
     style: Option<PathBuf>,
     /// Target renderer profile (TOML).

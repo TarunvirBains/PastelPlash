@@ -19,7 +19,6 @@ pub struct Contract {
     pub identity: IdentityRules,
     pub fluid: FluidRules,
     pub resolution: ResolutionRules,
-    pub terracotta: TerracottaRules,
     /// Per-mood allowances (keyed by mood name).
     #[serde(default)]
     pub moods: std::collections::BTreeMap<String, MoodRules>,
@@ -355,11 +354,4 @@ pub struct ResolutionRules {
     pub max_factor: u32,
     pub max_blockiness: f32,
     pub max_coarse_delta_e: f32,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct TerracottaRules {
-    pub hue: [f32; 2],
-    pub min_shift: f32,
 }

@@ -72,13 +72,6 @@ impl Category {
         matches!(self, Self::World | Self::Background)
     }
 
-    /// Whether a style may turn its earth hues terracotta (per texture): world geometry only,
-    /// never actors (the cel shader lights them), pre-rendered backgrounds (finished paintings),
-    /// fluids, skies or UI.
-    pub fn may_turn_terracotta(self) -> bool {
-        self == Self::World
-    }
-
     /// Whether this is a fluid material (water, lava, other liquids).
     pub fn is_fluid(self) -> bool {
         matches!(self, Self::Water | Self::Lava | Self::Liquid)
@@ -120,7 +113,6 @@ mod tests {
             [Actor, World, Skybox, Background, Water, Lava, Liquid]
         );
         assert_eq!(pick(Category::may_group), [World, Background]);
-        assert_eq!(pick(Category::may_turn_terracotta), [World]);
         assert_eq!(pick(Category::is_fluid), [Water, Lava, Liquid]);
         assert_eq!(pick(Category::is_emissive), [Lava]);
         assert_eq!(pick(Category::may_be_detected_fluid), [World]);

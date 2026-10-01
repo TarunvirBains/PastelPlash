@@ -27,20 +27,8 @@ pub(super) const BUILTIN_STYLES: &[(&str, &str)] = &[
         include_str!("../../styles/ss-impressionist.toml"),
     ),
     (
-        "ss-terracotta.toml",
-        include_str!("../../styles/ss-terracotta.toml"),
-    ),
-    (
-        "ss-terracotta-impressionist.toml",
-        include_str!("../../styles/ss-terracotta-impressionist.toml"),
-    ),
-    (
         "overlays/impressionist-brushwork.toml",
         include_str!("../../styles/overlays/impressionist-brushwork.toml"),
-    ),
-    (
-        "overlays/terracotta.toml",
-        include_str!("../../styles/overlays/terracotta.toml"),
     ),
 ];
 

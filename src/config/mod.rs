@@ -26,8 +26,8 @@ pub use pack::{
 };
 pub use style::{
     Abstraction, Cast, Contrast, DarkContext, Delight, Grouping, HueGroup, Kuwahara, Marks,
-    Palette, Scale, Strokes, Style, Temperature, Terracotta, Tiling, Tint, ValueContrast, Warmth,
-    WaterTone, Watercolor,
+    Palette, Scale, Strokes, Style, Temperature, Tiling, Tint, ValueContrast, Warmth, WaterTone,
+    Watercolor,
 };
 pub use target::{Exposure, Resolution, Target, Treatment};
 
@@ -44,7 +44,7 @@ impl Config {
         let mut config = Self {
             style: match style {
                 // `a+b` that is not a file is a stack of styles and layers (`--style
-                // ss-terracotta+impressionist`).
+                // ss-baseline+impressionist`).
                 Some(path) if !path.exists() && path.to_string_lossy().contains('+') => {
                     Style::stacked(&path.to_string_lossy())?
                 }

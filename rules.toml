@@ -180,14 +180,10 @@ background_min_pattern_range = 0.45   # the synthetic room has large crushed cor
 [identity.styles]
 ss-baseline = 0.15
 ss-impressionist = 0.15   # ss-baseline's palette with impressionist brushwork
-ss-terracotta = 0.15      # ss-baseline + the terracotta layer (an opt-in look)
-ss-terracotta-impressionist = 0.15
 
 [identity.coarse_lightness_styles]
 ss-baseline = 0.25
 ss-impressionist = 0.25
-ss-terracotta = 0.25
-ss-terracotta-impressionist = 0.25
 
 # Applies to every file in targets/.
 [target]
@@ -354,11 +350,3 @@ max_blockiness = 3.0
 # The same painting, finer: area-averaged back to the source size, its 16x16 cell mean colors
 # stay within this OKLab distance (p90) of the painting made at the source size.
 max_coarse_delta_e = 0.04
-
-# Terracotta (an opt-in palette layer, per texture: config::Terracotta): a rose-sienna target
-# hue, applied only to grain-free, mostly earth, mid-value brown world textures. Every other
-# texture and category renders exactly as without it; a qualifying earth texture's mean earth
-# hue moves at least min_shift degrees toward the target (daylight moods of styles that turn it).
-[terracotta]
-hue = [35.0, 55.0]
-min_shift = 10.0
